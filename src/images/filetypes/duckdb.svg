@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <path d="M15 3H41L53 15V59a2 2 0 0 1-2 2H15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="#FFFFFF" stroke="#7D8FAD" stroke-width="2"/>
+  <path d="M41 3V13a2 2 0 0 0 2 2H53" fill="#DCE5F2" stroke="#7D8FAD" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="18" y="19" width="30" height="16" rx="2" fill="#075BE8"/>
+  <rect x="27" y="19" width="2" height="16" fill="#FFFFFF"/>
+  <rect x="37" y="19" width="2" height="16" fill="#FFFFFF"/>
+  <rect x="18" y="26" width="30" height="2" fill="#FFFFFF"/>
+  <path d="M9 24.5h17v-4.5l10 7-10 7v-4.5H9Z" fill="#17E0E5" stroke="#0044C8" stroke-width="1.5" stroke-linejoin="round"/>
+  <rect x="8" y="39" width="48" height="20" rx="2" fill="#E3B505"/>
+  <g fill="none" stroke="#3A2E00" stroke-width="2.2" stroke-linejoin="round">
+    <path transform="translate(13 43)" d="M1.5 1.5h3a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-2.5 2.5h-3Z"/>
+    <path transform="translate(23 43)" d="M1.25 1V8.5a2 2 0 0 0 2 2h1.5a2 2 0 0 0 2-2V1"/>
+    <path transform="translate(33 43)" d="M7 1.5H3a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h4"/>
+    <path transform="translate(43 43)" d="M1.5 1V11M7 1L1.5 7.5M3.6 5.2L7 11"/>
+  </g>
+</svg>

@@ -1,0 +1,4 @@
+openpyxl
+pyarrow
+duckdb
+zstandard

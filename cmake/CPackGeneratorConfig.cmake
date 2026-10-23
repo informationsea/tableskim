@@ -1,0 +1,4 @@
+# Evaluated by CPack for each generator (see CPACK_PROJECT_CONFIG_FILE).
+if(CPACK_GENERATOR STREQUAL "DEB" OR CPACK_GENERATOR STREQUAL "RPM")
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+endif()

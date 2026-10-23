@@ -1,0 +1,379 @@
+# Using the GUI
+
+[← Contents](README.md)
+
+- [The window](#the-window)
+- [Opening files](#opening-files)
+- [Moving around and selecting](#moving-around-and-selecting)
+- [Copying](#copying)
+- [Going to a row, cell or column](#going-to-a-row-cell-or-column)
+- [The sidebar](#the-sidebar)
+- [Sorting](#sorting)
+- [Filtering](#filtering)
+- [Searching](#searching)
+- [Column statistics](#column-statistics)
+- [Histograms](#histograms)
+- [Hiding and freezing columns](#hiding-and-freezing-columns)
+- [Sheets](#sheets)
+- [Running SQL](#running-sql)
+- [Exporting and converting](#exporting-and-converting)
+- [Reloading changed files](#reloading-changed-files)
+- [Display options](#display-options)
+- [Menu reference](#menu-reference)
+
+On macOS, use `Cmd` wherever this manual says `Ctrl`.
+
+## The window
+
+![The main window](../images/gui-main-window.png)
+
+- **Menu bar**: File, Edit, View, Window and Help. On macOS the menus are
+  in the system menu bar.
+- **Column headers**: the column name, a sort button (the small arrows on
+  the right) and, when the column is filtered, a filter mark.
+- **Row numbers**: the position of the row in the current view (after
+  sorting and filtering).
+- **Sheet tabs** at the bottom: one tab per sheet. A filtered sheet shows
+  `(filtered)` after its name.
+- **Sidebar** on the right (hidden at first): the Content, Search, Filter
+  and Statistics panes.
+
+Each file opens in its own window. The **Window** menu lists the open
+windows so that you can switch between them.
+
+## Opening files
+
+- **File → Open...** (`Ctrl+O`), or the **Open...** button of an empty
+  window. The file dialog lists every supported format.
+- Give files on the command line: `tableskim a.csv b.xlsx`.
+- macOS: drop files on the application icon, or use *Open With* in the
+  Finder.
+
+A file opened from a window that already shows one opens in a new window.
+**File → Close** (`Ctrl+W`) closes the window, **File → Quit** (`Ctrl+Q`)
+quits TableSkim.
+
+Rows are read in the background: the table appears at once, cells that are
+not loaded yet are filled in as they arrive, and the window stays
+responsive.
+
+## Moving around and selecting
+
+- Scroll with the mouse wheel or the scroll bars, or move the current cell
+  with the arrow keys, `Page Up` / `Page Down`, `Home` / `End`.
+- Click a cell to select it; drag or `Shift`+click to select a range.
+- Click a row number to select the row, or a column name to select the
+  column.
+- Drag the border between two column headers to change the width of a
+  column.
+
+## Copying
+
+**Edit → Copy** (`Ctrl+C`) copies the selected cells as tab-separated text
+(TSV), which can be pasted into a spreadsheet. Hidden columns are left out.
+Tabs and line breaks inside a cell are replaced with spaces. If some
+selected rows are not loaded yet, they are skipped and a message says how
+many rows were copied.
+
+## Going to a row, cell or column
+
+**Edit → Go To...** (`Ctrl+G`) jumps to:
+
+- a row number, such as `120`;
+- a cell, as `B12` or `R12C2`;
+- a column, by its letter (`AB`) or by its name (`Salary`). A column name
+  is matched exactly first, then ignoring upper and lower case, and wins
+  over a column letter.
+
+![The Go To dialog](../images/gui-goto.png)
+
+## The sidebar
+
+**View → Show sidebar** shows or hides the sidebar. It also appears
+automatically when you use Find, Filter or Column Statistics. Drag its left
+edge to make it wider.
+
+The **Content** pane shows the whole value of the selected cell, wrapped to
+the width of the pane. This is useful for long text. Double-click a cell to
+open it.
+
+![The Content pane](../images/gui-content-pane.png)
+
+## Sorting
+
+Click the **sort button** (the small arrows at the right of a column header)
+to sort by that column: the first click sorts in ascending order, the second
+in descending order, and the third restores the file order. The arrow in the
+header shows the current direction. Sorting by one column replaces any
+other sort.
+
+![Sorted by Age, descending](../images/gui-sorted.png)
+
+Right-click a column header for the column menu, which has **Sort
+Ascending**, **Sort Descending** and **No Sort** as well as filtering,
+statistics, histograms, hiding and freezing.
+
+![The column header menu](../images/gui-header-menu.png)
+
+How values are compared (numbers, dates, text, empty cells) is explained in
+[Sorting, Filtering, Searching and Statistics](filtering.md).
+
+## Filtering
+
+### Quick filters
+
+Right-click a cell and choose **Filter: = "value"** to show only rows with
+the same value in that column, or **Filter: ≠ "value"** to hide them. Each
+quick filter is added to the current filter as another condition.
+
+![The cell menu with quick filters](../images/gui-cell-menu.png)
+
+### The Filter pane
+
+**Edit → Filter...** (`Ctrl+Shift+F`), or **Filter by This Column...** in a
+column or cell menu, opens the Filter pane.
+
+![The Filter pane with two conditions](../images/gui-filter-pane.png)
+
+- **Match: All / Any**: show rows that match all conditions (AND) or any
+  condition (OR).
+- Each condition has a **column**, an **operator** and a **value**. The
+  **×** button removes the condition.
+- **+ Add condition** adds another condition.
+- **Apply** (or `Enter` in a value field) applies the filter. The line
+  below shows the result, for example "4 rows of 54".
+- **Clear** removes all conditions.
+
+![The filter operators](../images/gui-filter-ops.png)
+
+The operators are `contains`, `not contains`, `=`, `≠`, `<`, `≤`, `>`,
+`≥`, `is empty`, `is not empty`, `matches` and `not matches` (regular
+expressions), `is a number` and `is a date`. Comparisons follow the type of each cell: numbers compare as
+numbers, dates as dates, and `= 2024-01-31` matches any time on that day.
+See [Sorting, Filtering, Searching and Statistics](filtering.md) for the
+details.
+
+**Edit → Clear Filter**, or **Clear Filter** in a column or cell menu,
+removes the filter.
+
+## Searching
+
+**Edit → Find...** (`Ctrl+F`) opens the Search pane. Type the text and
+press `Enter` or **Search**.
+
+![Searching for "watanabe"](../images/gui-search-pane.png)
+
+- Matching cells are highlighted in the table, and the list shows the row,
+  column and value of every hit. Click a hit to jump to it.
+- The search ignores upper and lower case and finds the text anywhere in a
+  cell.
+- Check **Regex** to search with a regular expression (RE2 syntax).
+- The search runs in the background; the status line shows the progress
+  and the number of hits.
+
+## Column statistics
+
+**Edit → Column Statistics** (`Ctrl+Shift+I`), or **Column Statistics** in
+a column or cell menu, opens the Statistics pane for the current column.
+Choose another column from the list at the top.
+
+![Statistics of the Salary column](../images/gui-stats-pane.png)
+
+- The summary shows the number of **rows**, **empty** cells, **distinct**
+  values and, for numeric columns, **numbers**, **min**, **max**, **sum**,
+  **mean** and **standard deviation**.
+- The table below lists the **most frequent** values with their counts and
+  percentages.
+- Statistics cover the rows of the current view, so they follow the filter.
+- **Double-click** a value to filter by it. **Right-click** a value for
+  **Filter: =**, **Filter: ≠** and **Copy Value**.
+- Drag the border between the summary and the list to resize them.
+- **Cancel** stops a computation that takes long on a large file.
+
+## Histograms
+
+**Edit → Histogram...** (`Ctrl+Shift+H`), or **Histogram** in a column or
+cell menu, opens a histogram of the current column in a window of its own.
+Choose another column from the **Column** list at the top; the line next to
+it summarizes what was counted, for example "53 numbers in 30 bins, 1
+empty".
+
+![Histogram of the Salary column](../images/gui-histogram.png)
+
+- **Numbers** are counted into about 30 bins of round widths, such as
+  50000 or 0.2. Integer columns whose values span at most about 30
+  numbers (such as ages 20 to 45) get one bar per value.
+- **Dates and date-times** are counted into bins of whole days, weeks,
+  months, years and so on, depending on the range of the column.
+- **Other columns** (text) show their most frequent values as horizontal
+  bars instead.
+- **Point at a bar** to see its range and count below the chart, for
+  example `[600000, 650000): 4 (7.5%)`. A range includes its lower bound
+  and excludes its upper bound (`[` and `)`), except the last bar of
+  numbers, which includes both (`[1450000, 1500000]`).
+- **Double-click a bar** to filter the sheet to the rows of that bar. The
+  histogram is then recomputed for the remaining rows, so you can drill
+  down step by step. **Edit → Clear Filter** goes back to all rows.
+
+![Histogram of a date column, in two-year bins](../images/gui-histogram-dates.png)
+
+The histogram always follows the current view of the sheet: changing the
+filter, in the Filter pane or anywhere else, recomputes it, and the summary
+says "(filtered rows)". Below, the 1994–1995 bar was double-clicked: the
+sheet now shows those six rows and the histogram shows them in monthly bins.
+
+![After double-clicking a bar: the filtered sheet and its histogram](../images/gui-histogram-filtered.png)
+
+For a text column, each bar is one value; double-clicking it filters the
+sheet to that value.
+
+![Most frequent values of a text column](../images/gui-histogram-text.png)
+
+How bins are chosen is described in [Sorting, Filtering, Searching and
+Statistics](filtering.md#histograms).
+
+## Hiding and freezing columns
+
+### Hiding columns
+
+Right-click a column header and choose **Hide Column**. If several columns
+are selected and you right-click one of them, **Hide Columns** hides them
+all. **View → Show All Columns** (or **Show All Columns** in the column
+menu) shows them again.
+
+Hidden columns are skipped when moving the cursor, copying and exporting.
+They still take part in sorting, filtering and statistics.
+
+### Freezing columns
+
+Right-click a column header and choose **Freeze Columns up to Here**: that
+column and all columns to its left stay in place when you scroll sideways.
+**Unfreeze Columns** in the column menu, or **View → Freeze Columns**,
+turns it off. At least one column must remain unfrozen.
+
+![ID and Name frozen while scrolling right; the Email column is hidden](../images/gui-frozen.png)
+
+## Sheets
+
+Excel workbooks and databases show one tab per worksheet, table or view at
+the bottom of the window. Click a tab to switch. Each sheet keeps its own
+sort, filter, hidden and frozen columns.
+
+![Worksheets of an Excel workbook](../images/gui-multisheet.png)
+
+## Running SQL
+
+For DuckDB, SQLite, Parquet and JSON files, **Edit → Run SQL...**
+(`Ctrl+E`) opens the SQL window. Type a query and press **Run**
+(`Ctrl+Enter`); the result appears as a new sheet named **SQL Result**.
+
+![A query and its result](../images/gui-sql-result.png)
+
+The SQL window has a history (**History**, `Ctrl+Up` / `Ctrl+Down`) and
+completion (`Tab`). See [Running SQL](sql.md) for details.
+
+## Exporting and converting
+
+- **File → Export View...** (`Ctrl+Shift+E`) saves the current sheet as
+  shown (sorted, filtered, without hidden columns) to CSV, TSV, Excel or
+  Parquet.
+- **File → Convert to Parquet / DuckDB...** converts a text file (CSV, TSV,
+  VCF) to Parquet or a DuckDB database, for fast access later.
+
+Both run behind a progress dialog with a **Cancel** button. See [Exporting
+and Converting](exporting.md).
+
+## Editing cells
+
+Cells of CSV / TSV and Excel files can be changed in edit mode only:
+**Edit → Edit Mode** (`Ctrl+Shift+M`) turns it on and off, and the title
+shows `[Editing]`. Then `F2`, `Enter`, typing or a double click edits a
+cell, `Delete` clears the selected cells, **Edit → Paste** (`Ctrl+V`)
+pastes tab-separated text, **Edit → Undo** / **Redo** take changes back,
+and **File → Save** (`Ctrl+S`) or **File → Save As...** (`Ctrl+Shift+S`)
+writes them. Edited cells are green until saved. See [Editing
+Cells](editing.md).
+
+## Reloading changed files
+
+- **File → Revert** reloads the file from disk.
+- **File → Auto Revert** (on by default) checks the file regularly (every
+  second while the window is active, every five seconds otherwise) and
+  reloads it when it has changed. This is handy for watching a file that
+  another program writes.
+- **File → Show File in File Browser** opens the folder of the file in the
+  system file manager.
+
+After a reload, a SQL result sheet is computed again by running the last
+query. With unsaved edits, Revert asks before dropping them, and Auto
+Revert waits (the title shows `(changed on disk)` if the file changes).
+
+## Display options
+
+The **View** menu:
+
+![The View menu](../images/gui-menu-view.png)
+
+| Item                              | Effect                                                         |
+| --------------------------------- | -------------------------------------------------------------- |
+| Use monospace font                | Show cells in a monospace font                                 |
+| Use first row as header           | Take column names from the first row (CSV / TSV / Excel)       |
+| Skip lines starting with ##       | Drop `##` lines of text files (on by default for VCF)          |
+| Text Encoding                     | UTF-8, UTF-16LE, UTF-16BE or Shift_JIS (CP932), for CSV / TSV  |
+| Show All Columns                  | Show hidden columns again                                      |
+| Freeze Columns                    | Freeze the columns up to the selected one, or unfreeze them    |
+| Show sidebar                      | Show or hide the sidebar                                       |
+| Theme                             | Fluent, Basic, Plastic, GTK+, Gleam or Oxy look                |
+
+Items that do not apply to the current file (for example the header option
+for a Parquet file) are disabled.
+
+## Menu reference
+
+| File menu                          | Shortcut       |
+| ---------------------------------- | -------------- |
+| Open...                            | `Ctrl+O`       |
+| Close                              | `Ctrl+W`       |
+| Save (edit mode)                   | `Ctrl+S`       |
+| Save As... (edit mode)             | `Ctrl+Shift+S` |
+| Revert                             |                |
+| Auto Revert                        |                |
+| Export View...                     | `Ctrl+Shift+E` |
+| Convert to Parquet / DuckDB...     |                |
+| Show File in File Browser          |                |
+| Quit (in the application menu on macOS) | `Ctrl+Q`  |
+
+| Edit menu                          | Shortcut       |
+| ---------------------------------- | -------------- |
+| Undo (edit mode)                   | `Ctrl+Z`       |
+| Redo (edit mode)                   | `Ctrl+Shift+Z` |
+| Copy                               | `Ctrl+C`       |
+| Paste (edit mode)                  | `Ctrl+V`       |
+| Find...                            | `Ctrl+F`       |
+| Go To...                           | `Ctrl+G`       |
+| Filter...                          | `Ctrl+Shift+F` |
+| Clear Filter                       |                |
+| Column Statistics                  | `Ctrl+Shift+I` |
+| Histogram...                       | `Ctrl+Shift+H` |
+| Run SQL...                         | `Ctrl+E`       |
+| Edit Mode                          | `Ctrl+Shift+M` |
+
+<p>
+<img src="../images/gui-menu-file.png" alt="The File menu" width="49%">
+<img src="../images/gui-menu-edit.png" alt="The Edit menu" width="49%">
+</p>
+
+| Help menu                          | Shortcut       |
+| ---------------------------------- | -------------- |
+| User Manual                        | `F1`           |
+| About...                           |                |
+
+**Help → User Manual** (`F1`) opens this manual in a window of its own, in
+Japanese if that is the language of the system and in English otherwise;
+the list at the top right switches the language. **Back** / **Forward**
+(`Alt+Left` / `Alt+Right`) return to pages seen before, and **Contents**
+goes to the table of contents. The manual is built into TableSkim, so it
+works offline.
+
+**Help → About...** shows the version and the licenses of the bundled
+third-party software and fonts.

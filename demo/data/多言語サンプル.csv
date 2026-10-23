@@ -1,0 +1,38 @@
+ID,Language,Code,Script,Direction,Hello,ThankYou,Digits,Note
+1,日本語,ja,Han/Hiragana/Katakana,LTR,こんにちは,ありがとう,０１２３４５６７８９,
+2,English,en,Latin,LTR,Hello,Thank you,0123456789,
+3,简体中文,zh-Hans,Han (Simplified),LTR,你好,谢谢,〇一二三四五六七八九,
+4,繁體中文,zh-Hant,Han (Traditional),LTR,你好,謝謝,〇一二三四五六七八九,
+5,한국어,ko,Hangul,LTR,안녕하세요,감사합니다,0123456789,
+6,Русский,ru,Cyrillic,LTR,Здравствуйте,Спасибо,0123456789,
+7,Українська,uk,Cyrillic,LTR,Привіт,Дякую,0123456789,
+8,Ελληνικά,el,Greek,LTR,Γεια σας,Ευχαριστώ,0123456789,
+9,العربية,ar,Arabic,RTL,مرحبا,شكرا,٠١٢٣٤٥٦٧٨٩,
+10,فارسی,fa,Arabic (Persian),RTL,سلام,متشکرم,۰۱۲۳۴۵۶۷۸۹,
+11,עברית,he,Hebrew,RTL,שלום,תודה,0123456789,
+12,हिन्दी,hi,Devanagari,LTR,नमस्ते,धन्यवाद,०१२३४५६७८९,
+13,বাংলা,bn,Bengali,LTR,নমস্কার,ধন্যবাদ,০১২৩৪৫৬৭৮৯,
+14,தமிழ்,ta,Tamil,LTR,வணக்கம்,நன்றி,௦௧௨௩௪௫௬௭௮௯,
+15,ไทย,th,Thai,LTR,สวัสดี,ขอบคุณ,๐๑๒๓๔๕๖๗๘๙,
+16,Tiếng Việt,vi,Latin (Vietnamese),LTR,Xin chào,Cảm ơn,0123456789,
+17,ქართული,ka,Georgian,LTR,გამარჯობა,მადლობა,0123456789,
+18,Հայերեն,hy,Armenian,LTR,Բարեւ,Շնորհակալություն,0123456789,
+19,አማርኛ,am,Ethiopic,LTR,ሰላም,አመሰግናለሁ,0123456789,
+20,Deutsch,de,Latin,LTR,Hallo,Danke,0123456789,
+21,Français,fr,Latin,LTR,Bonjour,Merci,0123456789,
+22,Español,es,Latin,LTR,Hola,Gracias,0123456789,
+23,Português,pt,Latin,LTR,Olá,Obrigado,0123456789,
+24,Türkçe,tr,Latin,LTR,Merhaba,Teşekkürler,0123456789,
+25,Polski,pl,Latin,LTR,Dzień dobry,Dziękuję,0123456789,
+26,(edge case),,,,😀 🎉 🍣 🗾,,,emoji: astral-plane emoji
+27,(edge case),,,,👨‍👩‍👧‍👦,,,"emoji ZWJ sequence: one glyph, seven code points"
+28,(edge case),,,,🇯🇵 🇺🇸 🇩🇪 🇧🇷,,,emoji flags: regional indicator pairs
+29,(edge case),,,,👍🏻 👍🏽 👍🏿,,,emoji skin tone: emoji modifiers
+30,(edge case),,,,é à ñ / é à ñ,,,combining marks: decomposed (NFD) vs precomposed (NFC)
+31,(edge case),,,,𠮷野家 𩸽,,,astral-plane kanji: outside the BMP
+32,(edge case),,,,ＡＢＣ１２３ ｶﾀｶﾅ ABC123 カタカナ,,,"full/half width: fullwidth Latin, halfwidth katakana"
+33,(edge case),,,,שלום world 123 مرحبا,,,bidirectional: RTL and LTR in one cell
+34,(edge case),,,,zero​width​space,,,zero-width: U+200B between words
+35,(edge case),,,,Straße / STRASSE,,,German sharp s: case mapping changes length
+36,(edge case),,,,İstanbul / ıiIİ,,,Turkish dotted i: locale-specific case mapping
+37,(edge case),,,,寿限無寿限無五劫の擦り切れ寿限無寿限無五劫の擦り切れ寿限無寿限無五劫の擦り切れ寿限無寿限無五劫の擦り切れ寿限無寿限無五劫の擦り切れ寿限無寿限無五劫の擦り切れ寿限無寿限無五劫の擦り切れ寿限無寿限無五劫の擦り切れ,,,very long: long CJK text without spaces

@@ -1,0 +1,9 @@
+build/
+build-*/
+.DS_Store
+out/
+.cache/
+CMakeUserPresets.json
+.cache/
+demo/.venv/
+.vscode/cache

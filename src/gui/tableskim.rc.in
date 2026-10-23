@@ -1,0 +1,16 @@
+// Windows resources for TableSkim (configured by CMake)
+
+#define IDI_APP_ICON 101
+
+// The first icon resource is used as the .exe icon in Explorer
+IDI_APP_ICON ICON "@TABLESKIM_ICON_ICO@"
+
+// File type icons, referenced by resource ID ("TableSkim.exe,-201") from
+// DefaultIcon in packaging/windows/register_file_types.nsh
+201 ICON "@TABLESKIM_FILETYPE_ICON_DIR@/csv.ico"
+202 ICON "@TABLESKIM_FILETYPE_ICON_DIR@/tsv.ico"
+203 ICON "@TABLESKIM_FILETYPE_ICON_DIR@/xlsx.ico"
+204 ICON "@TABLESKIM_FILETYPE_ICON_DIR@/xlsm.ico"
+205 ICON "@TABLESKIM_FILETYPE_ICON_DIR@/parquet.ico"
+206 ICON "@TABLESKIM_FILETYPE_ICON_DIR@/duckdb.ico"
+207 ICON "@TABLESKIM_FILETYPE_ICON_DIR@/sqlite.ico"

@@ -1,0 +1,9 @@
+ID,Text,Note
+1,"•\¦,ƒ\ƒtƒg",trail byte 0x5C (\) and a quoted comma
+2,ƒ|ƒCƒ“ƒg|—\’è,trail byte 0x7C (|)
+3,‡@‡A‡B ‡Š ‡‚,NEC special characters
+4,îà‹´ í• í@,IBM extensions
+5,¶À¶Å Ã½Ä,half-width katakana
+6,`|‘’Êa,CP932-specific mappings
+7,"‰üs‚ğ
+ŠÜ‚Ş",quoted line break

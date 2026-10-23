@@ -1,0 +1,170 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 22,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "unix-base",
+            "hidden": true,
+            "inherits": "base",
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug (Ninja)",
+            "inherits": "unix-base",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release (Ninja)",
+            "inherits": "unix-base",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "make-debug",
+            "displayName": "Debug (Unix Makefiles)",
+            "inherits": "unix-base",
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "make-release",
+            "displayName": "Release (Unix Makefiles)",
+            "inherits": "unix-base",
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vs-base",
+            "hidden": true,
+            "inherits": "base",
+            "generator": "Visual Studio 17 2022",
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl",
+                "CMAKE_CXX_COMPILER": "cl"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "vs-debug",
+            "displayName": "Debug (Visual Studio / MSVC)",
+            "inherits": "vs-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vs-release",
+            "displayName": "Release (Visual Studio / MSVC)",
+            "inherits": "vs-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "make-debug",
+            "configurePreset": "make-debug"
+        },
+        {
+            "name": "make-release",
+            "configurePreset": "make-release"
+        },
+        {
+            "name": "vs-debug",
+            "configurePreset": "vs-debug",
+            "configuration": "Debug",
+            "jobs": 2
+        },
+        {
+            "name": "vs-release",
+            "configurePreset": "vs-release",
+            "configuration": "Release",
+            "jobs": 2
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-base",
+            "hidden": true,
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "test-base",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "release",
+            "inherits": "test-base",
+            "configurePreset": "release"
+        },
+        {
+            "name": "make-debug",
+            "inherits": "test-base",
+            "configurePreset": "make-debug"
+        },
+        {
+            "name": "make-release",
+            "inherits": "test-base",
+            "configurePreset": "make-release"
+        },
+        {
+            "name": "vs-debug",
+            "inherits": "test-base",
+            "configurePreset": "vs-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vs-release",
+            "inherits": "test-base",
+            "configurePreset": "vs-release",
+            "configuration": "Release"
+        }
+    ]
+}

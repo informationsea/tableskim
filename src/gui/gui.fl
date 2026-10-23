@@ -1,0 +1,706 @@
+# data file for the Fltk User Interface Designer (fluid)
+version 1.0405
+use_FL_COMMAND
+header_name {.h}
+code_name {.cxx}
+decl {\#include <string>} {public global
+}
+
+decl {\#include <FL/filename.H>
+\#include <FL/fl_ask.H>
+\#include "gui_theme.hxx"} {private global
+}
+
+decl {\#include "tableskim_version.hxx"} {private global
+}
+
+decl {\#include "gui_window_menu.hxx"} {private global
+}
+
+decl {\#include <memory>
+\#include <filesystem>
+\#include "table.hxx"
+\#include "gui_table_view.hxx"
+\#include "gui_search_results.hxx"
+\#include "gui_filter_pane.hxx"
+\#include "gui_stats_pane.hxx"
+\#include "gui_histogram.hxx"
+\#include "licenses.hxx"
+\#include "gui_sql.hxx"} {public global
+}
+
+class TableWindow {open
+} {
+  decl {std::unique_ptr<Fl_Text_Buffer> sidebar_buffer} {private local
+  }
+  Function {TableWindow()} {open
+  } {
+    Fl_Window main_window {
+      label {No Data : Table Skim} open
+      xywh {479 370 600 400} type Double align 80 resizable size_range {300 200 0 0} visible
+    } {
+      Fl_Menu_Bar menu_bar {open
+        xywh {0 0 600 25} type Fl_Sys_Menu_Bar box FLAT_BOX
+      } {
+        Submenu {} {
+          label File open
+          xywh {0 0 100 20}
+        } {
+          MenuItem {} {
+            label {Open...}
+            callback open_callback
+            xywh {0 0 100 20} shortcut 0x40006f divider
+          }
+          MenuItem {} {
+            label Close
+            callback callback_close
+            xywh {0 0 100 20} shortcut 0x400077
+          }
+          MenuItem menuitem_save {
+            label Save
+            callback callback_save
+            xywh {0 0 100 20} shortcut 0x400073
+          }
+          MenuItem menuitem_save_as {
+            label {Save As...}
+            callback callback_save_as
+            xywh {0 0 100 20} shortcut 0x410073
+          }
+          MenuItem {} {
+            label Revert
+            callback callback_revert
+            xywh {0 0 100 20}
+          }
+          MenuItem menuitem_auto_revert {
+            label {Auto Revert}
+            callback callback_auto_revert
+            xywh {0 0 100 20} type Toggle value 1 divider
+          }
+          MenuItem menuitem_export_view {
+            label {Export View...}
+            callback callback_export_view
+            xywh {0 0 100 20} shortcut 0x410065
+          }
+          MenuItem menuitem_convert {
+            label {Convert to Parquet / DuckDB...}
+            callback callback_convert
+            xywh {0 0 100 20} divider
+          }
+          MenuItem menuitem_show_in_file_browser {
+            label {Show File in File Browser}
+            callback show_in_file_browser
+            xywh {0 0 100 20} divider
+          }
+          MenuItem menuitem_quit {
+            label Quit
+            callback quit
+            xywh {0 0 100 20} shortcut 0x400071
+          }
+        }
+        Submenu {} {
+          label Edit open
+          xywh {0 0 100 20}
+        } {
+          MenuItem menuitem_undo {
+            label Undo
+            callback callback_undo
+            xywh {0 0 100 20} shortcut 0x40007a
+          }
+          MenuItem menuitem_redo {
+            label Redo
+            callback callback_redo
+            xywh {0 0 100 20} shortcut 0x41007a divider
+          }
+          MenuItem {} {
+            label Copy
+            callback callback_copy_menu
+            xywh {0 0 100 20} shortcut 0x400063
+          }
+          MenuItem menuitem_paste {
+            label Paste
+            callback callback_paste
+            xywh {0 0 100 20} shortcut 0x400076 divider
+          }
+          MenuItem {} {
+            label {Find...}
+            callback callback_find
+            xywh {0 0 100 20} shortcut 0x400066
+          }
+          MenuItem {} {
+            label {Go To...}
+            callback callback_go_to
+            xywh {0 0 100 20} shortcut 0x400067
+          }
+          MenuItem {} {
+            label {Filter...}
+            callback callback_filter
+            xywh {0 0 100 20} shortcut 0x410066
+          }
+          MenuItem {} {
+            label {Clear Filter}
+            callback callback_clear_filter
+            xywh {0 0 100 20}
+          }
+          MenuItem menuitem_column_stats {
+            label {Column Statistics}
+            callback callback_column_stats
+            xywh {0 0 100 20} shortcut 0x410069
+          }
+          MenuItem menuitem_histogram {
+            label {Histogram...}
+            callback callback_histogram
+            xywh {0 0 100 20} shortcut 0x410068 divider
+          }
+          MenuItem menuitem_run_sql {
+            label {Run SQL...}
+            callback callback_run_sql
+            xywh {0 0 100 20} shortcut 0x400065 divider
+          }
+          MenuItem menuitem_edit_mode {
+            label {Edit Mode}
+            callback callback_edit_mode
+            xywh {0 0 100 20} type Toggle shortcut 0x41006d
+          }
+        }
+        Submenu {} {
+          label View open
+          xywh {0 0 100 20}
+        } {
+          MenuItem menuitem_monospace_font {
+            label {Use monospace font}
+            callback callback_use_monospace_font
+            xywh {0 0 100 20} type Toggle
+          }
+          MenuItem menuitem_first_row_header {
+            label {Use first row as header}
+            callback callback_use_first_row_as_header
+            xywh {0 0 100 20} type Toggle
+          }
+          MenuItem menuitem_skip_meta_lines {
+            label {Skip lines starting with \#\#}
+            callback callback_skip_meta_lines
+            xywh {0 0 100 20} type Toggle
+          }
+          Submenu {} {
+            label {Text Encoding} open
+            xywh {0 0 100 20}
+          } {
+            MenuItem menuitem_encoding_utf8 {
+              label {UTF-8}
+              user_data {"utf-8"}
+              callback callback_text_encoding
+              xywh {0 0 100 20} type Radio
+            }
+            MenuItem menuitem_encoding_utf16le {
+              label {UTF-16LE}
+              user_data {"utf-16le"}
+              callback callback_text_encoding
+              xywh {0 0 100 20} type Radio
+            }
+            MenuItem menuitem_encoding_utf16be {
+              label {UTF-16BE}
+              user_data {"utf-16be"}
+              callback callback_text_encoding
+              xywh {0 0 100 20} type Radio
+            }
+            MenuItem menuitem_encoding_cp932 {
+              label {Shift_JIS (CP932)}
+              user_data {"cp932"}
+              callback callback_text_encoding
+              xywh {0 0 100 20} type Radio
+            }
+          }
+          MenuItem menuitem_show_all_columns {
+            label {Show All Columns}
+            callback callback_show_all_columns
+            xywh {0 0 100 20}
+          }
+          MenuItem menuitem_freeze_columns {
+            label {Freeze Columns}
+            callback callback_freeze_columns
+            xywh {0 0 100 20} type Toggle
+          }
+          MenuItem menuitem_show_sidebar {
+            label {Show sidebar}
+            callback callback_show_sidebar
+            xywh {0 0 100 20} type Toggle divider
+          }
+          Submenu {} {
+            label Theme open
+            xywh {0 0 100 20}
+          } {
+            MenuItem {} {
+              label Fluent
+              user_data {"fluent"}
+              callback setFltkScheme
+              xywh {0 0 100 20}
+            }
+            MenuItem {} {
+              label Basic
+              user_data {"basic"}
+              callback setFltkScheme
+              xywh {0 0 100 20}
+            }
+            MenuItem {} {
+              label Plastic
+              user_data {"plastic"}
+              callback setFltkScheme
+              xywh {0 0 100 20}
+            }
+            MenuItem {} {
+              label {GTK+}
+              user_data {"gtk+"}
+              callback setFltkScheme
+              xywh {0 0 100 20}
+            }
+            MenuItem {} {
+              label Gleam
+              user_data {"gleam"}
+              callback setFltkScheme
+              xywh {0 0 100 20}
+            }
+            MenuItem {} {
+              label Oxy
+              user_data {"oxy"}
+              callback setFltkScheme
+              xywh {0 0 100 20}
+            }
+          }
+        }
+        MenuItem menuitem_window {
+          label Window
+          xywh {0 0 100 20}
+        }
+        Submenu {} {
+          label Help open
+          xywh {0 0 100 20}
+        } {
+          MenuItem {} {
+            label {User Manual}
+            callback callback_user_manual
+            xywh {0 0 100 20} shortcut 0xffbe divider
+          }
+          MenuItem {} {
+            label {About...}
+            callback callback_show_about
+            xywh {0 0 100 20}
+          }
+        }
+      }
+      Fl_Tile tile {open
+        xywh {0 25 600 375} box FLAT_BOX resizable
+      } {
+        Fl_Tabs tab {open
+          xywh {0 25 400 375} selection_color 7 resizable
+        } {
+          Fl_Grid {} {
+            label {No Data} open
+            xywh {0 25 400 350} resizable
+            dimensions {3 3}
+            rowheights { 0 30 0 }
+            rowweights { 50 0 50 }
+            colwidths { 0 100 0 }
+            colweights { 50 0 50 }
+          } {
+            Fl_Button {} {
+              label {Open...}
+              callback open_callback2
+              xywh {200 185 100 30}
+              parent_properties {
+                location {1 1}
+              }
+            }
+          }
+        }
+        Fl_Tabs sidebar_tab {open
+          xywh {400 25 200 375}
+        } {
+          Fl_Flex content_pane {
+            label Content open selected
+            xywh {400 50 200 350}
+          } {
+            Fl_Text_Display sidebar_text {
+              xywh {400 50 200 350}
+            }
+          }
+          Fl_Grid search_pane {
+            label Search open
+            xywh {400 50 200 350} hide resizable
+            dimensions {4 2} gap {5 5}
+            rowheights { 30 24 20 0 }
+            rowweights { 0 0 0 50 }
+          } {
+            Fl_Input search_text {
+              xywh {400 50 200 30} when 10
+              parent_properties {
+                location {0 0}
+                colspan 2
+              }
+            }
+            Fl_Check_Button search_regex {
+              label Regex
+              xywh {400 85 97 24} down_box DOWN_BOX
+              parent_properties {
+                location {1 0}
+              }
+            }
+            Fl_Button search_button {
+              label Search
+              xywh {502 85 98 24}
+              parent_properties {
+                location {1 1}
+              }
+            }
+            Fl_Box search_status {
+              xywh {400 114 200 20} align 84
+              parent_properties {
+                location {2 0}
+                colspan 2
+              }
+            }
+            Fl_Table search_result {open
+              xywh {400 139 200 261} color 7
+              class GuiSearchResults
+              parent_properties {
+                location {3 0}
+                colspan 2
+              }
+            } {}
+          }
+          Fl_Group filter_pane {
+            label Filter open
+            xywh {400 50 200 350} hide
+            class GuiFilterPane
+          } {}
+          Fl_Group stats_pane {
+            label Statistics open
+            xywh {400 50 200 350} hide
+            class GuiStatsPane
+          } {}
+        }
+      }
+    }
+    code {// Closing goes through hide() so that the Window menu is updated. FLTK
+// also calls this for an Escape key no widget used, which must not close it.
+main_window->callback([](Fl_Widget *, void *data) {
+  if (Fl::callback_reason() != FL_REASON_CANCELLED)
+    static_cast<TableWindow *>(data)->close_window();
+}, this);
+tile->size_range(tab, 200, 50);
+tile->size_range(sidebar_tab, 80, 50);
+\#ifdef __APPLE__
+tile->resize(0, 0, main_window->w(), main_window->h());
+// The application menu already has Quit (Cmd+Q).
+menuitem_quit->hide();
+menuitem_show_in_file_browser->flags &= ~FL_MENU_DIVIDER;
+\#endif
+sidebar_buffer = std::make_unique<Fl_Text_Buffer>();
+sidebar_text->buffer(*sidebar_buffer);
+sidebar_text->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
+tab->callback([](Fl_Widget *, void *data) { static_cast<TableWindow *>(data)->current_sheet_changed(); }, this);
+setup_search();
+setup_filter();
+set_show_sidebar(false);} {}
+  }
+  Function {open_data()} {open
+  } {}
+  Function {~TableWindow()} {} {
+    code {Fl::remove_timeout(auto_revert_timeout, this);
+delete main_window;} {}
+  }
+  Function {hide()} {open
+  } {
+    code {main_window->hide();
+schedule_auto_revert();
+requestClosedWindowCleanup();
+requestWindowMenuUpdate();} {}
+  }
+  Function {show()} {} {
+    code {main_window->show();
+schedule_auto_revert();
+requestWindowMenuUpdate();} {}
+  }
+  decl {bool open(const std::string &path, bool report_errors = true, bool keep_state = false)} {public local
+  }
+  decl {bool close_window()} {public local
+  }
+  decl {bool editing() const} {public local
+  }
+  decl {void set_editing(bool editing)} {public local
+  }
+  decl {bool save(bool save_as)} {public local
+  }
+  decl {bool confirm_unsaved(bool reload = false)} {public local
+  }
+  decl {void update_title()} {public local
+  }
+  decl {void finish_cell_editing()} {private local
+  }
+  decl {bool editing_ = false} {private local
+  }
+  decl {bool changed_on_disk_ = false} {private local
+  }
+  decl {const std::string &opened_path() const} {public local
+  }
+  decl {void set_use_monospace_font(bool use)} {public local
+  }
+  decl {void set_first_row_as_header(bool use)} {public local
+  }
+  decl {void set_skip_meta_lines(bool skip)} {public local
+  }
+  decl {void set_text_encoding(TextEncoding encoding)} {public local
+  }
+  decl {void convert()} {public local
+  }
+  decl {void export_view()} {public local
+  }
+  decl {bool sql_available() const} {public local
+  }
+  decl {void show_sql()} {public local
+  }
+  decl {void run_sql(const std::string &sql, bool rerun)} {public local
+  }
+  decl {void load_sql_schema()} {private local
+  }
+  decl {void sql_schema_loaded(const std::shared_ptr<TableBook> &book, std::vector<SqlTable> schema)} {public local
+  }
+  decl {void sql_finished(const std::shared_ptr<TableBook> &book, const std::string &sql, bool rerun, const TableBook::SqlResult &result)} {public local
+  }
+  decl {GuiTableView *add_sheet_view(const std::string &sheet_name)} {private local
+  }
+  decl {std::unique_ptr<SqlWindow> sql_window_} {private local
+  }
+  decl {std::unique_ptr<HistogramWindow> histogram_window_} {private local
+  }
+  decl {std::string last_query_} {private local
+  }
+  decl {std::string sql_sheet_} {private local
+  }
+  decl {struct SqlRestore { GuiTableView::ScrollPosition scroll; ViewSpec view; bool selected = false; };} {private local
+  }
+  decl {std::optional<SqlRestore> sql_restore_} {private local
+  }
+  decl {ChangingTooltip search_status_tooltip_} {private local
+  }
+  decl {std::shared_ptr<TableWindow *> alive_token_ = std::make_shared<TableWindow *>(this)} {private local
+  }
+  decl {void set_auto_revert(bool enabled)} {public local
+  }
+  decl {void set_focused(bool focused)} {public local
+  }
+  decl {void set_show_sidebar(bool show)} {public local
+  }
+  decl {void defer_command(std::function<void(TableWindow &)> command)} {public local
+  }
+  Function {auto_revert() const} {open return_type bool
+  } {
+    code {return auto_revert_;} {}
+  }
+  Function {use_monospace_font() const} {open return_type bool
+  } {
+    code {return use_monospace_font_;} {}
+  }
+  Function {use_first_row_as_header() const} {open return_type bool
+  } {
+    code {return first_row_as_header_;} {}
+  }
+  Function {skip_meta_lines() const} {open return_type bool
+  } {
+    code {// The default depends on the file (on for VCF).
+return table_book ? table_book->skipsMetaLines() : skip_meta_lines_.value_or(false);} {}
+  }
+  Function {text_encoding() const} {open return_type TextEncoding
+  } {
+    code {// Detected unless chosen with View > Text Encoding.
+if (table_book && table_book->textEncoding())
+  return *table_book->textEncoding();
+return text_encoding_.value_or(TextEncoding::Utf8);} {}
+  }
+  Function {show_sidebar() const} {open return_type bool
+  } {
+    code {return sidebar_tab->parent() == tile;} {}
+  }
+  Function {header_option_available() const} {open return_type bool
+  } {
+    code {// Formats with their own column names (Parquet, databases) ignore it.
+return !table_book || table_book->usesHeaderOption();} {}
+  }
+  Function {skip_meta_lines_available() const} {open return_type bool
+  } {
+    code {return !table_book || table_book->isTextFormat();} {}
+  }
+  decl {void sync_menu_items()} {public local
+  }
+  decl {std::vector<GuiTableView *> gui_table_views} {private local
+  }
+  decl {std::shared_ptr<TableBook> table_book} {private local
+  }
+  decl {std::string current_path} {public local
+  }
+  decl {bool use_monospace_font_ = false} {private local
+  }
+  decl {bool first_row_as_header_ = false} {private local
+  }
+  decl {std::optional<bool> skip_meta_lines_} {private local
+  }
+  decl {std::optional<TextEncoding> text_encoding_} {private local
+  }
+  decl {bool auto_revert_ = true} {private local
+  }
+  decl {int sidebar_width_ = 100} {private local
+  }
+  decl {bool focused_ = false} {private local
+  }
+  decl {std::filesystem::file_time_type file_mtime_} {private local
+  }
+  decl {std::uintmax_t file_size_ = 0} {private local
+  }
+  decl {void revert_if_changed()} {private local
+  }
+  decl {void schedule_auto_revert()} {private local
+  }
+  decl {void update_sidebar()} {private local
+  }
+  decl {void current_sheet_changed()} {private local
+  }
+  decl {SearchSpec search_spec_} {private local
+  }
+  decl {void setup_search()} {private local
+  }
+  decl {void start_search()} {private local
+  }
+  decl {void sync_search()} {private local
+  }
+  decl {void update_search_status()} {private local
+  }
+  decl {void show_search()} {public local
+  }
+  decl {void go_to()} {public local
+  }
+  decl {std::string go_to_text_} {private local
+  }
+  decl {void setup_filter()} {private local
+  }
+  decl {void sync_filter()} {private local
+  }
+  decl {void update_sheet_label(GuiTableView *table_view)} {private local
+  }
+  decl {void show_filter(std::optional<size_t> column = std::nullopt)} {public local
+  }
+  decl {void show_content()} {public local
+  }
+  decl {void sync_stats()} {private local
+  }
+  decl {void show_stats(std::optional<size_t> column = std::nullopt)} {public local
+  }
+  decl {void show_histogram(std::optional<size_t> column = std::nullopt)} {public local
+  }
+  decl {void clear_filter()} {public local
+  }
+  decl {static void auto_revert_timeout(void *data)} {private local
+  }
+  data icon {public local filename {../images/icon.png}
+  }
+}
+
+decl {std::vector<std::unique_ptr<TableWindow>> table_windows} {public local
+}
+
+Function {show_github()} {open private
+} {
+  code {char message[256] = "";
+if (!fl_open_uri("https://github.com/informationsea/tableskim", message, sizeof(message)))
+    fl_alert("Cannot open the web browser:\\n%s", escapeLabel(message).c_str());} {}
+}
+
+decl {Fl_Double_Window *version_window} {public local
+}
+
+decl {std::unique_ptr<Fl_Text_Buffer> license_text_buffer} {public local
+}
+
+Function {make_version_window()} {open C
+} {
+  Fl_Window {} {
+    label {Table Skim Version Info} open
+    xywh {881 585 300 200} type Double align 80 resizable visible
+  } {
+    Fl_Box table_skim_title {
+      label {Table Skim}
+      private xywh {6 7 150 32} labelsize 24
+    }
+    Fl_Box table_skim_version {
+      label version
+      private xywh {156 7 138 32} labelsize 12 align 20
+    }
+    Fl_Button {} {
+      label Github
+      callback show_github
+      xywh {144 163 64 22}
+    }
+    Fl_Button {} {
+      label Close
+      callback {o->window()->hide();}
+      xywh {221 163 64 22}
+    }
+    Fl_Text_Display license_text_display {
+      private xywh {15 47 270 104} resizable
+    }
+  }
+  code {table_skim_version->label(TABLESKIM_VERSION "\\n" TABLESKIM_GIT_REVISION);
+license_text_buffer = std::make_unique<Fl_Text_Buffer>();
+license_text_display->buffer(*license_text_buffer);
+license_text_buffer->insert(0, thirdPartyLicenses().data());} {}
+}
+
+class FileProperties {open
+} {
+  Function {FileProperties()} {open
+  } {
+    Fl_Window {} {
+      label {File Properties} open
+      xywh {661 374 480 100} type Double align 80 modal visible
+    } {
+      Fl_Grid {} {open
+        xywh {0 0 480 100}
+        dimensions {3 3} margin {10 10 10 10} gap {10 10}
+        colwidths { 80 0 120 }
+        colweights { 0 50 0 }
+      } {
+        Fl_Output {} {
+          label {File Path:}
+          xywh {100 10 240 26}
+          parent_properties {
+            location {0 1}
+          }
+        }
+        Fl_Button {} {
+          label {Open Location}
+          xywh {350 10 120 26}
+          parent_properties {
+            location {0 2}
+          }
+        }
+        Fl_Button {} {
+          label OK
+          xywh {350 63 120 27} shortcut 0xff0d
+          parent_properties {
+            location {2 2}
+          }
+        }
+      }
+    }
+  }
+}
+
+data mplus1u_regular {public local filename {../fonts/BIZUDPGothic-Regular.ttf}
+}
+
+data mplus1u_bold {public local filename {../fonts/BIZUDPGothic-Bold.ttf}
+}
+
+data mplus1_code_regular {public local filename {../fonts/MPLUS1Code-Regular.ttf}
+}
+
+data mplus1_code_bold {public local filename {../fonts/MPLUS1Code-Bold.ttf}
+}

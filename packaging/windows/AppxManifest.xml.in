@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 uap5 desktop4 rescap">
+
+  <!-- Identity/Publisher must match the values shown in Partner Center
+       (Product management > Product identity). -->
+  <Identity Name="@MSIX_IDENTITY_NAME@"
+            Publisher="@MSIX_PUBLISHER@"
+            Version="@MSIX_VERSION@"
+            ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>TableSkim</DisplayName>
+    <PublisherDisplayName>@MSIX_PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>A simple table viewer for CSV, Excel, Parquet, DuckDB and SQLite files.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="TableSkim" Executable="TableSkim.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="TableSkim"
+        Description="A simple table viewer for CSV and Excel files."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="tableskim">
+            <uap:DisplayName>TableSkim</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.csv</uap:FileType>
+              <uap:FileType>.tsv</uap:FileType>
+              <uap:FileType>.tab</uap:FileType>
+              <uap:FileType>.xlsx</uap:FileType>
+              <uap:FileType>.xlsm</uap:FileType>
+              <uap:FileType>.parquet</uap:FileType>
+              <uap:FileType>.duckdb</uap:FileType>
+              <uap:FileType>.ddb</uap:FileType>
+              <uap:FileType>.sqlite</uap:FileType>
+              <uap:FileType>.sqlite3</uap:FileType>
+              <uap:FileType>.db3</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+    <!-- Terminal UI: a console program, run from a terminal as tableskim-tui -->
+    <Application Id="TableSkimTUI" Executable="tableskim-tui.exe" EntryPoint="Windows.FullTrustApplication"
+                 desktop4:Subsystem="console" desktop4:SupportsMultipleInstances="true">
+      <uap:VisualElements
+        DisplayName="TableSkim (terminal)"
+        Description="Terminal UI of TableSkim."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        AppListEntry="none" />
+      <Extensions>
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="tableskim-tui.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias desktop4:Subsystem="console">
+            <uap5:ExecutionAlias Alias="tableskim-tui.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
