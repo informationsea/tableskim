@@ -138,13 +138,38 @@ set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_RPM_COMPONENT_INSTALL ON)
 set(CPACK_STRIP_FILES ON)
 
-# Archive names: tableskim-<version>-<system>-<arch>.zip
+# Linux packages run only on distributions as new as the one they were
+# built on, so their names tell which one that was (e.g. ubuntu24.04).
+set(_tableskim_os_tag "")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # -DTABLESKIM_PACKAGE_OS_TAG=... overrides ID and VERSION_ID of
+    # /etc/os-release; read on every configure, so it follows an upgrade.
+    if(NOT DEFINED TABLESKIM_PACKAGE_OS_TAG)
+        cmake_host_system_information(RESULT _tableskim_distrib_id QUERY DISTRIB_ID)
+        cmake_host_system_information(RESULT _tableskim_distrib_version QUERY DISTRIB_VERSION_ID)
+        set(TABLESKIM_PACKAGE_OS_TAG "${_tableskim_distrib_id}${_tableskim_distrib_version}")
+    endif()
+    if(TABLESKIM_PACKAGE_OS_TAG)
+        set(_tableskim_os_tag "-${TABLESKIM_PACKAGE_OS_TAG}")
+    endif()
+endif()
+
+# Archive names: tableskim-<version>-<system>[-<distribution>]-<arch>.zip
 set(CPACK_PACKAGE_FILE_NAME
-    "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+    "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}${_tableskim_os_tag}-${CMAKE_SYSTEM_PROCESSOR}")
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 
-# DEB
+# DEB: tableskim_<version>_<distribution>_<arch>.deb
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+find_program(TABLESKIM_DPKG_EXECUTABLE dpkg)
+if(TABLESKIM_PACKAGE_OS_TAG AND TABLESKIM_DPKG_EXECUTABLE)
+    execute_process(COMMAND ${TABLESKIM_DPKG_EXECUTABLE} --print-architecture
+        OUTPUT_VARIABLE _tableskim_deb_arch OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(_tableskim_deb_arch)
+        set(CPACK_DEBIAN_FILE_NAME
+            "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${TABLESKIM_PACKAGE_OS_TAG}_${_tableskim_deb_arch}.deb")
+    endif()
+endif()
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 
@@ -154,6 +179,11 @@ set(CPACK_RPM_PACKAGE_GROUP "Applications/Productivity")
 set(CPACK_RPM_PACKAGE_LICENSE "AGPL-3.0-only")
 set(CPACK_RPM_PACKAGE_AUTOREQ ON)
 set(CPACK_RPM_PACKAGE_RELEASE 1)
+# RPM: tableskim-<version>-<release>.<distribution>.<arch>.rpm
+if(TABLESKIM_PACKAGE_OS_TAG)
+    set(CPACK_RPM_FILE_NAME
+        "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_RPM_PACKAGE_RELEASE}.${TABLESKIM_PACKAGE_OS_TAG}.${CMAKE_SYSTEM_PROCESSOR}.rpm")
+endif()
 # Do not claim ownership of system directories.
 set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION
     /usr/share/applications
