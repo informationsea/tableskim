@@ -23,16 +23,6 @@ terminal:
 xattr -dr com.apple.quarantine /Applications/TableSkim.app
 ```
 
-The macOS app is not signed with a developer certificate, so macOS asks for
-your permission the first time: Control-click (right-click) `TableSkim.app`
-and choose **Open**, or allow it under **System Settings → Privacy &
-Security**. If macOS says the app is damaged, remove the download mark in a
-terminal:
-
-```sh
-xattr -dr com.apple.quarantine /Applications/TableSkim.app
-```
-
 To build TableSkim yourself, see the *Building* section of the
 [README](../../README.md#building).
 
