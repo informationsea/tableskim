@@ -9,11 +9,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # which makes dependencies (e.g. DuckDB) take pre-C++17 code paths.
 # /MP3 compiles up to 3 files of a project in parallel; combined with
 # "jobs": 2 in CMakePresets.json this caps the build at 6 concurrent cl.exe.
+# Ninja runs one cl.exe per file by itself, so /MP is left out there.
 if(MSVC)
-    add_compile_options(
-        $<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>
-        $<$<COMPILE_LANGUAGE:C,CXX>:/MP3>
-    )
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>)
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja")
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/MP3>)
+    endif()
 endif()
 
 option(TABLESKIM_BUILD_GUI "Build the FLTK GUI; when OFF, tableskim is the terminal UI only and FLTK is not needed" ON)

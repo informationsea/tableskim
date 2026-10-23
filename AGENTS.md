@@ -66,7 +66,11 @@ ctest --preset debug                 # output is shown on failure
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
   `cmake/Dependencies.cmake`.
 - Debug builds define `TABLESKIM_DEBUG=1`, which enables debug logging.
-- Windows uses the `vs-debug` / `vs-release` presets (Visual Studio 2022, MSVC).
+- Windows uses the `vs-debug` / `vs-release` presets (Visual Studio 2026, MSVC)
+  or, from a Developer Command Prompt, `msvc-debug` / `msvc-release` (Ninja,
+  MSVC). CI and the release workflow use `msvc-release` so that ccache works
+  (Visual Studio generators ignore compiler launchers); `package.bat` follows
+  `TABLESKIM_PRESET`.
 
 ### Demo / test data
 

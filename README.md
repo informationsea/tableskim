@@ -137,7 +137,7 @@ must allow it (inside tmux, enable `set-clipboard`).
 
 Requirements:
 
-- A C++20 compiler (GCC, Clang, AppleClang or MSVC 2022)
+- A C++20 compiler (GCC, Clang, AppleClang or MSVC 2026)
 - CMake 3.22 or newer (Ninja recommended)
 - On Linux: fontconfig development files
 
@@ -176,11 +176,19 @@ On Linux, system libraries can be used instead of the bundled ones:
 
 ### Windows
 
-Use the Visual Studio 2022 presets from a Developer Command Prompt:
+Use the Visual Studio 2026 presets:
 
 ```bat
 cmake --preset vs-release
 cmake --build --preset vs-release
+```
+
+or, from a Developer Command Prompt, the Ninja presets (which also use
+ccache when it is installed):
+
+```bat
+cmake --preset msvc-release
+cmake --build --preset msvc-release
 ```
 
 ## Packaging

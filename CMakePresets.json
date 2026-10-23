@@ -64,7 +64,7 @@
             "name": "vs-base",
             "hidden": true,
             "inherits": "base",
-            "generator": "Visual Studio 17 2022",
+            "generator": "Visual Studio 18 2026",
             "architecture": {
                 "value": "x64",
                 "strategy": "external"
@@ -77,6 +77,37 @@
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
+            }
+        },
+        {
+            "name": "msvc-base",
+            "hidden": true,
+            "inherits": "base",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl",
+                "CMAKE_CXX_COMPILER": "cl"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "msvc-debug",
+            "displayName": "Debug (Ninja / MSVC, from a Developer Command Prompt)",
+            "inherits": "msvc-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "msvc-release",
+            "displayName": "Release (Ninja / MSVC, from a Developer Command Prompt)",
+            "inherits": "msvc-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
             }
         },
         {
@@ -112,6 +143,14 @@
         {
             "name": "make-release",
             "configurePreset": "make-release"
+        },
+        {
+            "name": "msvc-debug",
+            "configurePreset": "msvc-debug"
+        },
+        {
+            "name": "msvc-release",
+            "configurePreset": "msvc-release"
         },
         {
             "name": "vs-debug",
@@ -153,6 +192,16 @@
             "name": "make-release",
             "inherits": "test-base",
             "configurePreset": "make-release"
+        },
+        {
+            "name": "msvc-debug",
+            "inherits": "test-base",
+            "configurePreset": "msvc-debug"
+        },
+        {
+            "name": "msvc-release",
+            "inherits": "test-base",
+            "configurePreset": "msvc-release"
         },
         {
             "name": "vs-debug",

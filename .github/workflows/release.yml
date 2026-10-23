@@ -151,30 +151,42 @@ jobs:
   windows:
     needs: check-version
     runs-on: windows-latest
+    env:
+      TABLESKIM_PRESET: msvc-release
+      CCACHE_DIR: ${{ github.workspace }}\.ccache
+      CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@v4
-      - name: Install NSIS
-        run: choco install nsis -y --no-progress
+      - name: Install NSIS, Ninja and ccache
+        run: choco install nsis ninja ccache -y --no-progress
+      - name: Set up the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
       - name: Add NSIS to PATH
         shell: pwsh
         run: Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\NSIS"
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: build/vs-release/_deps
+          path: build/msvc-release/_deps
           key: windows-deps-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-windows-${{ github.sha }}
+          restore-keys: ccache-windows-
       - name: Build and package
         shell: cmd
         run: package.bat all
       - name: Run tests
         shell: cmd
-        run: ctest --preset vs-release
+        run: ctest --preset msvc-release
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
-            build/vs-release/*.exe
-            build/vs-release/*.zip
+            build/msvc-release/*.exe
+            build/msvc-release/*.zip
 
   release:
     needs: [linux-deb, linux-rpm, macos, windows]
