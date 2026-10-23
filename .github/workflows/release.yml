@@ -180,9 +180,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows
+          # Only the packages (tableskim-<version>-Windows-<arch>), not the
+          # programs built next to them.
           path: |
-            build/msvc-release/*.exe
-            build/msvc-release/*.zip
+            build/msvc-release/*-Windows-*.exe
+            build/msvc-release/*-Windows-*.zip
 
   release:
     needs: [linux-deb, linux-rpm, macos, windows]
