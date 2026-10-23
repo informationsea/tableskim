@@ -28,8 +28,8 @@ fi
 
 cd "$(dirname "$0")"
 
-# Test the cache, not the directory: a restored _deps cache (CI) or an
-# interrupted first configure leaves a directory that was never configured.
+# Test the cache, not the directory: an interrupted first configure leaves a
+# directory that was never configured.
 if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
     cmake --preset "${PRESET}"
 fi
