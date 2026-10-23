@@ -1,11 +1,13 @@
 #include "sql_history.hxx"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <mutex>
 #include <random>
 #include <system_error>
+#include <thread>
 
 #include "spdlog/spdlog.h"
 
@@ -122,7 +124,15 @@ void SqlHistory::save() const
             return;
         }
     }
-    std::filesystem::rename(partial, file_, ec);
+    // Windows refuses to replace a file another window is reading at that
+    // moment, so try again briefly.
+    for (int attempt = 0; attempt < 20; ++attempt)
+    {
+        std::filesystem::rename(partial, file_, ec);
+        if (!ec)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
     if (ec)
     {
         spdlog::warn("Cannot write the SQL history to {}: {}", utf8String(file_), ec.message());

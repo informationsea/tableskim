@@ -466,6 +466,9 @@ TEST_CASE("exportView: CSV and TSV quote only where needed")
                            "tab\t\"x\ty\"\n"
                            "empty\t\n");
     CHECK(fileTexts(tsv) == viewTexts(*model));
+    // The source stays open while the book lives, and Windows cannot remove it.
+    model.reset();
+    book.reset();
     for (const auto &path : {source, csv, tsv})
         std::filesystem::remove(path);
 }
@@ -657,6 +660,11 @@ TEST_CASE("exportView: Excel text is escaped and the sheet name made valid")
     // "007" keeps the column as text.
     CHECK(cellText(*sheet, 0, 1) == "007");
     CHECK(cellText(*sheet, 1, 1) == "1e3");
+    // Windows cannot remove files that are still open.
+    sheet.reset();
+    excel.reset();
+    model.reset();
+    book.reset();
     std::filesystem::remove(source);
     std::filesystem::remove(target);
 }

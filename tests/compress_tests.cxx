@@ -70,10 +70,14 @@ TEST_CASE("BGZF: blocks of at most 64 KiB and the end-of-file block")
         writer->write(sample());
         writer->finish();
     }
-    std::ifstream in(path, std::ios::binary);
-    std::ostringstream raw;
-    raw << in.rdbuf();
-    const std::string bytes = raw.str();
+    std::string bytes;
+    {
+        // Closed before the remove below, which Windows refuses otherwise.
+        std::ifstream in(path, std::ios::binary);
+        std::ostringstream raw;
+        raw << in.rdbuf();
+        bytes = raw.str();
+    }
     size_t blocks = 0;
     for (size_t at = 0; at < bytes.size(); ++blocks)
     {
