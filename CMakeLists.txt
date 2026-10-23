@@ -32,6 +32,11 @@ if(TABLESKIM_USE_CCACHE AND CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
     endif()
 endif()
 
+# CMake 3.28+ adds -fmodules-ts to C++20 sources of dependencies that ask for
+# the new policies (DuckDB), which ccache does not support, so those files were
+# never cached. Nothing here uses C++ modules.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 include(cmake/Dependencies.cmake)
 include(cmake/Licenses.cmake)
 
