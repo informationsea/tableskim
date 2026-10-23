@@ -106,6 +106,13 @@ int runGui(const CommandLineOptions &options)
                 table_windows.back()->set_text_encoding(*options.encoding);
             table_windows.back()->open(options.files[i]);
         }
+        else
+        {
+            // Greys out the commands that need a file, even if the window
+            // manager sends no FL_FOCUS.
+            table_windows.back()->sync_menu_items();
+            requestWindowMenuUpdate();
+        }
     }
     return Fl::run();
 }

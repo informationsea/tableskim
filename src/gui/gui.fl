@@ -66,7 +66,7 @@ class TableWindow {open
             callback callback_save_as
             xywh {0 0 100 20} shortcut 0x410073
           }
-          MenuItem {} {
+          MenuItem menuitem_revert {
             label Revert
             callback callback_revert
             xywh {0 0 100 20}
@@ -111,7 +111,7 @@ class TableWindow {open
             callback callback_redo
             xywh {0 0 100 20} shortcut 0x41007a divider
           }
-          MenuItem {} {
+          MenuItem menuitem_copy {
             label Copy
             callback callback_copy_menu
             xywh {0 0 100 20} shortcut 0x400063
@@ -121,22 +121,22 @@ class TableWindow {open
             callback callback_paste
             xywh {0 0 100 20} shortcut 0x400076 divider
           }
-          MenuItem {} {
+          MenuItem menuitem_find {
             label {Find...}
             callback callback_find
             xywh {0 0 100 20} shortcut 0x400066
           }
-          MenuItem {} {
+          MenuItem menuitem_go_to {
             label {Go To...}
             callback callback_go_to
             xywh {0 0 100 20} shortcut 0x400067
           }
-          MenuItem {} {
+          MenuItem menuitem_filter {
             label {Filter...}
             callback callback_filter
             xywh {0 0 100 20} shortcut 0x410066
           }
-          MenuItem {} {
+          MenuItem menuitem_clear_filter {
             label {Clear Filter}
             callback callback_clear_filter
             xywh {0 0 100 20}

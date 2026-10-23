@@ -435,10 +435,25 @@ void TableWindow::sync_menu_items()
         menuitem_histogram->deactivate();
     }
     auto *current_view = dynamic_cast<GuiTableView *>(tab->value());
-    if (current_view && current_view->model())
-        menuitem_export_view->activate();
-    else
-        menuitem_export_view->deactivate();
+    const bool has_sheet = current_view && current_view->model();
+    // Commands that need an open file or sheet.
+    const std::pair<Fl_Menu_Item *, bool> file_items[] = {
+        {menuitem_revert, !current_path.empty()},
+        {menuitem_show_in_file_browser, !current_path.empty()},
+        {menuitem_export_view, has_sheet},
+        {menuitem_copy, has_sheet},
+        {menuitem_find, has_sheet},
+        {menuitem_go_to, has_sheet},
+        {menuitem_filter, has_sheet},
+        {menuitem_clear_filter, has_sheet},
+    };
+    for (const auto &[item, active] : file_items)
+    {
+        if (active)
+            item->activate();
+        else
+            item->deactivate();
+    }
     if (current_view && !current_view->hiddenColumns().empty())
         menuitem_show_all_columns->activate();
     else
