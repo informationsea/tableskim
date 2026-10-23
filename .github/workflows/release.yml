@@ -49,12 +49,14 @@ jobs:
             libxcursor-dev libxrender-dev libxfixes-dev libpango1.0-dev libcairo2-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev libdbus-1-dev \
             libgtk-3-dev libdecor-0-dev libgl1-mesa-dev libglu1-mesa-dev
-      - name: Cache ccache
-        uses: actions/cache@v4
+      # The build without the GUI only reads the cache; the one with the GUI
+      # (also built by CI, which shares ccache-ubuntu-24.04-*) writes it.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-linux-deb-gui-${{ matrix.gui }}-${{ github.sha }}
-          restore-keys: ccache-linux-deb-gui-${{ matrix.gui }}-
+          key: ccache-ubuntu-24.04-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-ubuntu-24.04-
       - name: Build, test and package
         # build.sh does not configure again when the cache exists.
         run: |
@@ -67,6 +69,12 @@ jobs:
           path: |
             build/release/*.deb
             build/release/*.zip
+      - name: Save ccache
+        if: success() && matrix.gui == 'ON'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-ubuntu-24.04-${{ github.sha }}-${{ github.run_id }}
 
   linux-rpm:
     name: linux-rpm (GUI ${{ matrix.gui }})
@@ -93,12 +101,14 @@ jobs:
             wayland-devel wayland-protocols-devel libxkbcommon-devel dbus-devel \
             gtk3-devel libdecor-devel mesa-libGL-devel mesa-libGLU-devel
       - uses: actions/checkout@v4
-      - name: Cache ccache
-        uses: actions/cache@v4
+      # The build without the GUI only reads the cache; the one with the GUI
+      # writes it.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-linux-rpm-gui-${{ matrix.gui }}-${{ github.sha }}
-          restore-keys: ccache-linux-rpm-gui-${{ matrix.gui }}-
+          key: ccache-rocky10-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-rocky10-
       - name: Build, test and package
         run: |
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
@@ -107,6 +117,12 @@ jobs:
         with:
           name: linux-rpm-gui-${{ matrix.gui }}
           path: build/release/*.rpm
+      - name: Save ccache
+        if: success() && matrix.gui == 'ON'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-rocky10-${{ github.sha }}-${{ github.run_id }}
 
   macos:
     needs: check-version
@@ -122,8 +138,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ccache-macos-${{ github.sha }}
-          restore-keys: ccache-macos-
+          key: ccache-macos-latest-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-macos-latest-
       - name: Build, test and package
         run: ./package.sh all
       - uses: actions/upload-artifact@v4
@@ -153,8 +169,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ccache-windows-${{ github.sha }}
-          restore-keys: ccache-windows-
+          key: ccache-windows-latest-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-windows-latest-
       - name: Build and package
         shell: cmd
         run: package.bat all
