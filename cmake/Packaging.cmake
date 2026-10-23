@@ -72,6 +72,24 @@ elseif(APPLE)
         BUNDLE DESTINATION . COMPONENT runtime
         RUNTIME DESTINATION . COMPONENT runtime
     )
+    # An ad-hoc signature (no certificate): Apple Silicon refuses to run
+    # unsigned code, and a download without one is reported as "damaged". It
+    # does not satisfy Gatekeeper, which still asks the user to allow the app
+    # once; that needs a Developer ID signature and notarization.
+    install(CODE "
+        set(_dest \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}\")
+        file(GLOB _apps \"\${_dest}/*.app\")
+        if(NOT _apps)
+            set(_apps \"\${_dest}/tableskim\")
+        endif()
+        foreach(_app IN LISTS _apps)
+            execute_process(COMMAND codesign --force --deep --sign - \"\${_app}\"
+                RESULT_VARIABLE _result)
+            if(NOT _result EQUAL 0)
+                message(FATAL_ERROR \"codesign failed for \${_app}\")
+            endif()
+        endforeach()
+    " COMPONENT runtime)
     install(FILES LICENSE ${TABLESKIM_LICENSE_FILE} DESTINATION . COMPONENT runtime)
     install(DIRECTORY ${TABLESKIM_MANUAL_DIR}/ DESTINATION Manual COMPONENT runtime)
 elseif(WIN32)

@@ -12,6 +12,12 @@ TableSkim は必要なライブラリをすべて組み込んだネイティブ�
 | macOS            | `.dmg` ディスクイメージ、または `TableSkim.app` を含む `.zip` |
 | Windows          | インストーラー（`.exe`）、`.zip`、`.msix`                    |
 
+macOS 版は開発元の証明書で署名していないため、初回は macOS が許可を求めます。`TableSkim.app` を Control キーを押しながらクリック(右クリック)して **開く** を選ぶか、**システム設定 → プライバシーとセキュリティ** で許可してください。「壊れている」と表示されるときは、ターミナルでダウンロードの印を外します。
+
+```sh
+xattr -dr com.apple.quarantine /Applications/TableSkim.app
+```
+
 自分でビルドする場合は [README](../../README.md#building) の *Building*
 の節を参照してください。
 
