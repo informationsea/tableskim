@@ -11,6 +11,7 @@
 
 #include "compress.hxx"
 #include "decompress.hxx"
+#include "file_util.hxx"
 #include "table.hxx"
 #include "test_helpers.hxx"
 #include "text_encoding.hxx"
@@ -430,7 +431,7 @@ TEST_CASE("Saving refuses what it cannot write")
         CHECK(result.message.find("Shift_JIS") != std::string::npos);
         // Nothing is left behind.
         for (const auto &entry : std::filesystem::directory_iterator(tempDirectory()))
-            CHECK(entry.path().filename().string().find("tableskim-save") == std::string::npos);
+            CHECK(utf8String(entry.path().filename()).find("tableskim-save") == std::string::npos);
     }
     SECTION("a file changed since it was opened")
     {
