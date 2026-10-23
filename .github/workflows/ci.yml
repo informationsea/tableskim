@@ -23,10 +23,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-2022]
         gui: ["ON", "OFF"]
     env:
-      PRESET: ${{ matrix.os == 'windows-latest' && 'vs-release' || 'release' }}
+      PRESET: ${{ matrix.os == 'windows-2022' && 'vs-release' || 'release' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies (Linux, GUI)
