@@ -1,4 +1,16 @@
-# TableSkim
+<p align="center">
+  <img src="src/images/icon.png" alt="TableSkim icon" width="128" height="128">
+</p>
+
+<h1 align="center">TableSkim</h1>
+
+<p align="center">
+  <img src="docs/images/gui-main-window.png" alt="TableSkim GUI showing a CSV file" width="760">
+</p>
+
+<p align="center">
+  <img src="docs/images/tui-main.png" alt="TableSkim terminal UI" width="560">
+</p>
 
 TableSkim is a lightweight, fast viewer for tabular files. Open a large CSV,
 an Excel workbook, a Parquet or JSON file or a DuckDB / SQLite database and start scrolling immediately: rows are loaded in the
