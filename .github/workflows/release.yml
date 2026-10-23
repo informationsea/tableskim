@@ -36,12 +36,15 @@ jobs:
         # OFF: the terminal UI only, packaged as tableskim-tui.
         gui: ["ON", "OFF"]
     runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build dpkg-dev \
+          sudo apt-get install -y ninja-build ccache dpkg-dev \
             libfontconfig1-dev libx11-dev libxext-dev libxft-dev libxinerama-dev \
             libxcursor-dev libxrender-dev libxfixes-dev libpango1.0-dev libcairo2-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev libdbus-1-dev \
@@ -51,6 +54,12 @@ jobs:
         with:
           path: build/release/_deps
           key: linux-deb-gui-${{ matrix.gui }}-deps-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-deb-gui-${{ matrix.gui }}-${{ github.sha }}
+          restore-keys: ccache-linux-deb-gui-${{ matrix.gui }}-
       - name: Build, test and package
         # build.sh does not configure again when the cache exists.
         run: |
@@ -74,12 +83,15 @@ jobs:
         gui: ["ON", "OFF"]
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:10
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
     steps:
       - name: Install dependencies
         run: |
           dnf install -y dnf-plugins-core epel-release
           dnf config-manager --set-enabled crb
-          dnf install -y git gcc gcc-c++ make cmake ninja-build rpm-build \
+          dnf install -y git gcc gcc-c++ make cmake ninja-build ccache rpm-build \
             which findutils tar zstd perl-core python3 \
             fontconfig-devel libX11-devel libXext-devel libXft-devel libXinerama-devel \
             libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel \
@@ -91,6 +103,12 @@ jobs:
         with:
           path: build/release/_deps
           key: linux-rpm-gui-${{ matrix.gui }}-deps-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-rpm-gui-${{ matrix.gui }}-${{ github.sha }}
+          restore-keys: ccache-linux-rpm-gui-${{ matrix.gui }}-
       - name: Build, test and package
         run: |
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
@@ -103,15 +121,24 @@ jobs:
   macos:
     needs: check-version
     runs-on: macos-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: brew install ninja
+        run: brew install ninja ccache
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
           path: build/release/_deps
           key: macos-deps-${{ hashFiles('cmake/Dependencies.cmake') }}
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-macos-${{ github.sha }}
+          restore-keys: ccache-macos-
       - name: Build, test and package
         run: ./package.sh all
       - uses: actions/upload-artifact@v4

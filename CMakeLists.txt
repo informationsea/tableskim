@@ -18,6 +18,19 @@ endif()
 
 option(TABLESKIM_BUILD_GUI "Build the FLTK GUI; when OFF, tableskim is the terminal UI only and FLTK is not needed" ON)
 
+# Reuse compiled objects through ccache when it is installed, for this project
+# and every dependency (set before they are added). Visual Studio generators
+# ignore compiler launchers, so this applies to Ninja and Makefiles only.
+option(TABLESKIM_USE_CCACHE "Compile through ccache when it is found" ON)
+if(TABLESKIM_USE_CCACHE AND CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+    find_program(TABLESKIM_CCACHE ccache)
+    if(TABLESKIM_CCACHE)
+        message(STATUS "Using ccache: ${TABLESKIM_CCACHE}")
+        set(CMAKE_C_COMPILER_LAUNCHER ${TABLESKIM_CCACHE})
+        set(CMAKE_CXX_COMPILER_LAUNCHER ${TABLESKIM_CCACHE})
+    endif()
+endif()
+
 include(cmake/Dependencies.cmake)
 include(cmake/Licenses.cmake)
 

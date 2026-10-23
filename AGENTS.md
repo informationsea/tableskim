@@ -58,6 +58,10 @@ ctest --preset debug                 # output is shown on failure
 
 - The first configure clones and builds DuckDB and the other dependencies; it
   takes a long time. Reuse the existing `build/` directory instead of wiping it.
+- If `ccache` is installed, CMake compiles through it (this project and the
+  dependencies; Ninja and Makefile generators only, `-DTABLESKIM_USE_CCACHE=OFF`
+  disables it). CI and the release workflow keep its cache (`.ccache`) with
+  `actions/cache`. Configure again after installing it.
 - Dependencies are always built as Release, even in Debug builds (except with
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
   `cmake/Dependencies.cmake`.
