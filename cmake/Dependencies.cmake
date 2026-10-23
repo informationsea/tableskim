@@ -15,8 +15,13 @@ endif()
 # Without the GUI, FLTK is not needed at all.
 if(UNIX AND NOT APPLE AND TABLESKIM_BUILD_GUI)
     option(TABLESKIM_USE_SYSTEM_FLTK "Use the system FLTK (>= 1.4) instead of building the bundled copy" OFF)
+    option(TABLESKIM_X11_ONLY "Build the bundled FLTK for X11 only, without Wayland" OFF)
 else()
     set(TABLESKIM_USE_SYSTEM_FLTK OFF)
+    set(TABLESKIM_X11_ONLY OFF)
+endif()
+if(TABLESKIM_X11_ONLY AND TABLESKIM_USE_SYSTEM_FLTK)
+    message(WARNING "TABLESKIM_X11_ONLY has no effect on the system FLTK")
 endif()
 
 if(TABLESKIM_USE_SYSTEM_FLTK)
@@ -38,6 +43,13 @@ elseif(TABLESKIM_BUILD_GUI)
     set(FLTK_BUILD_FORMS OFF)
     set(FLTK_BUILD_EXAMPLES OFF)
     set(FLTK_BUILD_SHARED_LIBS OFF)
+    if(TABLESKIM_X11_ONLY)
+        # For older distributions: no libwayland, libxkbcommon, libdecor or
+        # D-Bus at run time. Cairo (with Pango) still draws, as in the X11
+        # part of the default hybrid build, so text looks the same.
+        set(FLTK_BACKEND_WAYLAND OFF)
+        set(FLTK_GRAPHICS_CAIRO ON)
+    endif()
 
     FetchContent_MakeAvailable(fltk)
 endif()

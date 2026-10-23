@@ -127,6 +127,57 @@ jobs:
           path: .ccache
           key: ccache-rocky10-${{ github.sha }}-${{ github.run_id }}
 
+  # A ZIP for older distributions: glibc 2.28 (RHEL 8, Debian 10,
+  # Ubuntu 20.04 and newer), the oldest that the actions run on in a
+  # container. GCC comes from gcc-toolset, which links the newer parts of
+  # libstdc++ statically, and the GUI is X11 only.
+  linux-legacy:
+    name: linux-legacy (GUI ${{ matrix.gui }})
+    needs: check-version
+    strategy:
+      fail-fast: false
+      matrix:
+        gui: ["ON", "OFF"]
+    runs-on: ubuntu-latest
+    container: rockylinux/rockylinux:8
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y dnf-plugins-core epel-release
+          dnf config-manager --set-enabled powertools
+          dnf install -y git gcc-toolset-14 make cmake ninja-build ccache \
+            which findutils tar zstd perl-core python3 \
+            fontconfig-devel libX11-devel libXext-devel libXft-devel libXinerama-devel \
+            libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel
+      - uses: actions/checkout@v4
+      # Only this workflow builds here, so the build with the GUI writes the
+      # cache and the one without reads it.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-rocky8-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-rocky8-
+      - name: Build, test and package
+        shell: bash
+        run: |
+          source /opt/rh/gcc-toolset-14/enable
+          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }} -DTABLESKIM_X11_ONLY=ON
+          ./package.sh zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-legacy-gui-${{ matrix.gui }}
+          path: build/release/*.zip
+      - name: Save ccache
+        if: success() && matrix.gui == 'ON'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-rocky8-${{ github.sha }}-${{ github.run_id }}
+
   macos:
     needs: check-version
     runs-on: macos-latest
@@ -190,7 +241,7 @@ jobs:
             build/msvc-release/*-Windows-*.zip
 
   release:
-    needs: [linux-deb, linux-rpm, macos, windows]
+    needs: [linux-deb, linux-rpm, linux-legacy, macos, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

@@ -34,6 +34,9 @@ config package) by configuring with `-DTABLESKIM_USE_SYSTEM_FLTK=ON`.
 Likewise `-DTABLESKIM_USE_SYSTEM_SQLITE=ON` and
 `-DTABLESKIM_USE_SYSTEM_COMPRESSION=ON` (zlib, bzip2, liblzma, zstd) use the
 system copies; each option is independent.
+`-DTABLESKIM_X11_ONLY=ON` builds the bundled FLTK without Wayland (still
+drawing with Cairo and Pango); the release workflow uses it for the ZIP
+built on Rocky Linux 8 for older distributions (glibc 2.28).
 `-DTABLESKIM_BUILD_GUI=OFF` drops the GUI (and FLTK) entirely: `src/gui/`
 is not compiled, `TABLESKIM_HAS_GUI` is left undefined and `main()` always
 runs the TUI. Keep GUI-only code out of `src/common/` and `src/tui/`.
