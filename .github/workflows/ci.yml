@@ -61,3 +61,12 @@ jobs:
         run: cmake --build --preset ${{ env.PRESET }}
       - name: Test
         run: ctest --preset ${{ env.PRESET }}
+      - name: Package (ZIP)
+        shell: bash
+        run: cd build/${{ env.PRESET }} && cpack -G ZIP
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: tableskim-zip-${{ matrix.os }}
+          path: build/${{ env.PRESET }}/*.zip
+          if-no-files-found: error
