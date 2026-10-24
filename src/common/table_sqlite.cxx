@@ -701,8 +701,11 @@ namespace
             return tables;
         }
 
-        SqlOutcome executeSql(const std::string &sql) override
+        SqlOutcome executeSql(const std::string &sql, std::stop_token stop) override
         {
+            InterruptScope interrupt(stop, db_->db);
+            if (stop.stop_requested())
+                throw std::runtime_error("SQL execution was cancelled");
             sqlite3_stmt *raw = nullptr;
             const char *tail = nullptr;
             if (sqlite3_prepare_v2(db_->db, sql.c_str(), static_cast<int>(sql.size()), &raw, &tail) != SQLITE_OK)
@@ -727,7 +730,8 @@ namespace
             }
             stmt.reset();
             const int changes_before = sqlite3_total_changes(db_->db);
-            db_->exec(sql);
+            if (!db_->exec(sql) || stop.stop_requested())
+                throw std::runtime_error("SQL execution was cancelled");
             const int changes = sqlite3_total_changes(db_->db) - changes_before;
             return {.message = changes > 0 ? std::to_string(changes) + " rows changed" : "Done"};
         }

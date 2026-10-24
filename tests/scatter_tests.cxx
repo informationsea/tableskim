@@ -292,6 +292,23 @@ TEST_CASE("scatterRangeConditions keep the rows in a rectangle", "[scatter]")
 
 TEST_CASE("ScatterStats: correlation and least-squares line", "[scatter]")
 {
+    SECTION("correlation with large and small variances")
+    {
+        const double scale = GENERATE(1e100, 1e-100);
+        ScatterStats line, inverse, uncorrelated;
+        for (const double x : {-1.0, 0.0, 1.0})
+        {
+            line.add(x * scale, x * scale);
+            inverse.add(x * scale, -x * scale);
+            uncorrelated.add(x * scale, x * x * scale);
+        }
+        REQUIRE(line.correlation());
+        CHECK(*line.correlation() == Catch::Approx(1.0));
+        REQUIRE(inverse.correlation());
+        CHECK(*inverse.correlation() == Catch::Approx(-1.0));
+        REQUIRE(uncorrelated.correlation());
+        CHECK(*uncorrelated.correlation() == Catch::Approx(0.0).margin(1e-15));
+    }
     SECTION("a line")
     {
         std::vector<Row> rows;

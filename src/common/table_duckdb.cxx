@@ -1042,10 +1042,14 @@ namespace
 
         bool supportsSql() const override { return supports_sql_; }
 
-        SqlOutcome executeSql(const std::string &sql) override
+        SqlOutcome executeSql(const std::string &sql, std::stop_token stop) override
         {
             if (!supports_sql_)
-                return DataSource::executeSql(sql);
+                return DataSource::executeSql(sql, stop);
+            std::stop_callback interrupt(stop, [this]
+                                         { db_->conn->Interrupt(); });
+            if (stop.stop_requested())
+                throw std::runtime_error("SQL execution was cancelled");
             duckdb::vector<duckdb::unique_ptr<duckdb::SQLStatement>> statements;
             try
             {
@@ -1070,6 +1074,8 @@ namespace
                 // Binding the query alone reports errors against the user's text,
                 // not the CREATE VIEW around it.
                 prepareUserSql(*db_, text);
+                if (stop.stop_requested())
+                    throw std::runtime_error("SQL execution was cancelled");
                 db_->query("CREATE OR REPLACE TEMP VIEW " + std::string(kSqlResultView) + " AS " + text);
                 if (sql_sheet_.empty())
                 {
@@ -1082,8 +1088,12 @@ namespace
             std::unique_ptr<duckdb::MaterializedQueryResult> result;
             for (const auto &statement : statements)
             {
+                if (stop.stop_requested())
+                    throw std::runtime_error("SQL execution was cancelled");
                 const auto text = statement->ToString();
                 prepareUserSql(*db_, text);
+                if (stop.stop_requested())
+                    throw std::runtime_error("SQL execution was cancelled");
                 result = db_->query(text);
             }
             return {.message = describeResult(*result)};

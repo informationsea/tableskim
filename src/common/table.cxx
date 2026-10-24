@@ -2797,12 +2797,12 @@ std::shared_ptr<TableModel> TableBook::sheet(const std::string &sheet_name)
 
 void TableBook::executeSql(std::string sql, std::function<void(const SqlResult &)> done)
 {
-    scheduler_->post([this, sql = std::move(sql), done = std::move(done)](DataSource &data_source, std::stop_token)
+    scheduler_->post([this, sql = std::move(sql), done = std::move(done)](DataSource &data_source, std::stop_token stop)
                      {
         SqlResult result;
         try
         {
-            const SqlOutcome outcome = data_source.executeSql(sql);
+            const SqlOutcome outcome = data_source.executeSql(sql, stop);
             result = {.ok = true, .sheet = outcome.sheet, .message = outcome.message};
             if (!outcome.sheet.empty())
             {
@@ -3023,7 +3023,7 @@ void commitSave(const std::filesystem::path &written, const std::filesystem::pat
     std::filesystem::rename(written, resolved);
 }
 
-SqlOutcome DataSource::executeSql(const std::string &)
+SqlOutcome DataSource::executeSql(const std::string &, std::stop_token)
 {
     throw std::runtime_error("SQL is not supported for this file");
 }

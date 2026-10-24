@@ -213,6 +213,7 @@ private:
     bool show_text_dialog_ = false;
     // Between the bracketed paste markers: pasted keys are text, not commands.
     bool pasting_ = false;
+    bool discard_paste_ = false; // a paste overlapping a save is dropped in full
     std::string dialog_title_;
     std::vector<std::string> dialog_lines_;
     bool dialog_wrap_ = true;

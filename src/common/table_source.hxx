@@ -138,8 +138,8 @@ public:
     // A single query (SELECT, WITH, VALUES, ...) is
     // kept as a TEMP view instead, shown as the sheet named in the outcome;
     // the next query replaces it. sheetNames() then includes that sheet.
-    // Throws std::runtime_error.
-    virtual SqlOutcome executeSql(const std::string &sql);
+    // Throws std::runtime_error, including when `stop` cancels execution.
+    virtual SqlOutcome executeSql(const std::string &sql, std::stop_token stop = {});
     // The tables and views SQL can name, with their columns, for completion:
     // the file's and temporary ones, but not TableSkim's own. Throws
     // std::runtime_error.

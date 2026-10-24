@@ -28,7 +28,9 @@ std::optional<double> ScatterStats::correlation() const
 {
     if (n < 2 || !(m2_x > 0) || !(m2_y > 0))
         return std::nullopt;
-    return std::clamp(c_xy / std::sqrt(m2_x * m2_y), -1.0, 1.0);
+    // Multiplying the variances first can overflow or underflow even when
+    // both variances and the correlation are representable.
+    return std::clamp(c_xy / std::sqrt(m2_x) / std::sqrt(m2_y), -1.0, 1.0);
 }
 
 std::optional<double> ScatterStats::slope() const

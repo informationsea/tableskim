@@ -2,10 +2,12 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <iterator>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -14,6 +16,7 @@
 #include "sql_text.hxx"
 #include "table.hxx"
 #include "table_duckdb.hxx"
+#include "table_sqlite.hxx"
 #include "test_helpers.hxx"
 
 namespace
@@ -54,6 +57,66 @@ namespace
         return duckDbStringLiteral(std::string(text.begin(), text.end()));
     }
 } // namespace
+
+TEST_CASE("SQL: backend execution can be cancelled", "[regression]")
+{
+    const bool sqlite = GENERATE(false, true);
+    auto data = sqlite ? openSqliteDataSource(kDemoData / "demo.sqlite3")
+                       : openDuckDbDataSource(kDemoData / "demo.duckdb");
+    const std::string sql = sqlite
+        ? "CREATE TEMP TABLE slow AS WITH RECURSIVE c(x) AS "
+          "(VALUES(0) UNION ALL SELECT x+1 FROM c WHERE x<10000000) SELECT sum(x) FROM c"
+        : "CREATE TEMP TABLE slow AS SELECT sum(sin(i)) FROM range(100000000) AS t(i)";
+    std::stop_source stop;
+    auto result = std::async(std::launch::async, [&]
+                            {
+        try
+        {
+            data->executeSql(sql, stop.get_token());
+            return false;
+        }
+        catch (const std::exception &)
+        {
+            return true;
+        } });
+    REQUIRE(result.wait_for(std::chrono::milliseconds(20)) == std::future_status::timeout);
+    stop.request_stop();
+    REQUIRE(result.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+    CHECK(result.get());
+    CHECK_FALSE(data->executeSql("SELECT 1").sheet.empty());
+
+    CHECK_THROWS(data->executeSql("CREATE TEMP TABLE cancelled(x INTEGER)", stop.get_token()));
+}
+
+TEST_CASE("SQL: closing a book cancels its SQL task", "[regression]")
+{
+    struct CancellableData : public DataSource
+    {
+        std::promise<void> started;
+        bool &cancelled;
+        explicit CancellableData(bool &result) : cancelled(result) {}
+        std::vector<std::string> sheetNames() override { return {}; }
+        std::unique_ptr<SheetSource> openSheet(const std::string &) override { return {}; }
+        SqlOutcome executeSql(const std::string &, std::stop_token stop) override
+        {
+            std::mutex mutex;
+            std::condition_variable_any cv;
+            std::unique_lock lock(mutex);
+            started.set_value();
+            cv.wait_for(lock, stop, std::chrono::seconds(1), [] { return false; });
+            cancelled = stop.stop_requested();
+            return {};
+        }
+    };
+    bool cancelled = false;
+    auto data = std::make_unique<CancellableData>(cancelled);
+    auto started = data->started.get_future();
+    auto book = std::make_unique<TableBook>(std::move(data));
+    book->executeSql("SELECT 1", {});
+    REQUIRE(started.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+    book.reset();
+    CHECK(cancelled);
+}
 
 TEST_CASE("SQL text helpers")
 {

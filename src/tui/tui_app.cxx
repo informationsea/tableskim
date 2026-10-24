@@ -36,6 +36,8 @@ namespace
     const int MAX_SORT_STATUS_WIDTH = 16;
     const int MAX_FILTER_STATUS_WIDTH = 24;
     const int MAX_FILTER_DIALOG_WIDTH = 76;
+    // Match the GUI's limit on memory used by a single clear and its undo.
+    const size_t MAX_CLEARED_CELLS = 5000000;
     const int FILTER_OP_WIDTH = 12;
     // The sheet a Group By adds (TableBook::addResultSheet()).
     const char *const GROUP_BY_SHEET = "Group By";
@@ -1416,10 +1418,29 @@ bool TuiApp::handlePasteEvent(const Event &event, const Component &target)
     if (event == paste_begin || event == paste_end)
     {
         pasting_ = event == paste_begin;
-        if (!pasting_ && !paste_buffer_.empty())
-            pasteCells(std::exchange(paste_buffer_, {}));
+        if (pasting_)
+        {
+            paste_buffer_.clear();
+            discard_paste_ = saving_;
+        }
+        else
+        {
+            if (!saving_ && !discard_paste_ && !paste_buffer_.empty())
+                pasteCells(paste_buffer_);
+            paste_buffer_.clear();
+            discard_paste_ = false;
+        }
         return true;
     }
+    if (saving_)
+    {
+        paste_buffer_.clear();
+        if (pasting_)
+            discard_paste_ = true;
+        return true;
+    }
+    if (pasting_ && discard_paste_)
+        return true;
     if (!pasting_ || event.is_mouse() || event == Event::Custom)
         return false;
     if (!typingText())
@@ -3304,6 +3325,12 @@ void TuiApp::clearSelectedCells()
     if (!view || !view->model())
         return;
     const TuiTableView::Selection sel = view->selection();
+    const size_t columns = view->hiddenColumns().visibleIn(sel.col_left, sel.col_right);
+    if (columns > 0 && sel.row_bottom - sel.row_top >= MAX_CLEARED_CELLS / columns)
+    {
+        setStatus("Too many cells to clear at once", true);
+        return;
+    }
     std::vector<TableModel::CellText> cells;
     for (size_t r = sel.row_top; r <= sel.row_bottom; ++r)
     {
@@ -3336,7 +3363,7 @@ void TuiApp::undoEdit(bool redo)
 void TuiApp::pasteCells(const std::string &text)
 {
     TuiTableView *view = currentView();
-    if (!editing() || !view || !view->model() || text.empty())
+    if (saving_ || !editing() || !view || !view->model() || text.empty())
         return;
     const TuiTableView::Selection sel = view->selection();
     const auto &model = view->model();
