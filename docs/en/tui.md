@@ -46,7 +46,9 @@ quit.
 - The **row numbers** are on the left.
 - The **status bar** at the bottom shows the file name, the current cell
   (`R1C1`), messages, the number of rows and columns, and the active
-  options (`header`, `auto-revert`, the filter, the search).
+  options (`header`, `auto-revert`, the filter, the search). When there is
+  no message, it lists the keys used most (`/ search  f filter  o sort`
+  …, and in edit mode `Enter edit  u undo  ^S save` …), as many as fit.
 - Files with several sheets show **sheet tabs** at the top.
 
 Press `?` (or `F1`) at any time for the list of keys.

@@ -282,6 +282,8 @@ private:
     bool handleDensityEvent(ftxui::Event event);
     ftxui::Element renderDensity();
     ftxui::Element renderStatusBar();
+    // Frequently used keys for the status bar, in at most `width` columns.
+    std::string keyHintText(int width) const;
     ftxui::Element renderSearchPrompt();
     ftxui::Element renderSqlPrompt();
     ftxui::Element renderGoToPrompt();

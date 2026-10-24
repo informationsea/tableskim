@@ -2349,14 +2349,64 @@ Element TuiApp::renderStatusBar()
     right.push_back(text(auto_revert_ ? "│ auto-revert " : "│ no auto-revert "));
     right.push_back(text("│ ? help "));
 
-    Element message = text(status_message_.empty() ? "" : " " + status_message_);
-    if (status_is_error_)
-        message = message | color(Color::Red);
+    Element message;
+    if (!status_message_.empty())
+    {
+        message = text(" " + status_message_);
+        if (status_is_error_)
+            message = message | color(Color::Red);
+    }
+    else
+    {
+        // The keys used most, as many as fit between the two sides.
+        int used = 0;
+        for (const Elements *side : {&left, &right})
+        {
+            for (const Element &element : *side)
+            {
+                element->ComputeRequirement();
+                used += element->requirement().min_x;
+            }
+        }
+        // Grey text: the bar is inverted, so its background is the text
+        // colour. Some terminals (xterm) dim the background of inverted
+        // text as well, which would make the hints a grey block.
+        message = hbox(text(keyHintText(Terminal::Size().dimx - used)) | bgcolor(Color::GrayDark), filler());
+    }
     Elements line = std::move(left);
     line.push_back(message | flex);
     for (auto &element : right)
         line.push_back(std::move(element));
     return hbox(std::move(line)) | inverted;
+}
+
+std::string TuiApp::keyHintText(int width) const
+{
+    TuiTableView *view = currentView();
+    if (!book_ || !view || !view->model() || histogram_model_ || density_model_)
+        return {};
+    std::vector<std::string> hints;
+    if (editing())
+        hints = {"Enter edit", "u undo", "^R redo", "^S save", "I leave edit mode"};
+    else
+    {
+        hints = {"/ search", "f filter", "o sort", "S stats", "B histogram", "M density"};
+        if (book_->supportsSql())
+            hints.push_back(": SQL");
+        hints.push_back("w export");
+        if (book_->supportsEditing())
+            hints.push_back("I edit");
+    }
+    hints.push_back("q quit");
+    std::string text;
+    for (const std::string &hint : hints)
+    {
+        // Whole hints only, two spaces apart and from the right side.
+        if (string_width(text) + string_width(hint) + 4 > width)
+            break;
+        text += "  " + hint;
+    }
+    return text;
 }
 
 // Replaces the status bar while typing, like vim's command line.
