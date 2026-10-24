@@ -10,6 +10,7 @@
 #include "table.hxx"
 
 class Fl_Box;
+class Fl_Button;
 class Fl_Choice;
 class Fl_Double_Window;
 class Fl_Widget;
@@ -42,6 +43,7 @@ private:
     std::unique_ptr<Fl_Double_Window> window_;
     Fl_Choice *column_choice_ = nullptr;
     Fl_Box *status_ = nullptr;
+    Fl_Button *save_button_ = nullptr;
     Chart *chart_ = nullptr;
     Fl_Box *detail_ = nullptr;
     std::shared_ptr<TableModel> model_;
@@ -64,6 +66,7 @@ private:
     void filterBy(size_t index);
     static void deferredUpdate(void *data);
     static void columnCallback(Fl_Widget *, void *data);
+    static void saveCallback(Fl_Widget *, void *data);
     static void closeCallback(Fl_Widget *, void *data);
 };
 

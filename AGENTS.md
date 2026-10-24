@@ -239,7 +239,14 @@ read their header comments before changing anything in `src/common/`.
   and `ScatterStats` (Pearson's r and the least-squares line, by Welford's
   updates) over every row counted.
   The GUI shows points or the density in `ScatterWindow` (`gui_scatter.cxx`),
-  the TUI the density only, instead of the sheet (`M`).
+  the TUI the density only, instead of the sheet (`M`). A text X makes the
+  plot categorical: its most frequent values (`x_axis.top`) are the
+  categories, plus "(other)"; the counter keeps each category's Y values
+  for `boxStats()` (box plots, both UIs).
+- The GUI's histogram and scatter windows write their chart widget as PNG
+  (`Fl_Image_Surface`, `fl_write_png()`) or SVG (`Fl_SVG_File_Surface`)
+  with `writeWidgetImage()` (`gui_image_export.cxx`), so the image is what
+  the widget draws.
 - `groupByView()` (`group_by.{hxx,cxx}`) groups the rows of a view, read
   through `readView()` like an export, with a `GroupByAccumulator`: groups
   keyed by their values (sort order, exact values apart), and one

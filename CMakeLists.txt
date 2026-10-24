@@ -198,6 +198,8 @@ if(TABLESKIM_BUILD_GUI)
         src/gui/gui_scatter.cxx
         src/gui/gui_group_by.hxx
         src/gui/gui_group_by.cxx
+        src/gui/gui_image_export.hxx
+        src/gui/gui_image_export.cxx
         src/gui/gui_help.hxx
         src/gui/gui_help.cxx
         src/gui/gui_fonts.hxx

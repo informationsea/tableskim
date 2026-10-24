@@ -645,14 +645,74 @@ std::string scatterValueText(const Histogram &axis, double coordinate)
         const std::string text = formatCell(DateTime{static_cast<int64_t>(std::llround(coordinate))});
         return axis.dates ? text.substr(0, 10) : text;
     }
-    if (axis.integers && std::fabs(coordinate) < 9.007199254740992e15)
+    // Whole numbers in full: the shortest form of 500000.0 is "5e+05".
+    if ((axis.integers || coordinate == std::floor(coordinate)) && std::fabs(coordinate) < 9.007199254740992e15)
         return std::to_string(static_cast<int64_t>(std::llround(coordinate)));
     return formatCell(CellValue{coordinate});
+}
+
+std::string scatterCategoryText(const ScatterPlot &plot, size_t category)
+{
+    if (category < plot.categories.size())
+        return formatCell(plot.categories[category]);
+    return "(other)";
+}
+
+std::vector<FilterCondition> scatterCategoryConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
+                                                       size_t category)
+{
+    if (category >= plot.categories.size() || !plot.plottable())
+        return {};
+    return {cellFilterCondition(x_column, plot.categories[category], true),
+            {y_column, plot.y_bins.kind == HistogramKind::Time ? FilterOp::IsDate : FilterOp::IsNumber, {}}};
+}
+
+std::string boxPlotText(const ScatterPlot &plot, size_t category)
+{
+    if (category >= plot.boxes.size())
+        return {};
+    const BoxStats &box = plot.boxes[category];
+    std::string text = scatterCategoryText(plot, category) + ": " + std::to_string(box.count) +
+                       (box.count == 1 ? " row" : " rows");
+    if (box.count == 0)
+        return text;
+    const auto value = [&plot](double coordinate)
+    { return scatterValueText(plot.y_axis, coordinate); };
+    // The mean of numbers with two decimals more than the axis shows.
+    std::string mean = value(box.mean);
+    if (plot.y_axis.kind == HistogramKind::Number)
+    {
+        char buffer[64];
+        std::snprintf(buffer, sizeof(buffer), "%.*f", plot.y_axis.decimals + 2, box.mean);
+        mean = buffer;
+        if (mean.find('.') != std::string::npos)
+        {
+            mean.erase(mean.find_last_not_of('0') + 1);
+            if (mean.back() == '.')
+                mean.pop_back();
+        }
+    }
+    text += "; min " + value(box.min) + ", Q1 " + value(box.q1) + ", median " + value(box.median) + ", Q3 " +
+            value(box.q3) + ", max " + value(box.max) + "; mean " + mean;
+    if (box.outlier_count > 0)
+        text += "; " + std::to_string(box.outlier_count) + (box.outlier_count == 1 ? " outlier" : " outliers");
+    return text;
 }
 
 std::vector<FilterCondition> densityCellConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
                                                    size_t x_bin, size_t y_bin)
 {
+    if (plot.categorical())
+    {
+        std::vector<FilterCondition> conditions;
+        if (x_bin < plot.categories.size())
+            conditions.push_back(cellFilterCondition(x_column, plot.categories[x_bin], true));
+        else
+            return conditions; // "(other)" is not one value
+        for (FilterCondition &condition : histogramBinConditions(plot.y_bins, y_column, y_bin))
+            conditions.push_back(std::move(condition));
+        return conditions;
+    }
     std::vector<FilterCondition> conditions = histogramBinConditions(plot.x_bins, x_column, x_bin);
     for (FilterCondition &condition : histogramBinConditions(plot.y_bins, y_column, y_bin))
         conditions.push_back(std::move(condition));
@@ -705,7 +765,8 @@ std::vector<FilterCondition> scatterRangeConditions(const ScatterPlot &plot, siz
                                                     double x_low, double x_high, double y_low, double y_high)
 {
     std::vector<FilterCondition> conditions;
-    if (!plot.plottable())
+    // Categories have no range.
+    if (!plot.plottable() || plot.categorical())
         return conditions;
     addRangeConditions(conditions, plot.x_bins, x_column, x_low, x_high);
     addRangeConditions(conditions, plot.y_bins, y_column, y_low, y_high);
@@ -714,11 +775,12 @@ std::vector<FilterCondition> scatterRangeConditions(const ScatterPlot &plot, siz
 
 std::string densityCellText(const ScatterPlot &plot, size_t x_bin, size_t y_bin)
 {
-    if (x_bin >= plot.x_bins.binCount() || y_bin >= plot.y_bins.binCount())
+    if (x_bin >= plot.xBinCount() || y_bin >= plot.y_bins.binCount())
         return {};
     const size_t count = plot.count(x_bin, y_bin);
-    return "x " + histogramBinRange(plot.x_bins, x_bin) + " × y " + histogramBinRange(plot.y_bins, y_bin) + ": " +
-           std::to_string(count) + (count == 1 ? " row (" : " rows (") + percentText(count, plot.pairs) + ")";
+    const std::string x = plot.categorical() ? scatterCategoryText(plot, x_bin) : "x " + histogramBinRange(plot.x_bins, x_bin);
+    return x + " × y " + histogramBinRange(plot.y_bins, y_bin) + ": " + std::to_string(count) +
+           (count == 1 ? " row (" : " rows (") + percentText(count, plot.pairs) + ")";
 }
 
 std::string scatterStatsText(const ScatterPlot &plot)
@@ -853,12 +915,17 @@ std::string scatterSummary(const ScatterPlot &plot, bool points)
 {
     if (!plot.plottable())
     {
-        if (plot.x_axis.kind == HistogramKind::None && plot.y_axis.kind == HistogramKind::None)
-            return "Neither column holds numbers or dates";
-        return plot.x_axis.kind == HistogramKind::None ? "The X column holds no numbers or dates"
-                                                       : "The Y column holds no numbers or dates";
+        if (plot.y_axis.kind == HistogramKind::None)
+            return "The Y column holds no numbers or dates";
+        return "The X column holds no values";
     }
     std::string text = std::to_string(plot.pairs) + (plot.pairs == 1 ? " row" : " rows") + " plotted";
+    if (plot.categorical())
+    {
+        const size_t categories = plot.categories.size();
+        text += plot.other_category ? " in the " + std::to_string(categories) + " most frequent values of X and (other)"
+                                    : " in " + std::to_string(categories) + (categories == 1 ? " value" : " values") + " of X";
+    }
     if (plot.others > 0)
         text += ", " + std::to_string(plot.others) + " skipped (empty or not numbers or dates)";
     if (points && plot.sampled())

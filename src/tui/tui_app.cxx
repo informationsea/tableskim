@@ -2121,12 +2121,40 @@ bool TuiApp::handleDensityEvent(Event event)
         return false;
     const ScatterState state = density_model_->scatterState();
     const ScatterPlot &plot = state.plot;
-    const size_t x_bins = plot.x_bins.binCount();
+    const size_t x_bins = plot.xBinCount();
     const size_t y_bins = plot.y_bins.binCount();
     const size_t columns = density_model_->columnCount();
     auto choose = [this] { density_chosen_ = true; };
+    const bool boxes = density_box_ && plot.categorical();
     if (event == Event::Escape || event == Event::M || event == Event::q)
         closeDensity();
+    else if (event == Event::b && plot.categorical())
+        density_box_ = !density_box_;
+    else if (boxes && (event == Event::ArrowUp || event == Event::k))
+        box_selected_ = box_selected_ > 0 ? box_selected_ - 1 : 0;
+    else if (boxes && (event == Event::ArrowDown || event == Event::j))
+        box_selected_ = std::min(box_selected_ + 1, x_bins > 0 ? x_bins - 1 : 0);
+    else if (boxes && event == Event::Return && state.done)
+    {
+        if (!density_model_->viewCapabilities().filter)
+            return true;
+        ViewSpec spec = density_model_->requestedView();
+        for (FilterCondition &condition : scatterCategoryConditions(plot, state.x_column, state.y_column, box_selected_))
+            addFilterCondition(spec, std::move(condition));
+        density_model_->setView(std::move(spec));
+    }
+    else if (boxes)
+    {
+        // The keys below are the density's.
+        if (columns > 0 && (event == Event::x || event == Event::X))
+            showDensity((state.x_column + (event == Event::x ? 1 : columns - 1)) % columns, state.y_column);
+        else if (columns > 0 && (event == Event::y || event == Event::Y))
+            showDensity(state.x_column, (state.y_column + (event == Event::y ? 1 : columns - 1)) % columns);
+        else if (event == Event::t)
+            showDensity(state.y_column, state.x_column);
+        else if (event == Event::F)
+            clearFilter();
+    }
     else if (event == Event::ArrowUp || event == Event::k)
     {
         if (density_y_ + 1 < y_bins)
@@ -2188,6 +2216,13 @@ Element TuiApp::renderDensity()
         density_generation_ = state.generation;
         density_chosen_ = false;
     }
+    // Text on X is best seen as box plots; once the layout is known.
+    if ((state.counting || state.done) && plot.categorical() != density_categorical_)
+    {
+        density_categorical_ = plot.categorical();
+        density_box_ = density_categorical_;
+        box_selected_ = 0;
+    }
 
     std::string status;
     if (!state.done)
@@ -2198,14 +2233,20 @@ Element TuiApp::renderDensity()
         if (const std::string stats = scatterStatsText(plot); !stats.empty())
             status += "  " + stats;
     }
-    const std::string title = " Density: " + singleLine(model->columnName(state.x_column)) + " × " +
+    const bool boxes = density_box_ && plot.categorical();
+    const std::string title = std::string(boxes ? " Box plot: " : " Density: ") +
+                              singleLine(model->columnName(state.x_column)) + " × " +
                               singleLine(model->columnName(state.y_column)) + "  ";
-    std::string hint = " ↑↓←→: cell  x/X y/Y: columns  t: swap  L: log scale  Enter: filter  F: clear filter  Esc: back";
+    std::string hint = plot.categorical()
+                           ? " ↑↓←→: cell  b: box plot  x/X y/Y: columns  t: swap  L: log scale  Enter: filter  F: clear filter  Esc: back"
+                           : " ↑↓←→: cell  x/X y/Y: columns  t: swap  L: log scale  Enter: filter  F: clear filter  Esc: back";
 
     Elements lines;
-    const size_t x_bins = plot.x_bins.binCount();
+    const size_t x_bins = plot.xBinCount();
     const size_t y_bins = plot.y_bins.binCount();
-    if (plot.plottable())
+    if (plot.plottable() && boxes)
+        lines = renderBoxPlot(plot, width, height, hint);
+    else if (plot.plottable())
     {
         size_t most = 0;
         size_t densest = 0;
@@ -2265,11 +2306,21 @@ Element TuiApp::renderDensity()
             }
             lines.push_back(hbox(std::move(cells)));
         }
-        // X labels at the ticks, as many as fit.
+        // X labels at the ticks, as many as fit; a category's under its
+        // column, cut to it.
         const auto offset = static_cast<size_t>(label_width + 3);
         std::string axis(offset + x_bins * static_cast<size_t>(cell_width), ' ');
+        if (plot.categorical())
+        {
+            axis = std::string(offset, ' ');
+            for (size_t i = 0; i < x_bins; ++i)
+            {
+                const std::string label = singleLine(scatterCategoryText(plot, i));
+                axis += fitText(label, cell_width - 1, TextAlign::Left) + (cell_width > 1 ? " " : "");
+            }
+        }
         size_t free_from = 0;
-        for (const double edge : plot.x_axis.edges)
+        for (const double edge : plot.categorical() ? std::vector<double>{} : plot.x_axis.edges)
         {
             const auto bin = histogramBin(plot.x_bins.edges, edge);
             if (!bin)
@@ -2293,6 +2344,100 @@ Element TuiApp::renderDensity()
         vbox(std::move(lines)) | flex,
         text(fitText(hint, width, TextAlign::Left)) | dim,
     });
+}
+
+// One line per category: its whiskers ├──┤, box ███ from Q1 to Q3 with the
+// median ┃, and outliers ∘, on a common Y scale; the selected category's
+// numbers go in the hint.
+Elements TuiApp::renderBoxPlot(const ScatterPlot &plot, int width, int height, std::string &hint)
+{
+    const size_t categories = plot.boxes.size();
+    box_selected_ = std::min(box_selected_, categories > 0 ? categories - 1 : 0);
+    int label_width = 0;
+    for (size_t i = 0; i < categories; ++i)
+        label_width = std::max(label_width, string_width(singleLine(scatterCategoryText(plot, i))));
+    label_width = std::clamp(label_width, 4, std::max(width / 4, 4));
+    const int scale_width = std::max(width - label_width - 4, 10);
+    const double low = plot.y_axis.edges.empty() ? 0 : plot.y_axis.edges.front();
+    double high = plot.y_axis.edges.empty() ? 1 : plot.y_axis.edges.back();
+    if (!(high > low))
+        high = low + 1;
+    const auto column = [&](double value)
+    {
+        const double at = (value - low) / (high - low) * (scale_width - 1);
+        return std::clamp(static_cast<int>(std::lround(at)), 0, scale_width - 1);
+    };
+
+    Elements lines;
+    // The rows around the selected one, if not all fit.
+    const size_t shown = std::min(categories, static_cast<size_t>(std::max(height - 1, 1)));
+    const size_t first = box_selected_ >= shown ? box_selected_ + 1 - shown : 0;
+    for (size_t i = first; i < first + shown; ++i)
+    {
+        const BoxStats &box = plot.boxes[i];
+        std::vector<std::string> chars(static_cast<size_t>(scale_width), " ");
+        std::vector<int> kinds(static_cast<size_t>(scale_width), 0); // 0 none, 1 whisker, 2 box, 3 median, 4 outlier
+        if (box.count > 0)
+        {
+            const int w0 = column(box.low_whisker);
+            const int w1 = column(box.high_whisker);
+            const int b0 = column(box.q1);
+            const int b1 = column(box.q3);
+            for (int c = w0; c <= w1; ++c)
+            {
+                chars[static_cast<size_t>(c)] = "─";
+                kinds[static_cast<size_t>(c)] = 1;
+            }
+            chars[static_cast<size_t>(w0)] = "├";
+            chars[static_cast<size_t>(w1)] = "┤";
+            for (int c = b0; c <= b1; ++c)
+            {
+                chars[static_cast<size_t>(c)] = "█";
+                kinds[static_cast<size_t>(c)] = 2;
+            }
+            chars[static_cast<size_t>(column(box.median))] = "┃";
+            kinds[static_cast<size_t>(column(box.median))] = 3;
+            for (const double value : box.outliers)
+            {
+                chars[static_cast<size_t>(column(value))] = "∘";
+                kinds[static_cast<size_t>(column(value))] = 4;
+            }
+        }
+        Elements cells;
+        const std::string label = fitText(singleLine(scatterCategoryText(plot, i)), label_width, TextAlign::Right);
+        Element label_element = text(" " + label + " ");
+        cells.push_back(i == box_selected_ ? label_element | inverted : label_element);
+        cells.push_back(text("│"));
+        for (size_t c = 0; c < chars.size(); ++c)
+        {
+            Element cell = text(chars[c]);
+            if (kinds[c] == 2)
+                cell = cell | color(Color::Cyan);
+            else if (kinds[c] == 3)
+                cell = cell | bgcolor(Color::Cyan) | color(Color::Black) | bold;
+            else if (kinds[c] == 4)
+                cell = cell | color(Color::Red);
+            cells.push_back(std::move(cell));
+        }
+        lines.push_back(hbox(std::move(cells)));
+    }
+    // The scale's labels at the ticks, as many as fit.
+    const auto offset = static_cast<size_t>(label_width + 3);
+    std::string axis(offset + static_cast<size_t>(scale_width), ' ');
+    size_t free_from = 0;
+    for (const double edge : plot.y_axis.edges)
+    {
+        const size_t at = offset + static_cast<size_t>(column(edge));
+        const std::string label = histogramEdgeText(plot.y_axis, edge);
+        if (at < free_from || at + label.size() > axis.size())
+            continue;
+        axis.replace(at, label.size(), label);
+        free_from = at + label.size() + 2;
+    }
+    lines.push_back(text(axis) | dim);
+    hint = " " + boxPlotText(plot, box_selected_) +
+           "   ↑↓: category  b: density  x/X y/Y: columns  t: swap  Enter: filter  F: clear filter  Esc: back";
+    return lines;
 }
 
 Element TuiApp::renderStatsSidebar(int width)

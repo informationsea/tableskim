@@ -52,16 +52,68 @@ void ScatterRange::add(const CellValue &x, const CellValue &y)
     y_.add(y);
 }
 
+BoxStats boxStats(std::vector<double> values)
+{
+    BoxStats box;
+    std::erase_if(values, [](double value)
+                  { return std::isnan(value); });
+    if (values.empty())
+        return box;
+    std::sort(values.begin(), values.end());
+    const size_t n = values.size();
+    const auto quantile = [&](double p)
+    {
+        const double h = static_cast<double>(n - 1) * p;
+        const auto low = static_cast<size_t>(std::floor(h));
+        const size_t high = std::min(low + 1, n - 1);
+        return values[low] + (h - static_cast<double>(low)) * (values[high] - values[low]);
+    };
+    box.count = n;
+    box.min = values.front();
+    box.max = values.back();
+    box.q1 = quantile(0.25);
+    box.median = quantile(0.5);
+    box.q3 = quantile(0.75);
+    double sum = 0;
+    for (const double value : values)
+        sum += value;
+    box.mean = sum / static_cast<double>(n);
+    const double reach = 1.5 * (box.q3 - box.q1);
+    const auto first = std::lower_bound(values.begin(), values.end(), box.q1 - reach);
+    const auto last = std::upper_bound(values.begin(), values.end(), box.q3 + reach);
+    // The whiskers end at values, within the box at least.
+    box.low_whisker = first != values.end() ? std::min(*first, box.q1) : box.q1;
+    box.high_whisker = last != values.begin() ? std::max(*(last - 1), box.q3) : box.q3;
+    const auto below = static_cast<size_t>(first - values.begin());
+    const auto above = static_cast<size_t>(values.end() - last);
+    box.outlier_count = below + above;
+    box.outliers.assign(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(std::min(below, BoxStats::MAX_OUTLIERS)));
+    box.outliers.insert(box.outliers.end(), values.end() - static_cast<std::ptrdiff_t>(std::min(above, BoxStats::MAX_OUTLIERS)),
+                        values.end());
+    return box;
+}
+
 ScatterPlot ScatterRange::layout(const ScatterOptions &options) const
 {
     ScatterPlot plot;
     plot.x_axis = x_.layout(AXIS_TICKS);
     plot.y_axis = y_.layout(AXIS_TICKS);
-    if (plot.x_axis.kind == HistogramKind::None || plot.y_axis.kind == HistogramKind::None)
+    if (plot.y_axis.kind == HistogramKind::None)
         return plot;
-    plot.x_bins = x_.layout(options.density_bins_x);
+    if (plot.x_axis.kind == HistogramKind::None)
+    {
+        // Text on X: its most frequent values are the categories.
+        const auto &top = plot.x_axis.top;
+        for (size_t i = 0; i < top.size() && i < options.max_categories; ++i)
+            plot.categories.push_back(top[i].value);
+        plot.other_category = top.size() > options.max_categories;
+        if (plot.categories.empty())
+            return plot;
+    }
+    else
+        plot.x_bins = x_.layout(options.density_bins_x);
     plot.y_bins = y_.layout(options.density_bins_y);
-    plot.counts.assign(plot.x_bins.binCount() * plot.y_bins.binCount(), 0);
+    plot.counts.assign(plot.xBinCount() * plot.y_bins.binCount(), 0);
     return plot;
 }
 
@@ -74,12 +126,28 @@ ScatterCounter::ScatterCounter(ScatterPlot layout, size_t max_points)
     plot_.rows = 0;
     plot_.stats = {};
     plot_.points.reset();
+    plot_.boxes.clear();
+    category_values_.assign(plot_.categorical() ? plot_.xBinCount() : 0, {});
+}
+
+std::optional<size_t> ScatterCounter::categoryOf(const CellValue &x) const
+{
+    if (isEmptyCell(x))
+        return std::nullopt;
+    // Few categories: a linear search is quick enough.
+    const auto it = std::find(plot_.categories.begin(), plot_.categories.end(), x);
+    if (it != plot_.categories.end())
+        return static_cast<size_t>(it - plot_.categories.begin());
+    if (plot_.other_category)
+        return plot_.categories.size();
+    return std::nullopt;
 }
 
 void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row)
 {
     ++plot_.rows;
-    const auto x_bin = plot_.plottable() ? x_.binOf(x) : std::nullopt;
+    const bool categorical = plot_.categorical();
+    const auto x_bin = !plot_.plottable() ? std::nullopt : categorical ? categoryOf(x) : x_.binOf(x);
     const auto y_bin = x_bin ? y_.binOf(y) : std::nullopt;
     if (!y_bin)
     {
@@ -88,9 +156,19 @@ void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row
     }
     ++plot_.counts[plot_.densityIndex(*x_bin, *y_bin)];
     ++plot_.pairs;
-    const double x_coordinate = histogramCoordinate(plot_.x_bins.kind, x).value_or(0);
     const double y_coordinate = histogramCoordinate(plot_.y_bins.kind, y).value_or(0);
-    plot_.stats.add(x_coordinate, y_coordinate);
+    double x_coordinate = 0;
+    if (categorical)
+    {
+        // A correlation with category indices would mean nothing.
+        x_coordinate = static_cast<double>(*x_bin);
+        category_values_[*x_bin].push_back(y_coordinate);
+    }
+    else
+    {
+        x_coordinate = histogramCoordinate(plot_.x_bins.kind, x).value_or(0);
+        plot_.stats.add(x_coordinate, y_coordinate);
+    }
     if (max_points_ == 0)
         return;
     // Reservoir sampling: every row counted so far is kept with the same
@@ -114,5 +192,7 @@ ScatterPlot ScatterCounter::result() const
     ScatterPlot plot = plot_;
     if (max_points_ > 0)
         plot.points = std::make_shared<const std::vector<ScatterPoint>>(points_);
+    for (const std::vector<double> &values : category_values_)
+        plot.boxes.push_back(boxStats(values));
     return plot;
 }

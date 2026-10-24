@@ -60,8 +60,13 @@ namespace
 
     std::string formatDouble(double value)
     {
-        char buf[64];
-        const auto result = std::to_chars(buf, buf + sizeof(buf), value);
+        char buf[400];
+        auto result = std::to_chars(buf, buf + sizeof(buf), value);
+        // The shortest form of 500000.0 is "5e+05"; numbers of everyday
+        // size are written out ("500000", "0.0001").
+        const double magnitude = std::fabs(value);
+        if (std::find(buf, result.ptr, 'e') != result.ptr && magnitude >= 1e-5 && magnitude < 1e16)
+            result = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::fixed);
         return std::string(buf, result.ptr);
     }
 } // namespace

@@ -584,3 +584,14 @@ TEST_CASE("ColumnFormats and cellDisplayText with a format")
     CHECK(cellDisplayText(int64_t{1234}) == "1234");
     CHECK(cellDisplayText(int64_t{1234567}, 3, &format) == "1,2…");
 }
+
+TEST_CASE("formatCell: numbers of everyday size without an exponent")
+{
+    CHECK(formatCell(500000.0) == "500000");
+    CHECK(formatCell(1e6) == "1000000");
+    CHECK(formatCell(0.0001) == "0.0001");
+    CHECK(formatCell(1234.5) == "1234.5");
+    CHECK(formatCell(-2e10) == "-20000000000");
+    CHECK(formatCell(1e20) == "1e+20");
+    CHECK(formatCell(1.5e-7) == "1.5e-07");
+}

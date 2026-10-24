@@ -2,6 +2,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
+#include <FL/Fl_Button.H>
 #include <FL/Fl_Check_Button.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Double_Window.H>
@@ -11,6 +12,7 @@
 #include <cmath>
 
 #include "cell_format.hxx"
+#include "gui_image_export.hxx"
 #include "gui_theme.hxx"
 
 namespace
@@ -25,6 +27,18 @@ namespace
     const int MODE_WIDTH = 110;
     const int LOG_WIDTH = 140;
     const int FIT_WIDTH = 150;
+    const int SAVE_WIDTH = 100;
+    // A category's column: the box takes this part of it, the points are
+    // spread over it.
+    const double BOX_WIDTH = 0.6;
+    const double SPREAD_WIDTH = 0.7;
+    const double CELL_WIDTH = 0.9;
+    enum Mode
+    {
+        MODE_POINTS,
+        MODE_DENSITY,
+        MODE_BOX,
+    };
     const int FONT_SIZE = 12;
     const int TICK_GAP = 6;
     const int COLOR_BAR_WIDTH = 14;
@@ -61,6 +75,17 @@ namespace
         if (!(high > low))
             high = low + 1;
         return {low, high};
+    }
+
+    // Where in its category's column a point is drawn, from -0.5 to 0.5:
+    // the same for a row every time (a hash of its number).
+    double spreadOf(size_t view_row)
+    {
+        uint64_t h = static_cast<uint64_t>(view_row) * 0x9E3779B97F4A7C15ull;
+        h ^= h >> 29;
+        h *= 0xBF58476D1CE4E5B9ull;
+        h ^= h >> 32;
+        return static_cast<double>(h % 10000) / 10000.0 - 0.5;
     }
 } // namespace
 
@@ -107,11 +132,45 @@ private:
     }
 
     bool logScale() const { return owner_->log_button_->value() != 0; }
+    bool categorical() const { return plot().categorical(); }
+    bool boxMode() const { return owner_->box_ && categorical(); }
+    bool densityMode() const { return owner_->density_; }
+
+    // The X a point is drawn at: spread over its category's column.
+    double pointX(const ScatterPoint &point) const
+    {
+        return categorical() ? point.x + SPREAD_WIDTH * spreadOf(point.view_row) : point.x;
+    }
+
+    // The X range of a column of the density grid.
+    std::pair<double, double> columnSpan(size_t xi) const
+    {
+        const ScatterPlot &p = plot();
+        if (categorical())
+            return {static_cast<double>(xi) - CELL_WIDTH / 2, static_cast<double>(xi) + CELL_WIDTH / 2};
+        return {p.x_bins.edges[xi], p.x_bins.edges[xi + 1]};
+    }
+
+    std::optional<size_t> categoryAt(int mx, int my) const
+    {
+        if (!inPlot(mx, my) || !categorical())
+            return std::nullopt;
+        const double at = std::round(fromX(mx));
+        if (at < 0 || at >= static_cast<double>(plot().xBinCount()))
+            return std::nullopt;
+        return static_cast<size_t>(at);
+    }
 
     void layout()
     {
         const ScatterPlot &p = plot();
-        std::tie(x_low_, x_high_) = axisRange(p.x_axis, p.x_bins);
+        if (categorical())
+        {
+            x_low_ = -0.5;
+            x_high_ = static_cast<double>(p.xBinCount()) - 0.5;
+        }
+        else
+            std::tie(x_low_, x_high_) = axisRange(p.x_axis, p.x_bins);
         std::tie(y_low_, y_high_) = axisRange(p.y_axis, p.y_bins);
         int y_label_width = 0;
         for (const double edge : p.y_axis.edges)
@@ -123,11 +182,30 @@ private:
             legend_width = 2 * MARGIN + COLOR_BAR_WIDTH + TICK_GAP + static_cast<int>(fl_width(most.c_str()));
         }
         const int text_height = fl_height();
-        plot_x_ = x() + MARGIN + y_label_width + TICK_GAP;
+        // The axes' titles: the Y one turned, left of its labels; the X one
+        // below the labels.
+        plot_x_ = x() + MARGIN + text_height + TICK_GAP + y_label_width + TICK_GAP;
         plot_y_ = y() + MARGIN + text_height / 2;
         plot_w_ = std::max(1, x() + w() - MARGIN - legend_width - plot_x_);
-        plot_h_ = std::max(1, h() - 2 * MARGIN - text_height / 2 - text_height - TICK_GAP);
+        plot_h_ = std::max(1, h() - 2 * MARGIN - text_height / 2 - 2 * text_height - 2 * TICK_GAP);
         laid_out_ = true;
+    }
+
+    void drawTitles()
+    {
+        const auto &model = owner_->model_;
+        if (!model)
+            return;
+        const ScatterState &state = owner_->state_;
+        const int text_height = fl_height();
+        fl_color(FL_FOREGROUND_COLOR);
+        const std::string x_title = model->columnName(state.x_column);
+        fl_draw(x_title.c_str(), plot_x_, plot_y_ + plot_h_ + 2 * TICK_GAP + text_height, plot_w_, text_height,
+                FL_ALIGN_CENTER | FL_ALIGN_CLIP, nullptr, 0);
+        const std::string y_title = model->columnName(state.y_column);
+        const int title_width = static_cast<int>(fl_width(y_title.c_str()));
+        fl_draw(90, y_title.c_str(), x() + MARGIN + text_height - fl_descent(),
+                plot_y_ + plot_h_ / 2 + std::min(title_width, plot_h_) / 2);
     }
 
     void drawAxes()
@@ -137,11 +215,27 @@ private:
         const int bottom = plot_y_ + plot_h_;
         const Fl_Color grid = fl_color_average(FL_FOREGROUND_COLOR, FL_BACKGROUND2_COLOR, 0.15f);
 
-        // X: gridlines at every tick, labels as many as fit.
+        // X: gridlines at every tick, labels as many as fit; categories get
+        // a label each, cut to its column.
         grid_x_.clear();
         grid_y_.clear();
         int last_right = x();
-        for (const double edge : p.x_axis.edges)
+        if (categorical())
+        {
+            const double slot = static_cast<double>(plot_w_) / static_cast<double>(p.xBinCount());
+            fl_color(FL_FOREGROUND_COLOR);
+            for (size_t i = 0; i < p.xBinCount(); ++i)
+            {
+                const int px = static_cast<int>(std::lround(toX(static_cast<double>(i))));
+                fl_yxline(px, bottom, bottom + 3);
+                const std::string text = cellDisplayText(CellValue{scatterCategoryText(p, i)}, 64);
+                const int width = std::max(1, static_cast<int>(slot) - 2);
+                fl_push_clip(px - width / 2, bottom + TICK_GAP, width, text_height);
+                fl_draw(text.c_str(), px - width / 2, bottom + TICK_GAP, width, text_height, FL_ALIGN_CENTER, nullptr, 0);
+                fl_pop_clip();
+            }
+        }
+        for (const double edge : categorical() ? std::vector<double>{} : p.x_axis.edges)
         {
             const int px = static_cast<int>(std::lround(toX(edge)));
             if (px < plot_x_ || px > plot_x_ + plot_w_)
@@ -219,7 +313,7 @@ private:
         const double alpha = std::clamp(3000.0 / static_cast<double>(n), 0.15, 0.8);
         for (const ScatterPoint &point : *points)
         {
-            const auto cx = static_cast<int>(toX(point.x)) - plot_x_;
+            const auto cx = static_cast<int>(toX(pointX(point))) - plot_x_;
             const auto cy = static_cast<int>(toY(point.y)) - plot_y_;
             for (int py = std::max(cy - radius, 0); py <= std::min(cy + radius, height - 1); ++py)
             {
@@ -237,7 +331,7 @@ private:
             const ScatterPoint &point = (*points)[*owner_->hovered_point_];
             fl_color(FL_FOREGROUND_COLOR);
             fl_line_style(FL_SOLID, 2);
-            fl_circle(toX(point.x), toY(point.y), 5);
+            fl_circle(toX(pointX(point)), toY(point.y), 5);
             fl_line_style(0);
         }
     }
@@ -246,10 +340,11 @@ private:
     {
         const ScatterPlot &p = plot();
         const size_t most = mostInCell();
-        for (size_t xi = 0; xi < p.x_bins.binCount(); ++xi)
+        for (size_t xi = 0; xi < p.xBinCount(); ++xi)
         {
-            const int x0 = static_cast<int>(std::lround(toX(p.x_bins.edges[xi])));
-            const int x1 = static_cast<int>(std::lround(toX(p.x_bins.edges[xi + 1])));
+            const auto [left, right] = columnSpan(xi);
+            const int x0 = static_cast<int>(std::lround(toX(left)));
+            const int x1 = static_cast<int>(std::lround(toX(right)));
             for (size_t yi = 0; yi < p.y_bins.binCount(); ++yi)
             {
                 const size_t count = p.count(xi, yi);
@@ -261,15 +356,57 @@ private:
                 fl_rectf(x0, y0, std::max(1, x1 - x0), std::max(1, y1 - y0), rgb[0], rgb[1], rgb[2]);
             }
         }
-        if (const auto &cell = owner_->hovered_cell_; cell && cell->first < p.x_bins.binCount() &&
+        if (const auto &cell = owner_->hovered_cell_; cell && cell->first < p.xBinCount() &&
                                                        cell->second < p.y_bins.binCount())
         {
-            const int x0 = static_cast<int>(std::lround(toX(p.x_bins.edges[cell->first])));
-            const int x1 = static_cast<int>(std::lround(toX(p.x_bins.edges[cell->first + 1])));
+            const auto [left, right] = columnSpan(cell->first);
+            const int x0 = static_cast<int>(std::lround(toX(left)));
+            const int x1 = static_cast<int>(std::lround(toX(right)));
             const int y0 = static_cast<int>(std::lround(toY(p.y_bins.edges[cell->second + 1])));
             const int y1 = static_cast<int>(std::lround(toY(p.y_bins.edges[cell->second])));
             fl_color(FL_FOREGROUND_COLOR);
             fl_rect(x0 - 1, y0 - 1, std::max(1, x1 - x0) + 2, std::max(1, y1 - y0) + 2);
+        }
+    }
+
+    // A box per category: Q1 to Q3 with the median, whiskers, the outliers
+    // as rings and the mean as a cross.
+    void drawBoxes()
+    {
+        const ScatterPlot &p = plot();
+        const double slot = static_cast<double>(plot_w_) / static_cast<double>(std::max<size_t>(p.xBinCount(), 1));
+        const int half = std::max(2, static_cast<int>(slot * BOX_WIDTH / 2));
+        const auto py = [this](double value)
+        { return static_cast<int>(std::lround(toY(value))); };
+        for (size_t i = 0; i < p.boxes.size(); ++i)
+        {
+            const BoxStats &box = p.boxes[i];
+            if (box.count == 0)
+                continue;
+            const int cx = static_cast<int>(std::lround(toX(static_cast<double>(i))));
+            const int top = py(box.q3);
+            const int bottom = py(box.q1);
+            const bool hovered = owner_->hovered_category_ == i;
+            fl_color(fl_color_average(FL_SELECTION_COLOR, FL_BACKGROUND2_COLOR, hovered ? 0.7f : 0.35f));
+            fl_rectf(cx - half, top, 2 * half + 1, std::max(1, bottom - top + 1));
+            fl_color(FL_FOREGROUND_COLOR);
+            fl_rect(cx - half, top, 2 * half + 1, std::max(1, bottom - top + 1));
+            // Whiskers with caps half as wide as the box.
+            fl_yxline(cx, py(box.high_whisker), top);
+            fl_yxline(cx, bottom, py(box.low_whisker));
+            fl_xyline(cx - half / 2, py(box.high_whisker), cx + half / 2);
+            fl_xyline(cx - half / 2, py(box.low_whisker), cx + half / 2);
+            fl_line_style(FL_SOLID, 2);
+            fl_xyline(cx - half, py(box.median), cx + half);
+            fl_line_style(0);
+            for (const double value : box.outliers)
+                fl_circle(cx, toY(value), 2.5);
+            const int my = py(box.mean);
+            fl_color(fl_color_average(FL_RED, FL_FOREGROUND_COLOR, 0.8f));
+            fl_line_style(FL_SOLID, 2);
+            fl_line(cx - 4, my - 4, cx + 4, my + 4);
+            fl_line(cx - 4, my + 4, cx + 4, my - 4);
+            fl_line_style(0);
         }
     }
 
@@ -333,7 +470,7 @@ private:
         double best = POINT_REACH * POINT_REACH + 1;
         for (size_t i = 0; i < points->size(); ++i)
         {
-            const double dx = toX((*points)[i].x) - mx;
+            const double dx = toX(pointX((*points)[i])) - mx;
             const double dy = toY((*points)[i].y) - my;
             const double distance = dx * dx + dy * dy;
             if (distance < best)
@@ -350,7 +487,7 @@ private:
         if (!inPlot(mx, my))
             return std::nullopt;
         const ScatterPlot &p = plot();
-        const auto xi = histogramBin(p.x_bins.edges, fromX(mx));
+        const auto xi = categorical() ? categoryAt(mx, my) : histogramBin(p.x_bins.edges, fromX(mx));
         const auto yi = histogramBin(p.y_bins.edges, fromY(my));
         if (!xi || !yi)
             return std::nullopt;
@@ -361,17 +498,21 @@ private:
     {
         std::optional<size_t> point;
         std::optional<std::pair<size_t, size_t>> cell;
+        std::optional<size_t> category;
         if (inside && !dragging_)
         {
-            if (owner_->density_)
+            if (densityMode())
                 cell = cellAt(mx, my);
+            else if (boxMode())
+                category = categoryAt(mx, my);
             else
                 point = pointAt(mx, my);
         }
-        if (point != owner_->hovered_point_ || cell != owner_->hovered_cell_)
+        if (point != owner_->hovered_point_ || cell != owner_->hovered_cell_ || category != owner_->hovered_category_)
         {
             owner_->hovered_point_ = point;
             owner_->hovered_cell_ = cell;
+            owner_->hovered_category_ = category;
             owner_->showDetail();
             redraw();
         }
@@ -396,9 +537,12 @@ public:
         {
             layout();
             drawAxes();
+            drawTitles();
             fl_push_clip(plot_x_, plot_y_, plot_w_, plot_h_);
-            if (owner_->density_)
+            if (densityMode())
                 drawDensity();
+            else if (boxMode())
+                drawBoxes();
             else
                 drawPoints();
             drawFit();
@@ -424,12 +568,20 @@ public:
         case FL_PUSH:
             if (Fl::event_button() != FL_LEFT_MOUSE || !inPlot(Fl::event_x(), Fl::event_y()))
                 return 1;
-            if (owner_->density_ && Fl::event_clicks() > 0)
+            if (densityMode() && Fl::event_clicks() > 0)
             {
                 // Double-click: the cell's rows.
                 pressed_ = false;
                 if (const auto cell = cellAt(Fl::event_x(), Fl::event_y()))
                     owner_->filterCell(cell->first, cell->second);
+                return 1;
+            }
+            if (boxMode() && Fl::event_clicks() > 0)
+            {
+                // Double-click: the category's rows.
+                pressed_ = false;
+                if (const auto category = categoryAt(Fl::event_x(), Fl::event_y()))
+                    owner_->filterCategory(*category);
                 return 1;
             }
             pressed_ = true;
@@ -442,7 +594,9 @@ public:
                 return 1;
             drag_x_ = std::clamp(Fl::event_x(), plot_x_, plot_x_ + plot_w_ - 1);
             drag_y_ = std::clamp(Fl::event_y(), plot_y_, plot_y_ + plot_h_ - 1);
-            if (!dragging_ && (std::abs(drag_x_ - press_x_) > DRAG_THRESHOLD || std::abs(drag_y_ - press_y_) > DRAG_THRESHOLD))
+            // Categories have no range to drag over.
+            if (!dragging_ && !categorical() &&
+                (std::abs(drag_x_ - press_x_) > DRAG_THRESHOLD || std::abs(drag_y_ - press_y_) > DRAG_THRESHOLD))
             {
                 dragging_ = true;
                 hover(0, 0, false);
@@ -461,7 +615,7 @@ public:
                 owner_->filterRange(fromX(std::min(press_x_, drag_x_)), fromX(std::max(press_x_, drag_x_)),
                                     fromY(std::max(press_y_, drag_y_)), fromY(std::min(press_y_, drag_y_)));
             }
-            else if (!owner_->density_)
+            else if (!densityMode() && !boxMode())
             {
                 if (const auto point = pointAt(Fl::event_x(), Fl::event_y()))
                     owner_->goToPoint(*point);
@@ -486,7 +640,8 @@ ScatterWindow::ScatterWindow()
     mode_choice_ = new Fl_Choice(x, MARGIN, MODE_WIDTH, LINE_HEIGHT, "Show:");
     mode_choice_->add("Points");
     mode_choice_->add("Density");
-    mode_choice_->value(0);
+    mode_choice_->add("Box Plot");
+    mode_choice_->value(MODE_POINTS);
     mode_choice_->callback(modeCallback, this);
     x += MODE_WIDTH + MARGIN;
     log_button_ = new Fl_Check_Button(x, MARGIN, LOG_WIDTH, LINE_HEIGHT, "Log color scale");
@@ -496,9 +651,13 @@ ScatterWindow::ScatterWindow()
     status_ = new Fl_Box(MARGIN, status_y, WINDOW_WIDTH - 2 * MARGIN, LINE_HEIGHT);
     status_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
     const int stats_y = status_y + LINE_HEIGHT;
-    stats_ = new Fl_Box(MARGIN, stats_y, WINDOW_WIDTH - 3 * MARGIN - FIT_WIDTH, LINE_HEIGHT);
+    const int save_x = WINDOW_WIDTH - MARGIN - SAVE_WIDTH;
+    const int fit_x = save_x - MARGIN - FIT_WIDTH;
+    stats_ = new Fl_Box(MARGIN, stats_y, fit_x - 2 * MARGIN, LINE_HEIGHT);
     stats_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
-    fit_button_ = new Fl_Check_Button(WINDOW_WIDTH - MARGIN - FIT_WIDTH, stats_y, FIT_WIDTH, LINE_HEIGHT, "Regression line");
+    save_button_ = new Fl_Button(save_x, stats_y, SAVE_WIDTH, LINE_HEIGHT, "Save Image...");
+    save_button_->callback(saveCallback, this);
+    fit_button_ = new Fl_Check_Button(fit_x, stats_y, FIT_WIDTH, LINE_HEIGHT, "Regression line");
     fit_button_->value(1);
     fit_button_->callback([](Fl_Widget *, void *data) { static_cast<ScatterWindow *>(data)->chart_->redraw(); }, this);
     const int chart_y = stats_y + LINE_HEIGHT;
@@ -567,6 +726,7 @@ void ScatterWindow::start(size_t x_column, size_t y_column)
     y_column_ = y_column;
     hovered_point_.reset();
     hovered_cell_.reset();
+    hovered_category_.reset();
     if (model_)
         model_->startScatter(x_column, y_column);
     update();
@@ -591,8 +751,21 @@ void ScatterWindow::update()
     {
         hovered_point_.reset();
         hovered_cell_.reset();
+        hovered_category_.reset();
     }
     state_ = std::move(state);
+    // Text on X is best seen as box plots, numbers as points; once the
+    // layout is known.
+    if ((state_.counting || state_.done) && state_.plot.categorical() != shown_categorical_)
+    {
+        shown_categorical_ = state_.plot.categorical();
+        if (shown_categorical_ && !density_)
+            setMode(MODE_BOX);
+        else if (!shown_categorical_ && box_)
+            setMode(MODE_POINTS);
+    }
+    const int box_flags = mode_choice_->mode(MODE_BOX);
+    mode_choice_->mode(MODE_BOX, shown_categorical_ ? box_flags & ~FL_MENU_INACTIVE : box_flags | FL_MENU_INACTIVE);
 
     rebuildColumnMenu();
     const size_t columns = column_labels_.size();
@@ -611,6 +784,8 @@ void ScatterWindow::update()
     setActive(x_choice_, model_ && columns > 0);
     setActive(y_choice_, model_ && columns > 0);
     setActive(log_button_, density_);
+    setActive(fit_button_, !state_.plot.categorical());
+    setActive(save_button_, state_.active && state_.plot.plottable());
 
     std::string text;
     if (!model_ || model_->state() == ModelState::Error)
@@ -646,12 +821,24 @@ void ScatterWindow::showDetail()
     if (hovered_point_ && plot.points && *hovered_point_ < plot.points->size())
     {
         const ScatterPoint &point = (*plot.points)[*hovered_point_];
-        text = "x = " + scatterValueText(plot.x_axis, point.x) + ", y = " + scatterValueText(plot.y_axis, point.y) +
-               ", row " + std::to_string(point.view_row + 1) + "  Click to go to the row.";
+        const std::string x = plot.categorical() ? scatterCategoryText(plot, static_cast<size_t>(point.x))
+                                                 : scatterValueText(plot.x_axis, point.x);
+        text = "x = " + x + ", y = " + scatterValueText(plot.y_axis, point.y) + ", row " +
+               std::to_string(point.view_row + 1) + "  Click to go to the row.";
+    }
+    else if (hovered_category_)
+    {
+        text = boxPlotText(plot, *hovered_category_);
+        if (state_.done && *hovered_category_ < plot.categories.size())
+            text += "  Double-click to filter.";
     }
     else if (hovered_cell_)
         text = densityCellText(plot, hovered_cell_->first, hovered_cell_->second) +
                (state_.done ? "  Double-click to filter." : "");
+    else if (plot.plottable() && plot.categorical())
+        text = density_ ? "Point at a cell for its value, range and count; double-click it to filter."
+               : box_   ? "Point at a box for its quartiles; double-click it to filter to its value."
+                        : "Point at a point for its values; click it to go to its row.";
     else if (plot.plottable())
         text = density_ ? "Point at a cell for its ranges and count; double-click it or drag a rectangle to filter."
                         : "Point at a point for its values; click it to go to its row; drag a rectangle to filter.";
@@ -673,9 +860,15 @@ void ScatterWindow::goToPoint(size_t index)
 
 void ScatterWindow::filterCell(size_t x_bin, size_t y_bin)
 {
-    if (!state_.done || x_bin >= state_.plot.x_bins.binCount() || y_bin >= state_.plot.y_bins.binCount())
+    if (!state_.done || x_bin >= state_.plot.xBinCount() || y_bin >= state_.plot.y_bins.binCount())
         return;
     addFilterConditions(densityCellConditions(state_.plot, state_.x_column, state_.y_column, x_bin, y_bin));
+}
+
+void ScatterWindow::filterCategory(size_t category)
+{
+    if (state_.done)
+        addFilterConditions(scatterCategoryConditions(state_.plot, state_.x_column, state_.y_column, category));
 }
 
 void ScatterWindow::filterRange(double x_low, double x_high, double y_low, double y_high)
@@ -726,13 +919,36 @@ void ScatterWindow::columnCallback(Fl_Widget *, void *data)
     self->start(x >= 0 ? static_cast<size_t>(x) : self->x_column_, y >= 0 ? static_cast<size_t>(y) : self->y_column_);
 }
 
+void ScatterWindow::setMode(int mode)
+{
+    mode_choice_->value(mode);
+    density_ = mode == MODE_DENSITY;
+    box_ = mode == MODE_BOX;
+    hovered_point_.reset();
+    hovered_cell_.reset();
+    hovered_category_.reset();
+}
+
 void ScatterWindow::modeCallback(Fl_Widget *, void *data)
 {
     auto *self = static_cast<ScatterWindow *>(data);
-    self->density_ = self->mode_choice_->value() == 1;
+    self->setMode(self->mode_choice_->value());
+    self->update();
+}
+
+void ScatterWindow::saveCallback(Fl_Widget *, void *data)
+{
+    auto *self = static_cast<ScatterWindow *>(data);
+    if (!self->model_ || !self->state_.active)
+        return;
+    // Without what is pointed at.
     self->hovered_point_.reset();
     self->hovered_cell_.reset();
-    self->update();
+    self->hovered_category_.reset();
+    self->showDetail();
+    const char *kind = self->density_ ? "density" : self->box_ ? "boxplot" : "scatter";
+    saveWidgetImage(self->chart_, imageFileName(std::string(kind) + "-" + self->model_->columnName(self->state_.x_column) +
+                                                "-" + self->model_->columnName(self->state_.y_column)));
 }
 
 void ScatterWindow::closeCallback(Fl_Widget *, void *data)

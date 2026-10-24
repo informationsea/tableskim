@@ -12,6 +12,7 @@
 #include "table.hxx"
 
 class Fl_Box;
+class Fl_Button;
 class Fl_Check_Button;
 class Fl_Choice;
 class Fl_Double_Window;
@@ -22,7 +23,10 @@ class Fl_Widget;
 // of the rows, or a 2D density of all of them. Pointing at a point or a cell
 // shows its values; clicking a point goes to its row, double-clicking a cell
 // or dragging a rectangle filters the sheet. Pearson's correlation and the
-// least-squares line of all the rows plotted are shown above the plot. Like
+// least-squares line of all the rows plotted are shown above the plot. With
+// text on X (ScatterPlot::categorical()), each category gets a column: a box
+// plot (double-click to filter to it), the density, or its points spread
+// sideways. "Save Image..." writes the plot as PNG or SVG. Like
 // HistogramWindow it does not subscribe to the model: the owner calls
 // update() after events, and setModel() when the sheet changes.
 class ScatterWindow
@@ -56,6 +60,7 @@ private:
     Fl_Box *status_ = nullptr;
     Fl_Box *stats_ = nullptr;
     Fl_Check_Button *fit_button_ = nullptr;
+    Fl_Button *save_button_ = nullptr;
     Chart *chart_ = nullptr;
     Fl_Box *detail_ = nullptr;
     std::shared_ptr<TableModel> model_;
@@ -66,8 +71,13 @@ private:
     // columns it does not have.
     bool check_columns_ = false;
     bool density_ = false;
+    bool box_ = false; // Box Plot chosen; drawn for a categorical X only
+    // Whether the plot shown had a categorical X, to switch to (or from) the
+    // box plot when that changes.
+    bool shown_categorical_ = false;
     std::optional<size_t> hovered_point_;                // index into the points
     std::optional<std::pair<size_t, size_t>> hovered_cell_; // x and y bins
+    std::optional<size_t> hovered_category_;             // a box
     std::string title_;
     RowCallback row_callback_;
     // Shared by the column choices; the labels must outlive the items.
@@ -80,12 +90,15 @@ private:
     void showDetail();
     void goToPoint(size_t index);
     void filterCell(size_t x_bin, size_t y_bin);
+    void filterCategory(size_t category);
+    void setMode(int mode);
     // A rectangle in coordinates (see histogramCoordinate()).
     void filterRange(double x_low, double x_high, double y_low, double y_high);
     void addFilterConditions(std::vector<FilterCondition> conditions);
     static void deferredUpdate(void *data);
     static void columnCallback(Fl_Widget *, void *data);
     static void modeCallback(Fl_Widget *, void *data);
+    static void saveCallback(Fl_Widget *, void *data);
     static void closeCallback(Fl_Widget *, void *data);
 };
 

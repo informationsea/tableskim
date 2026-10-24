@@ -2,6 +2,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
+#include <FL/Fl_Button.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/fl_draw.H>
@@ -9,17 +10,19 @@
 #include <cmath>
 
 #include "cell_format.hxx"
+#include "gui_image_export.hxx"
 #include "gui_table_view.hxx"
 #include "gui_theme.hxx"
 
 namespace
 {
-    const int WINDOW_WIDTH = 640;
+    const int WINDOW_WIDTH = 720;
     const int WINDOW_HEIGHT = 420;
     const int MARGIN = 8;
     const int LINE_HEIGHT = 25;
     const int CHOICE_LABEL_WIDTH = 60;
     const int CHOICE_WIDTH = 240;
+    const int SAVE_WIDTH = 100;
     const int FONT_SIZE = 12;
     const int TICK_GAP = 6;
     // Rows of the most frequent values shown, at most.
@@ -107,7 +110,8 @@ private:
         plot_x_ = x() + MARGIN + axis_width;
         plot_y_ = y() + MARGIN + text_height / 2;
         plot_w_ = std::max(1, w() - 2 * MARGIN - axis_width);
-        plot_h_ = std::max(1, h() - 2 * MARGIN - text_height / 2 - text_height - TICK_GAP);
+        // Edge labels, then the column's name.
+        plot_h_ = std::max(1, h() - 2 * MARGIN - text_height / 2 - 2 * text_height - 2 * TICK_GAP);
         bars_ = bins;
         rows_ = false;
         const int bottom = plot_y_ + plot_h_;
@@ -165,6 +169,12 @@ private:
             fl_draw(text.c_str(), tx, bottom + TICK_GAP + text_height - fl_descent());
             last_right = tx + tw;
         }
+        if (owner_->model_)
+        {
+            const std::string title = owner_->model_->columnName(owner_->state_.column);
+            fl_draw(title.c_str(), plot_x_, bottom + 2 * TICK_GAP + text_height, plot_w_, text_height,
+                    FL_ALIGN_CENTER | FL_ALIGN_CLIP, nullptr, 0);
+        }
     }
 
     void drawValues()
@@ -195,7 +205,8 @@ private:
             const int yy = plot_y_ + static_cast<int>(i) * row_height_;
             fl_color(FL_FOREGROUND_COLOR);
             fl_push_clip(x() + MARGIN, yy, label_width, row_height_);
-            fl_draw(labels[i].c_str(), x() + MARGIN, yy, label_width, row_height_, FL_ALIGN_LEFT);
+            // draw_symbols = 0: "@" (in e-mail addresses) would start a symbol.
+            fl_draw(labels[i].c_str(), x() + MARGIN, yy, label_width, row_height_, FL_ALIGN_LEFT, nullptr, 0);
             fl_pop_clip();
             const int length = std::max(1, static_cast<int>(std::lround(static_cast<double>(hg.top[i].count) / most * plot_w_)));
             fl_color(barColor(i));
@@ -268,8 +279,11 @@ HistogramWindow::HistogramWindow()
     column_choice_ = new Fl_Choice(MARGIN + CHOICE_LABEL_WIDTH, MARGIN, CHOICE_WIDTH, LINE_HEIGHT, "Column:");
     column_choice_->callback(columnCallback, this);
     const int status_x = MARGIN + CHOICE_LABEL_WIDTH + CHOICE_WIDTH + MARGIN;
-    status_ = new Fl_Box(status_x, MARGIN, WINDOW_WIDTH - MARGIN - status_x, LINE_HEIGHT);
+    const int save_x = WINDOW_WIDTH - MARGIN - SAVE_WIDTH;
+    status_ = new Fl_Box(status_x, MARGIN, save_x - MARGIN - status_x, LINE_HEIGHT);
     status_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
+    save_button_ = new Fl_Button(save_x, MARGIN, SAVE_WIDTH, LINE_HEIGHT, "Save Image...");
+    save_button_->callback(saveCallback, this);
     const int chart_y = 2 * MARGIN + LINE_HEIGHT;
     const int detail_y = WINDOW_HEIGHT - MARGIN - LINE_HEIGHT;
     chart_ = new Chart(MARGIN, chart_y, WINDOW_WIDTH - 2 * MARGIN, detail_y - MARGIN - chart_y, this);
@@ -466,6 +480,17 @@ void HistogramWindow::columnCallback(Fl_Widget *, void *data)
     const int value = self->column_choice_->value();
     if (value >= 0)
         self->start(static_cast<size_t>(value));
+}
+
+void HistogramWindow::saveCallback(Fl_Widget *, void *data)
+{
+    auto *self = static_cast<HistogramWindow *>(data);
+    if (!self->model_ || !self->state_.active)
+        return;
+    // Without the bar pointed at.
+    self->hovered_.reset();
+    self->showDetail();
+    saveWidgetImage(self->chart_, imageFileName("histogram-" + self->model_->columnName(self->state_.column)));
 }
 
 void HistogramWindow::closeCallback(Fl_Widget *, void *data)

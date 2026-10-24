@@ -153,6 +153,7 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `L`                  | Logarithmic / linear colour scale         |
 | `Enter`              | Filter the sheet to the selected cell     |
 | `F`                  | Clear the filter                          |
+| `b`                  | Text on X: box plots / density            |
 | `Esc`, `M`, `q`      | Back to the sheet                         |
 
 ### Group By dialog

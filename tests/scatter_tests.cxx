@@ -99,13 +99,126 @@ TEST_CASE("ScatterRange and ScatterCounter", "[scatter]")
         CHECK(plot.points->at(0).y == 19000.0 * 86400 * 1000000);
         CHECK(scatterValueText(plot.y_axis, plot.points->at(0).y) == "2022-01-08 00:00:00");
     }
-    SECTION("a column of neither numbers nor dates")
+    SECTION("a Y column of neither numbers nor dates")
     {
-        const ScatterPlot plot = plotRows({{std::string("a"), 1.0}, {std::string("b"), 2.0}});
+        const ScatterPlot plot = plotRows({{1.0, std::string("a")}, {2.0, std::string("b")}});
         CHECK_FALSE(plot.plottable());
         CHECK(plot.pairs == 0);
-        CHECK(scatterSummary(plot, true) == "The X column holds no numbers or dates");
+        CHECK(scatterSummary(plot, true) == "The Y column holds no numbers or dates");
     }
+}
+
+TEST_CASE("boxStats: quartiles, whiskers and outliers", "[scatter]")
+{
+    CHECK(boxStats({}).count == 0);
+    const BoxStats one = boxStats({7});
+    CHECK(one.count == 1);
+    CHECK(one.q1 == 7);
+    CHECK(one.median == 7);
+    CHECK(one.low_whisker == 7);
+    CHECK(one.high_whisker == 7);
+
+    // As QUARTILE.INC: 1 2 3 4 5 6 7 8 gives 2.75, 4.5, 6.25.
+    const BoxStats box = boxStats({8, 3, 1, 2, 7, 4, 6, 5});
+    CHECK(box.count == 8);
+    CHECK(box.min == 1);
+    CHECK(box.max == 8);
+    CHECK(box.q1 == Catch::Approx(2.75));
+    CHECK(box.median == Catch::Approx(4.5));
+    CHECK(box.q3 == Catch::Approx(6.25));
+    CHECK(box.mean == Catch::Approx(4.5));
+    CHECK(box.low_whisker == 1);
+    CHECK(box.high_whisker == 8);
+    CHECK(box.outlier_count == 0);
+
+    // Q1 10, Q3 14.25: whiskers reach up to 6.375 beyond, so to 7 and 16.
+    const BoxStats out = boxStats({-50, 7, 10, 10, 11, 12, 12, 15, 16, 100, std::nan("")});
+    CHECK(out.count == 10);
+    CHECK(out.q1 == Catch::Approx(10));
+    CHECK(out.q3 == Catch::Approx(14.25));
+    CHECK(out.low_whisker == 7);
+    CHECK(out.high_whisker == 16);
+    CHECK(out.outlier_count == 2);
+    CHECK(out.outliers == std::vector<double>{-50, 100});
+}
+
+TEST_CASE("Categorical X: categories, density and box plots", "[scatter]")
+{
+    using S = std::string;
+    std::vector<Row> rows = {
+        {S("b"), 1.0}, {S("a"), 2.0}, {S("b"), 3.0}, {S("c"), 4.0}, {S("b"), S("5")},
+        {S("a"), 6.0}, {S(""), 7.0}, {S("d"), S("n/a")}, {S("b"), 9.0},
+    };
+    SECTION("the most frequent values first")
+    {
+        const ScatterPlot plot = plotRows(rows);
+        REQUIRE(plot.plottable());
+        REQUIRE(plot.categorical());
+        CHECK(plot.categories == std::vector<CellValue>{S("b"), S("a"), S("c"), S("d")});
+        CHECK_FALSE(plot.other_category);
+        CHECK(plot.xBinCount() == 4);
+        CHECK(plot.pairs == 7);
+        CHECK(plot.others == 2);
+        CHECK(plot.stats.n == 0);
+        CHECK(scatterStatsText(plot).empty());
+        REQUIRE(plot.boxes.size() == 4);
+        CHECK(plot.boxes[0].count == 4);
+        CHECK(plot.boxes[0].median == Catch::Approx(4));
+        CHECK(plot.boxes[3].count == 0);
+        CHECK(plot.points->at(0).x == 0);
+        CHECK(plot.points->at(1).x == 1);
+        CHECK(scatterSummary(plot, false) ==
+              "7 rows plotted in 4 values of X, 2 skipped (empty or not numbers or dates)");
+        CHECK(boxPlotText(plot, 1) == "a: 2 rows; min 2, Q1 3, median 4, Q3 5, max 6; mean 4");
+        CHECK(scatterCategoryText(plot, 2) == "c");
+
+        // A density cell's filter keeps exactly its rows; a box's, its category's.
+        for (size_t xi = 0; xi < plot.xBinCount(); ++xi)
+        {
+            for (size_t yi = 0; yi < plot.y_bins.binCount(); ++yi)
+            {
+                const auto conditions = densityCellConditions(plot, 0, 1, xi, yi);
+                const size_t kept = static_cast<size_t>(std::count_if(rows.begin(), rows.end(), [&](const Row &row)
+                                                                      { return keeps(conditions, row); }));
+                CHECK(kept == plot.count(xi, yi));
+            }
+            const auto conditions = scatterCategoryConditions(plot, 0, 1, xi);
+            const size_t kept = static_cast<size_t>(std::count_if(rows.begin(), rows.end(), [&](const Row &row)
+                                                                  { return keeps(conditions, row); }));
+            CHECK(kept == plot.boxes[xi].count);
+        }
+        CHECK(scatterRangeConditions(plot, 0, 1, 0, 1, 0, 10).empty());
+    }
+    SECTION("the rest is (other)")
+    {
+        ScatterOptions options;
+        options.max_categories = 2;
+        const ScatterPlot plot = plotRows(rows, options);
+        CHECK(plot.categories.size() == 2);
+        CHECK(plot.other_category);
+        CHECK(plot.xBinCount() == 3);
+        REQUIRE(plot.boxes.size() == 3);
+        CHECK(plot.boxes[2].count == 1); // c; d has no number
+        CHECK(scatterCategoryText(plot, 2) == "(other)");
+        CHECK(scatterCategoryConditions(plot, 0, 1, 2).empty());
+        CHECK(densityCellConditions(plot, 0, 1, 2, 0).empty());
+        CHECK(scatterSummary(plot, false).starts_with("7 rows plotted in the 2 most frequent values of X and (other)"));
+    }
+}
+
+TEST_CASE("Categorical X from a sheet: scans and GROUP BY agree", "[scatter]")
+{
+    std::vector<std::shared_ptr<TableBook>> books;
+    auto csv = openFirst(books, kDemoData / "normal.csv");
+    auto parquet = openFirst(books, kDemoData / "normal.parquet");
+    const ScatterState a = waitForScatter(*csv, 4, 6); // City, Salary
+    const ScatterState b = waitForScatter(*parquet, 4, 6);
+    REQUIRE(a.plot.categorical());
+    CHECK(a.plot.categories == b.plot.categories);
+    CHECK(a.plot.counts == b.plot.counts);
+    CHECK(a.plot.boxes == b.plot.boxes);
+    CHECK(a.plot.categories.front() == CellValue{std::string("Fukuoka")});
+    CHECK(a.plot.boxes.front().count == 9);
 }
 
 TEST_CASE("ScatterCounter samples at most max_points, the same each time", "[scatter]")
@@ -346,4 +459,13 @@ TEST_CASE("defaultScatterColumns: without numbers or dates, the column and its n
     books.clear();
     model.reset();
     std::filesystem::remove(path);
+}
+
+TEST_CASE("scatterValueText: whole numbers in full", "[scatter]")
+{
+    Histogram axis;
+    axis.kind = HistogramKind::Number;
+    CHECK(scatterValueText(axis, 500000.0) == "500000");
+    CHECK(scatterValueText(axis, 1279101.65) == "1279101.65");
+    CHECK(scatterValueText(axis, -3.0) == "-3");
 }

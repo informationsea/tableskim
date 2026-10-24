@@ -200,6 +200,9 @@ Choose another column from the list at the top.
 
 ## Histograms
 
+[Charts and Group By](charts.md) shows, with examples, which chart to use
+and how to read it.
+
 **Edit → Histogram...** (`Ctrl+Shift+H`), or **Histogram** in a column or
 cell menu, opens a histogram of the current column in a window of its own.
 Choose another column from the **Column** list at the top; the line next to
@@ -240,6 +243,10 @@ sheet to that value.
 How bins are chosen is described in [Sorting, Filtering, Searching and
 Statistics](filtering.md#histograms).
 
+**Save Image...** writes the chart as a PNG or SVG file (by the extension
+of the name, or the type chosen in the dialog). The image is the chart as
+shown, at its size in the window, with the column name under the axis.
+
 ## Scatter plots and 2D density
 
 **Edit → Scatter Plot...** (`Ctrl+Shift+P`), or **Scatter Plot** in a
@@ -263,8 +270,10 @@ and the kind of plot from **Show**:
 
 ![Scatter plot of two number columns](../images/gui-scatter.png)
 
-Both columns must hold numbers or dates; rows where either value is empty
-or of another kind are left out and counted as "skipped" in the summary.
+Y must hold numbers or dates. X may hold numbers or dates too, or text
+(see [Text on X: box plots](#text-on-x-box-plots) below). Rows where either
+value is empty or of another kind are left out and counted as "skipped"
+in the summary.
 
 The line under the summary shows how closely the columns are related, for
 example `r = 0.0945, R² = 0.0089, y = 2641.23 x + 744351`: Pearson's
@@ -289,7 +298,43 @@ after filtering it is drawn again for the rows left. **Edit → Clear
 Filter** goes back to all rows. See [Sorting, Filtering, Searching and
 Statistics](filtering.md#scatter-plots-and-2d-density) for the details.
 
+### Text on X: box plots
+
+When the X column holds text (such as a city or a department), each of its
+values is a category with a column of its own: the 30 most frequent values,
+most frequent first, and **(other)** for the rest. **Show** then switches to
+**Box Plot** (it is available only then):
+
+![Box plots of Age by City](../images/gui-boxplot.png)
+
+- Each **box** spans the first to the third quartile of the category's Y
+  values, with the **median** as a thick line and the **mean** as a red
+  cross. The **whiskers** reach the furthest values within 1.5 times the
+  box's height from it; values beyond them are drawn as small rings.
+- **Point at a box** to see the category's count, minimum, quartiles,
+  maximum, mean and number of outliers below the plot; **double-click it**
+  to filter the sheet to that category.
+- **Density** shows a histogram of Y for each category, side by side, as
+  coloured cells: double-click a cell to filter to that category and range.
+- **Points** spreads each category's points sideways over its column, so
+  that they do not hide each other.
+
+There is no correlation or regression line for categories, and no
+rectangle to drag.
+
+### Saving the plot
+
+**Save Image...** writes the plot as a PNG or SVG file, as shown: the kind
+of plot, the colour scale, the regression line and the axis titles (the
+column names). The type follows the extension of the name (`.png` or
+`.svg`), or the type chosen in the file dialog. SVG files keep lines and
+text sharp at any size; the points of a scatter plot are an image inside
+them.
+
 ## Group By
+
+See also [Charts and Group By](charts.md#summarizing-in-a-table-group-by)
+for worked examples.
 
 **Edit → Group By...** (`Ctrl+Shift+G`), or **Group By…** in a column
 menu, counts the rows of the current sheet by the values of some columns,

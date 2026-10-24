@@ -22,8 +22,9 @@ TableSkim は 1 つのプログラムに 2 つの画面を備えています。
 3. [GUI の使い方](gui.md)：ウィンドウ、メニュー、サイドバーと GUI の全機能
 4. [ターミナル UI の使い方](tui.md)：ターミナル画面とキー操作
 5. [並べ替え・フィルタ・検索・統計](filtering.md)：値の比較方法、ヒストグラムの区間の決め方、行の集計方法（両方の画面に共通）
-6. [SQL の実行](sql.md)：DuckDB、SQLite、Parquet、JSON ファイルへのクエリ
-7. [エクスポートと変換](exporting.md)：表示内容の保存と、テキストファイルの
+6. [グラフと集計](charts.md)：問いに応じたグラフの選び方、ヒストグラム・散布図・箱ひげ図の読み方、行の集計、グラフの画像保存を例とともに説明
+7. [SQL の実行](sql.md)：DuckDB、SQLite、Parquet、JSON ファイルへのクエリ
+8. [エクスポートと変換](exporting.md)：表示内容の保存と、テキストファイルの
    Parquet / DuckDB への変換
-8. [セルの編集](editing.md)：編集モードでの CSV / TSV・Excel ファイルのセルの変更と保存
-9. [キーボードショートカット](keyboard-shortcuts.md)：両方の画面の早見表
+9. [セルの編集](editing.md)：編集モードでの CSV / TSV・Excel ファイルのセルの変更と保存
+10. [キーボードショートカット](keyboard-shortcuts.md)：両方の画面の早見表

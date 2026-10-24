@@ -29,10 +29,13 @@ edit mode.
 5. [Sorting, Filtering, Searching and Statistics](filtering.md): how
    comparisons work, how histogram bins are chosen and how rows are
    grouped, shared by both interfaces
-6. [Running SQL](sql.md): querying DuckDB, SQLite, Parquet and JSON files
-7. [Exporting and Converting](exporting.md): saving the view and converting
+6. [Charts and Group By](charts.md): which chart answers which question,
+   how to read histograms, scatter plots and box plots, grouping rows into
+   tables, and saving charts as images, with examples
+7. [Running SQL](sql.md): querying DuckDB, SQLite, Parquet and JSON files
+8. [Exporting and Converting](exporting.md): saving the view and converting
    text files to Parquet / DuckDB
-8. [Editing Cells](editing.md): changing cells of CSV / TSV and Excel files
+9. [Editing Cells](editing.md): changing cells of CSV / TSV and Excel files
    in edit mode, and saving them
-9. [Keyboard Shortcuts](keyboard-shortcuts.md): a quick reference for both
-   interfaces
+10. [Keyboard Shortcuts](keyboard-shortcuts.md): a quick reference for both
+    interfaces

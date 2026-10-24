@@ -216,8 +216,17 @@ std::vector<FilterCondition> densityCellConditions(const ScatterPlot &plot, size
 // bins, as for a rectangle drawn with the mouse).
 std::vector<FilterCondition> scatterRangeConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
                                                     double x_low, double x_high, double y_low, double y_high);
-// "x [10, 20) × y [5, 6): 42 rows (3.1%)"
+// "x [10, 20) × y [5, 6): 42 rows (3.1%)", or "Osaka × y [5, 6): ..." for
+// a categorical X.
 std::string densityCellText(const ScatterPlot &plot, size_t x_bin, size_t y_bin);
+// A category of a categorical X: its value as text, or "(other)".
+std::string scatterCategoryText(const ScatterPlot &plot, size_t category);
+// Conditions that keep the rows of a category of a categorical X: equal to
+// its value, and Y of the kind plotted. None for "(other)".
+std::vector<FilterCondition> scatterCategoryConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
+                                                       size_t category);
+// "Osaka: 9 rows; min 20, Q1 25, median 30, Q3 40, max 57; mean 32.3; 1 outlier"
+std::string boxPlotText(const ScatterPlot &plot, size_t category);
 // "r = 0.8123, R² = 0.6598, y = 2641.23 x + 744351": Pearson's correlation,
 // its square and the least-squares line (only when both axes are numbers;
 // times would be in microseconds). Empty without two points.

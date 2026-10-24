@@ -92,6 +92,9 @@ switch sheets.
 
 ## Histograms
 
+[Charts and Group By](charts.md) shows, with examples, how to read the
+charts and the Group By results.
+
 `B` shows a histogram of the current column in place of the sheet. The title
 line summarizes what was counted, and each line is one bar with its range,
 count and percentage.
@@ -141,9 +144,23 @@ least-squares line of the rows plotted, as in the GUI.
 | `F`                  | Clear the filter                                          |
 | `Esc`, `M`, `q`      | Back to the sheet                                         |
 
-Both columns must hold numbers or dates, as for the GUI's [scatter
+Y must hold numbers or dates, as for the GUI's [scatter
 plot](gui.md#scatter-plots-and-2d-density). The colours need a terminal
 with 256 or more colours.
+
+When X holds text, each of its 30 most frequent values (and **(other)** for
+the rest) gets a line of its own, showing a **box plot** of its Y values:
+the whiskers `├──┤`, the box `███` from the first to the third quartile,
+the median `┃` and outliers `∘`, on a common scale. The line at the bottom
+shows the numbers of the selected category.
+
+![Box plots of Salary by City](../images/tui-boxplot.png)
+
+| Key (box plot)       | Action                                                   |
+| -------------------- | -------------------------------------------------------- |
+| `↑` / `↓`, `k` / `j` | Select a category                                         |
+| `b`                  | The density instead (a column per category); again: back  |
+| `Enter`              | Filter the sheet to the selected category                 |
 
 ## Group By
 

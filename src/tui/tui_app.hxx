@@ -147,6 +147,11 @@ private:
     bool density_chosen_ = false;
     uint64_t density_generation_ = 0;
     bool density_log_ = true;
+    // Text on X: box plots, one line per category (b: the density instead);
+    // switched to when such a plot appears.
+    bool density_box_ = false;
+    bool density_categorical_ = false;
+    size_t box_selected_ = 0;
 
     // Go To prompt (Ctrl+G): a row, cell or column.
     bool goto_prompt_ = false;
@@ -317,6 +322,7 @@ private:
     void closeDensity();
     bool handleDensityEvent(ftxui::Event event);
     ftxui::Element renderDensity();
+    ftxui::Elements renderBoxPlot(const ScatterPlot &plot, int width, int height, std::string &hint);
     ftxui::Element renderStatusBar();
     // Frequently used keys for the status bar, in at most `width` columns.
     std::string keyHintText(int width) const;

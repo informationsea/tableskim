@@ -51,7 +51,8 @@ background while the window stays responsive.
   to its rows, and the histogram follows
 - Scatter plots and 2D density of two columns (**Edit → Scatter Plot...**;
   the density with `M` in the terminal UI), with the correlation
-  coefficient and the least-squares line
+  coefficient and the least-squares line; with text on X, box plots of each
+  category. Histograms and plots can be saved as PNG or SVG images
 - Group By (**Edit → Group By...**; `A` in the terminal UI): count the rows
   by the values of some columns, with the sum, mean, min, max, ... of
   others, into a sheet of its own

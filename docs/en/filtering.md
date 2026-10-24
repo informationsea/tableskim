@@ -204,6 +204,20 @@ the terminal UI (see [Using the Terminal UI](tui.md#2d-density)).
   equation is shown for numbers only. *r* is undefined when a column has a
   single value.
 
+When X holds text, its 30 most frequent values (in the order of the
+histogram's most frequent values) are categories, and the other values
+together are **(other)**. Each category gets a box plot of its Y values:
+
+- the quartiles by linear interpolation between the closest values, as
+  spreadsheets' `QUARTILE.INC` computes them (Q1 of 1, 2, …, 8 is 2.75);
+- the whiskers end at the furthest values within 1.5 interquartile ranges
+  (Q3 − Q1) of the box; the values beyond are outliers;
+- the mean of the values.
+
+Choosing a box (double-click in the GUI, `Enter` in the TUI) adds `=` the
+category's value on X and `is a number` (or `is a date`) on Y. "(other)"
+cannot be chosen, as it is not one value.
+
 Choosing a cell (double-click in the GUI, `Enter` in the TUI) adds the
 conditions of both columns' bins to the filter, which keep exactly the rows
 counted in the cell. Dragging a rectangle in the GUI adds `is a number` (or
