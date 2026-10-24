@@ -84,6 +84,9 @@ public:
     explicit HistogramCounter(Histogram layout);
     void add(const CellValue &value, size_t count = 1);
     const Histogram &result() const { return histogram_; }
+    // The bin that add() counts `value` in; nullopt for empty values and
+    // values of another kind.
+    std::optional<size_t> binOf(const CellValue &value) const;
 
 private:
     Histogram histogram_;
@@ -98,6 +101,10 @@ std::vector<double> numberHistogramEdges(double min, double max, bool integers, 
 // Bins of whole seconds, minutes, hours, days, weeks (from Monday), months
 // or years covering [min, max] (microseconds), about `target` of them.
 std::vector<double> timeHistogramEdges(int64_t min, int64_t max, bool dates, size_t target, TimeUnit *unit = nullptr);
+
+// Where a value lies on an axis of `kind`: the number, or the time in
+// microseconds since 1970-01-01 (UTC); nullopt for other values.
+std::optional<double> histogramCoordinate(HistogramKind kind, const CellValue &value);
 
 // The bin that holds `x`, if any.
 std::optional<size_t> histogramBin(const std::vector<double> &edges, double x);

@@ -131,6 +131,16 @@ private:
     size_t histogram_selected_ = 0;
     size_t histogram_top_ = 0; // first bar shown when they do not all fit
 
+    // 2D density (M): shown instead of the sheet like the histogram; the
+    // selected cell can filter the sheet.
+    std::shared_ptr<TableModel> density_model_;
+    size_t density_x_ = 0; // the selected cell's bins
+    size_t density_y_ = 0;
+    // Until the plot is done or a cell is chosen, the densest cell is selected.
+    bool density_chosen_ = false;
+    uint64_t density_generation_ = 0;
+    bool density_log_ = true;
+
     // Go To prompt (Ctrl+G): a row, cell or column.
     bool goto_prompt_ = false;
     std::string goto_input_;
@@ -267,6 +277,10 @@ private:
     void closeHistogram();
     bool handleHistogramEvent(ftxui::Event event);
     ftxui::Element renderHistogram();
+    void showDensity(size_t x_column, size_t y_column);
+    void closeDensity();
+    bool handleDensityEvent(ftxui::Event event);
+    ftxui::Element renderDensity();
     ftxui::Element renderStatusBar();
     ftxui::Element renderSearchPrompt();
     ftxui::Element renderSqlPrompt();

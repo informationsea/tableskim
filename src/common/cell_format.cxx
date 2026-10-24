@@ -451,6 +451,234 @@ std::string histogramSummary(const Histogram &histogram)
     return text;
 }
 
+std::string scatterValueText(const Histogram &axis, double coordinate)
+{
+    if (axis.kind == HistogramKind::Time)
+    {
+        const std::string text = formatCell(DateTime{static_cast<int64_t>(std::llround(coordinate))});
+        return axis.dates ? text.substr(0, 10) : text;
+    }
+    if (axis.integers && std::fabs(coordinate) < 9.007199254740992e15)
+        return std::to_string(static_cast<int64_t>(std::llround(coordinate)));
+    return formatCell(CellValue{coordinate});
+}
+
+std::vector<FilterCondition> densityCellConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
+                                                   size_t x_bin, size_t y_bin)
+{
+    std::vector<FilterCondition> conditions = histogramBinConditions(plot.x_bins, x_column, x_bin);
+    for (FilterCondition &condition : histogramBinConditions(plot.y_bins, y_column, y_bin))
+        conditions.push_back(std::move(condition));
+    return conditions;
+}
+
+namespace
+{
+    // One axis of scatterRangeConditions().
+    void addRangeConditions(std::vector<FilterCondition> &conditions, const Histogram &bins, size_t column,
+                            double low, double high)
+    {
+        if (high < low)
+            std::swap(low, high);
+        std::string low_text;
+        std::string high_text;
+        if (bins.kind == HistogramKind::Time)
+        {
+            // Dates as the filters read them: the start of the day.
+            auto text = [&](double micros)
+            {
+                const std::string full = formatCell(DateTime{static_cast<int64_t>(std::llround(micros))});
+                return bins.dates ? full.substr(0, 10) : full.substr(0, 19);
+            };
+            constexpr double MICROS_PER_DAY = 86400e6;
+            low_text = text(bins.dates ? std::ceil(low / MICROS_PER_DAY) * MICROS_PER_DAY : std::ceil(low / 1e6) * 1e6);
+            high_text = text(high);
+        }
+        else
+        {
+            // A digit finer than the bins; integers between the bounds.
+            const int digits = bins.integers ? 0 : bins.decimals + 1;
+            const double scale = std::pow(10.0, digits);
+            auto text = [&](double value)
+            {
+                char buffer[64];
+                std::snprintf(buffer, sizeof(buffer), "%.*f", digits, value);
+                return std::string(std::string_view(buffer) == "-0" ? "0" : buffer);
+            };
+            low_text = text(std::ceil(low * scale) / scale);
+            high_text = text(std::floor(high * scale) / scale);
+        }
+        conditions.push_back({column, bins.kind == HistogramKind::Time ? FilterOp::IsDate : FilterOp::IsNumber, {}});
+        conditions.push_back({column, FilterOp::GreaterEqual, low_text});
+        conditions.push_back({column, FilterOp::LessEqual, high_text});
+    }
+} // namespace
+
+std::vector<FilterCondition> scatterRangeConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
+                                                    double x_low, double x_high, double y_low, double y_high)
+{
+    std::vector<FilterCondition> conditions;
+    if (!plot.plottable())
+        return conditions;
+    addRangeConditions(conditions, plot.x_bins, x_column, x_low, x_high);
+    addRangeConditions(conditions, plot.y_bins, y_column, y_low, y_high);
+    return conditions;
+}
+
+std::string densityCellText(const ScatterPlot &plot, size_t x_bin, size_t y_bin)
+{
+    if (x_bin >= plot.x_bins.binCount() || y_bin >= plot.y_bins.binCount())
+        return {};
+    const size_t count = plot.count(x_bin, y_bin);
+    return "x " + histogramBinRange(plot.x_bins, x_bin) + " × y " + histogramBinRange(plot.y_bins, y_bin) + ": " +
+           std::to_string(count) + (count == 1 ? " row (" : " rows (") + percentText(count, plot.pairs) + ")";
+}
+
+std::string scatterStatsText(const ScatterPlot &plot)
+{
+    const ScatterStats &stats = plot.stats;
+    if (stats.n < 2)
+        return {};
+    auto format = [](const char *pattern, double value)
+    {
+        char buffer[64];
+        std::snprintf(buffer, sizeof(buffer), pattern, value);
+        return std::string(buffer);
+    };
+    const auto r = stats.correlation();
+    if (!r)
+        return "r undefined (a column is constant)";
+    std::string text = format("r = %.4f", *r) + format(", R² = %.4f", *r * *r);
+    const auto slope = stats.slope();
+    const auto intercept = stats.intercept();
+    if (slope && intercept && plot.x_bins.kind == HistogramKind::Number && plot.y_bins.kind == HistogramKind::Number)
+    {
+        text += format(", y = %.6g x", *slope) + (*intercept < 0 ? " - " : " + ") +
+                format("%.6g", std::fabs(*intercept));
+    }
+    return text;
+}
+
+bool columnLooksPlottable(TableModel &model, size_t column, size_t first_row, size_t last_row)
+{
+    size_t plottable = 0;
+    size_t others = 0;
+    for (size_t row = first_row; row < last_row; ++row)
+    {
+        const CellRef cell = model.peek(row, column);
+        if (cell.state == CellState::OutOfRange)
+            break;
+        if (cell.state != CellState::Ready || isEmptyCell(*cell.value))
+            continue;
+        if (histogramCoordinate(HistogramKind::Number, *cell.value) ||
+            histogramCoordinate(HistogramKind::Time, *cell.value))
+            ++plottable;
+        else
+            ++others;
+    }
+    return plottable > 0 && plottable >= others;
+}
+
+ScatterColumns defaultScatterColumns(TableModel &model, size_t column, const HiddenColumns &hidden, size_t first_row,
+                                     size_t last_row)
+{
+    const size_t count = model.columnCount();
+    std::vector<bool> candidates(count, false);
+    for (size_t c = 0; c < count; ++c)
+        candidates[c] = !hidden.contains(c) && columnLooksPlottable(model, c, first_row, last_row);
+    // The candidate nearest to `from` (itself included unless excluded),
+    // preferring the left one on a tie.
+    auto nearest = [&](size_t from, std::optional<size_t> excluded) -> std::optional<size_t>
+    {
+        for (size_t distance = 0; distance < count; ++distance)
+        {
+            if (distance <= from && candidates[from - distance] && from - distance != excluded)
+                return from - distance;
+            if (from + distance < count && candidates[from + distance] && from + distance != excluded)
+                return from + distance;
+        }
+        return std::nullopt;
+    };
+    if (column < count)
+    {
+        if (const auto y = nearest(column, std::nullopt))
+        {
+            std::optional<size_t> x;
+            for (size_t c = *y; c-- > 0 && !x;)
+            {
+                if (candidates[c])
+                    x = c;
+            }
+            if (!x)
+                x = nearest(*y, *y);
+            if (x)
+                return {*x, *y};
+        }
+    }
+
+    ScatterColumns columns{column, column};
+    for (size_t c = column; c-- > 0;)
+    {
+        if (!hidden.contains(c))
+        {
+            columns.x = c;
+            break;
+        }
+    }
+    if (columns.x == columns.y && columns.y + 1 < count)
+        ++columns.y;
+    return columns;
+}
+
+double densityScale(size_t count, size_t most, bool log_scale)
+{
+    if (most == 0)
+        return 0;
+    if (log_scale)
+        return std::log1p(static_cast<double>(count)) / std::log1p(static_cast<double>(most));
+    return static_cast<double>(count) / static_cast<double>(most);
+}
+
+std::array<unsigned char, 3> densityColor(double t)
+{
+    static const std::array<std::array<unsigned char, 3>, 10> colors = {{
+        {68, 1, 84},
+        {72, 40, 120},
+        {62, 74, 137},
+        {49, 104, 142},
+        {38, 130, 142},
+        {31, 158, 137},
+        {53, 183, 121},
+        {109, 205, 89},
+        {180, 222, 44},
+        {253, 231, 37},
+    }};
+    t = std::clamp(std::isnan(t) ? 0.0 : t, 0.0, 1.0) * static_cast<double>(colors.size() - 1);
+    const auto i = std::min(static_cast<size_t>(t), colors.size() - 2);
+    const double f = t - static_cast<double>(i);
+    std::array<unsigned char, 3> rgb{};
+    for (size_t k = 0; k < 3; ++k)
+        rgb[k] = static_cast<unsigned char>(std::lround(colors[i][k] * (1 - f) + colors[i + 1][k] * f));
+    return rgb;
+}
+
+std::string scatterSummary(const ScatterPlot &plot, bool points)
+{
+    if (!plot.plottable())
+    {
+        if (plot.x_axis.kind == HistogramKind::None && plot.y_axis.kind == HistogramKind::None)
+            return "Neither column holds numbers or dates";
+        return plot.x_axis.kind == HistogramKind::None ? "The X column holds no numbers or dates"
+                                                       : "The Y column holds no numbers or dates";
+    }
+    std::string text = std::to_string(plot.pairs) + (plot.pairs == 1 ? " row" : " rows") + " plotted";
+    if (plot.others > 0)
+        text += ", " + std::to_string(plot.others) + " skipped (empty or not numbers or dates)";
+    if (points && plot.sampled())
+        text += ", a sample of " + std::to_string(plot.points->size()) + " points";
+    return text;
+}
+
 std::string memorySizeText(size_t bytes)
 {
     constexpr double MB = 1024.0 * 1024.0;

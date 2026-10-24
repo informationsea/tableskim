@@ -98,6 +98,7 @@ private:
     std::function<void(size_t)> filter_column_callback_;
     std::function<void(size_t)> stats_column_callback_;
     std::function<void(size_t)> histogram_column_callback_;
+    std::function<void(size_t)> scatter_column_callback_;
     std::function<void()> cell_activate_callback_;
     std::function<void()> columns_changed_callback_;
     // Editing a cell (in edit mode): an input over it.
@@ -183,6 +184,11 @@ public:
     void setHistogramColumnCallback(std::function<void(size_t)> callback)
     {
         histogram_column_callback_ = std::move(callback);
+    }
+    // Called with the column to plot as Y (context menus).
+    void setScatterColumnCallback(std::function<void(size_t)> callback)
+    {
+        scatter_column_callback_ = std::move(callback);
     }
     // Called when a cell is double-clicked (after it was selected) and not
     // edited.

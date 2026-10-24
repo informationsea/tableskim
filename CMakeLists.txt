@@ -55,6 +55,8 @@ add_library(tableskim-common
     src/common/column_stats.cxx
     src/common/histogram.hxx
     src/common/histogram.cxx
+    src/common/scatter.hxx
+    src/common/scatter.cxx
     src/common/table_csv.hxx
     src/common/table_csv.cxx
     src/common/table_excel.hxx
@@ -186,6 +188,8 @@ if(TABLESKIM_BUILD_GUI)
         src/gui/gui_stats_pane.cxx
         src/gui/gui_histogram.hxx
         src/gui/gui_histogram.cxx
+        src/gui/gui_scatter.hxx
+        src/gui/gui_scatter.cxx
         src/gui/gui_help.hxx
         src/gui/gui_help.cxx
         src/gui/gui_fonts.hxx
@@ -397,6 +401,7 @@ add_executable(tableskim-tests
     tests/text_encoding_tests.cxx
     tests/column_stats_tests.cxx
     tests/histogram_tests.cxx
+    tests/scatter_tests.cxx
     tests/markdown_tests.cxx
     tests/licenses_tests.cxx
     tests/cell_format_tests.cxx

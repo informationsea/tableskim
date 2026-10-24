@@ -1459,6 +1459,8 @@ void TableModel::cellsChangedLocked()
         restartStatsLocked();
     if (histogram_.active)
         restartHistogramLocked();
+    if (scatter_.active)
+        restartScatterLocked();
     failScanLocked("The table was edited while its rows were being read");
     // Listeners run on the worker thread.
     if (auto scheduler = scheduler_.lock())
@@ -1678,6 +1680,8 @@ bool TableModel::step(DataSource &data_source, std::stop_token stop)
                     worked = stepStats(lock, stop, events);
                 else if (histogram_job_)
                     worked = stepHistogram(lock, stop, events);
+                else if (scatter_job_)
+                    worked = stepScatter(lock, stop, events);
                 else
                     worked = stepCount(lock, stop, events);
             }
@@ -1694,6 +1698,8 @@ bool TableModel::step(DataSource &data_source, std::stop_token stop)
             worked = stepStats(lock, stop, events);
         else if (histogram_job_)
             worked = stepHistogram(lock, stop, events);
+        else if (scatter_job_)
+            worked = stepScatter(lock, stop, events);
         else
             worked = stepCount(lock, stop, events);
     }
@@ -1945,6 +1951,8 @@ bool TableModel::stepApplyView(std::unique_lock<std::mutex> &lock, std::stop_tok
             restartStatsLocked();
         if (histogram_.active)
             restartHistogramLocked();
+        if (scatter_.active)
+            restartScatterLocked();
         // Rows already read belong to the old view.
         if (scan_ && (scan_->next_row > 0 || !(scan_->spec == spec)))
             failScanLocked("The view changed while its rows were being read");
@@ -2386,6 +2394,168 @@ HistogramState TableModel::histogramState() const
     std::lock_guard lock(mutex_);
     HistogramState state = histogram_;
     state.generation = histogram_generation_;
+    return state;
+}
+
+// Like the histogram: the first pass finds the ranges of the columns (by the
+// source's GROUP BY if it can), the second counts the rows and samples the
+// points. The second always scans, as the points need their view rows.
+bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token stop,
+                             std::vector<TableEvent> &events)
+{
+    ScatterJob &job = *scatter_job_;
+    const size_t x_column = scatter_.x_column;
+    const size_t y_column = scatter_.y_column;
+    const bool counting = scatter_.counting;
+    const std::shared_ptr<ScatterRange> range = job.range;
+    const std::shared_ptr<ScatterCounter> counter = job.counter;
+    const uint64_t generation = scatter_generation_;
+
+    if (!counting && capabilities_.query_pushdown && !job.pushdown_tried)
+    {
+        job.pushdown_tried = true;
+        lock.unlock();
+        bool counted = false;
+        try
+        {
+            counted = source_->columnValueCounts(x_column, [&](const CellValue &value, size_t count)
+                                                 { range->x().add(value, count); }, stop)
+                          .has_value() &&
+                      source_->columnValueCounts(y_column, [&](const CellValue &value, size_t count)
+                                                 { range->y().add(value, count); }, stop)
+                          .has_value();
+        }
+        catch (const std::exception &)
+        {
+            // Scanning reports the error as reading the sheet does.
+        }
+        lock.lock();
+        if (generation != scatter_generation_)
+            return true;
+        if (!counted)
+        {
+            // The source may have added some values before it gave up.
+            scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits);
+            return true;
+        }
+        finishScatterPassLocked(events);
+        return true;
+    }
+
+    const size_t start = job.next_row;
+    if (const auto block_index = scanBlockToLoadLocked(start))
+        return loadBlock(*block_index, lock, stop, events);
+    const ScanChunk chunk = scanChunkLocked(start);
+    const auto published = scatter_published_;
+    lock.unlock();
+
+    for (const auto &[view_row, row] : chunk.rows)
+    {
+        if (counting)
+            counter->add(cellAt(*row, x_column), cellAt(*row, y_column), view_row);
+        else
+            range->add(cellAt(*row, x_column), cellAt(*row, y_column));
+    }
+    const auto now = std::chrono::steady_clock::now();
+    // Copied outside the lock: the points take a while.
+    std::optional<ScatterPlot> partial;
+    if (counting && !chunk.last && now - published >= STATS_PUBLISH_INTERVAL)
+        partial = counter->result();
+
+    lock.lock();
+    if (generation != scatter_generation_)
+        return true;
+    scatter_.scanned_rows += chunk.end - start;
+    scatter_job_->next_row = chunk.end;
+    if (capabilities_.random_access)
+        evictLocked();
+    if (chunk.last)
+        finishScatterPassLocked(events);
+    else
+    {
+        // The counts so far, now and then.
+        if (partial)
+        {
+            scatter_.plot = std::move(*partial);
+            scatter_published_ = now;
+        }
+        events.push_back({TableEvent::Kind::ScatterProgress, start, chunk.end});
+    }
+    return true;
+}
+
+void TableModel::finishScatterPassLocked(std::vector<TableEvent> &events)
+{
+    ScatterJob &job = *scatter_job_;
+    if (scatter_.counting)
+    {
+        scatter_.plot = job.counter->result();
+        scatter_.done = true;
+        scatter_job_.reset();
+    }
+    else
+    {
+        scatter_.plot = job.range->layout(scatter_.options);
+        if (!scatter_.plot.plottable())
+        {
+            // A column of neither numbers nor times: nothing to plot.
+            scatter_.done = true;
+            scatter_job_.reset();
+        }
+        else
+        {
+            scatter_.counting = true;
+            scatter_.scanned_rows = 0;
+            job.next_row = 0;
+            job.range.reset();
+            job.counter = std::make_shared<ScatterCounter>(scatter_.plot, scatter_.options.max_points);
+            scatter_published_ = std::chrono::steady_clock::now();
+        }
+    }
+    events.push_back({TableEvent::Kind::ScatterProgress, 0, scatter_.scanned_rows});
+}
+
+void TableModel::startScatter(size_t x_column, size_t y_column, ScatterOptions options)
+{
+    {
+        std::lock_guard lock(mutex_);
+        scatter_.x_column = x_column;
+        scatter_.y_column = y_column;
+        scatter_.options = options;
+        restartScatterLocked();
+    }
+    wakeWorker();
+}
+
+void TableModel::restartScatterLocked()
+{
+    const size_t x_column = scatter_.x_column;
+    const size_t y_column = scatter_.y_column;
+    const ScatterOptions options = scatter_.options;
+    scatter_ = {};
+    scatter_.active = true;
+    scatter_.x_column = x_column;
+    scatter_.y_column = y_column;
+    scatter_.options = options;
+    ++scatter_generation_;
+    // New accumulators: the worker may still be adding to the old ones.
+    scatter_job_ = ScatterJob{};
+    scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits);
+}
+
+void TableModel::cancelScatter()
+{
+    std::lock_guard lock(mutex_);
+    scatter_job_.reset();
+    scatter_ = {};
+    ++scatter_generation_;
+}
+
+ScatterState TableModel::scatterState() const
+{
+    std::lock_guard lock(mutex_);
+    ScatterState state = scatter_;
+    state.generation = scatter_generation_;
     return state;
 }
 

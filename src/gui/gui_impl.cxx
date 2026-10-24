@@ -208,6 +208,8 @@ GuiTableView *TableWindow::add_sheet_view(const std::string &sheet_name)
             stats_pane->update();
             if (histogram_window_)
                 histogram_window_->update();
+            if (scatter_window_)
+                scatter_window_->update();
         } });
     table_view->setFilterColumnCallback([this](size_t column)
                                         { show_filter(column); });
@@ -215,6 +217,8 @@ GuiTableView *TableWindow::add_sheet_view(const std::string &sheet_name)
                                        { show_stats(column); });
     table_view->setHistogramColumnCallback([this](size_t column)
                                            { show_histogram(column); });
+    table_view->setScatterColumnCallback([this](size_t column)
+                                         { show_scatter_plot(column); });
     table_view->setColumnsChangedCallback([this]
                                           {
         if (frontTableWindow() == this)
@@ -428,11 +432,13 @@ void TableWindow::sync_menu_items()
     {
         menuitem_column_stats->activate();
         menuitem_histogram->activate();
+        menuitem_scatter_plot->activate();
     }
     else
     {
         menuitem_column_stats->deactivate();
         menuitem_histogram->deactivate();
+        menuitem_scatter_plot->deactivate();
     }
     auto *current_view = dynamic_cast<GuiTableView *>(tab->value());
     const bool has_sheet = current_view && current_view->model();
@@ -510,6 +516,12 @@ void TableWindow::current_sheet_changed()
         auto *table_view = dynamic_cast<GuiTableView *>(tab->value());
         const auto model = table_view ? table_view->model() : nullptr;
         histogram_window_->setModel(model, model ? model->name() : std::string());
+    }
+    if (scatter_window_)
+    {
+        auto *table_view = dynamic_cast<GuiTableView *>(tab->value());
+        const auto model = table_view ? table_view->model() : nullptr;
+        scatter_window_->setModel(model, model ? model->name() : std::string());
     }
     // View > Show All Columns follows the sheet.
     if (frontTableWindow() == this)
@@ -660,6 +672,50 @@ void callback_histogram(Fl_Menu_ *, void *)
 {
     if (auto *self = frontTableWindow())
         self->show_histogram();
+}
+
+// The selection's left and right columns, else columns holding numbers or
+// dates near the one given (or the current one), see defaultScatterColumns().
+void TableWindow::show_scatter_plot(std::optional<size_t> column)
+{
+    auto *table_view = dynamic_cast<GuiTableView *>(tab->value());
+    if (!table_view || !table_view->model())
+        return;
+    int row_top, col_left, row_bottom, col_right;
+    table_view->get_selection(row_top, col_left, row_bottom, col_right);
+    size_t x_column = 0;
+    size_t y_column = 0;
+    if (!column && col_left >= 0 && col_right > col_left)
+    {
+        x_column = static_cast<size_t>(col_left);
+        y_column = static_cast<size_t>(col_right);
+    }
+    else
+    {
+        // Judged by the rows around the current one, which are loaded.
+        const auto row = static_cast<size_t>(std::max(row_top, 0));
+        const ScatterColumns columns = defaultScatterColumns(
+            *table_view->model(), column ? *column : static_cast<size_t>(std::max(col_left, 0)),
+            table_view->hiddenColumns(), row > 50 ? row - 50 : 0, row + 50);
+        x_column = columns.x;
+        y_column = columns.y;
+    }
+    if (!scatter_window_)
+    {
+        scatter_window_ = std::make_unique<ScatterWindow>();
+        scatter_window_->setRowCallback([this](const std::shared_ptr<TableModel> &model, size_t view_row, size_t col)
+                                        {
+            auto *current = dynamic_cast<GuiTableView *>(tab->value());
+            if (current && current->model() == model && view_row <= INT_MAX && col <= INT_MAX)
+                current->jumpTo(static_cast<int>(view_row), static_cast<int>(col)); });
+    }
+    scatter_window_->show(table_view->model(), table_view->model()->name(), x_column, y_column);
+}
+
+void callback_scatter_plot(Fl_Menu_ *, void *)
+{
+    if (auto *self = frontTableWindow())
+        self->show_scatter_plot();
 }
 
 void TableWindow::clear_filter()

@@ -4,13 +4,14 @@
 
 The terminal UI (TUI) runs in a terminal, so you can browse tables on a
 remote server over SSH. It offers the same features as the GUI, including
-histograms.
+histograms; of the scatter plot, it shows the 2D density.
 
 - [Starting](#starting)
 - [The screen](#the-screen)
 - [Moving and selecting](#moving-and-selecting)
 - [The sidebar: cell contents and statistics](#the-sidebar-cell-contents-and-statistics)
 - [Histograms](#histograms)
+- [2D density](#2d-density)
 - [Sorting](#sorting)
 - [Filtering](#filtering)
 - [Searching](#searching)
@@ -105,6 +106,37 @@ again for the rows left, so you can narrow down step by step; press `Esc`
 to see the filtered sheet.
 
 ![Histogram of a date column](../images/tui-histogram-dates.png)
+
+## 2D density
+
+`M` shows how two columns relate, in place of the sheet: the first and last
+of the selected columns on the horizontal (X) and vertical (Y) axes, or
+else columns holding numbers or dates chosen as in the
+[GUI](gui.md#scatter-plots-and-2d-density): Y is the cursor's column or the
+nearest such one, X the nearest such one to its left. The plot
+is a grid of cells, each coloured by the number of rows whose X and Y
+values fall in it, from dark purple (few) to yellow (many); empty cells
+stay blank. The grid is sized to the terminal. The densest cell is selected
+first, and the line at the bottom shows its ranges and count. The title line
+also shows Pearson's correlation coefficient *r*, *R²* and the
+least-squares line of the rows plotted, as in the GUI.
+
+![2D density of two number columns](../images/tui-density.png)
+
+| Key                  | Action                                                   |
+| -------------------- | -------------------------------------------------------- |
+| Arrows, `h j k l`    | Select a cell                                             |
+| `x` / `X`            | Next / previous column on X                               |
+| `y` / `Y`            | Next / previous column on Y                               |
+| `t`                  | Swap X and Y                                              |
+| `L`                  | Logarithmic / linear colour scale                         |
+| `Enter`              | Filter the sheet to the rows of the selected cell         |
+| `F`                  | Clear the filter                                          |
+| `Esc`, `M`, `q`      | Back to the sheet                                         |
+
+Both columns must hold numbers or dates, as for the GUI's [scatter
+plot](gui.md#scatter-plots-and-2d-density). The colours need a terminal
+with 256 or more colours.
 
 ## Sorting
 

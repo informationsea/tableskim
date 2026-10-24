@@ -25,6 +25,7 @@ decl {\#include <memory>
 \#include "gui_filter_pane.hxx"
 \#include "gui_stats_pane.hxx"
 \#include "gui_histogram.hxx"
+\#include "gui_scatter.hxx"
 \#include "licenses.hxx"
 \#include "gui_sql.hxx"} {public global
 }
@@ -149,7 +150,12 @@ class TableWindow {open
           MenuItem menuitem_histogram {
             label {Histogram...}
             callback callback_histogram
-            xywh {0 0 100 20} shortcut 0x410068 divider
+            xywh {0 0 100 20} shortcut 0x410068
+          }
+          MenuItem menuitem_scatter_plot {
+            label {Scatter Plot...}
+            callback callback_scatter_plot
+            xywh {0 0 100 20} shortcut 0x410070 divider
           }
           MenuItem menuitem_run_sql {
             label {Run SQL...}
@@ -472,6 +478,8 @@ requestWindowMenuUpdate();} {}
   }
   decl {std::unique_ptr<HistogramWindow> histogram_window_} {private local
   }
+  decl {std::unique_ptr<ScatterWindow> scatter_window_} {private local
+  }
   decl {std::string last_query_} {private local
   }
   decl {std::string sql_sheet_} {private local
@@ -594,6 +602,8 @@ return !table_book || table_book->usesHeaderOption();} {}
   decl {void show_stats(std::optional<size_t> column = std::nullopt)} {public local
   }
   decl {void show_histogram(std::optional<size_t> column = std::nullopt)} {public local
+  }
+  decl {void show_scatter_plot(std::optional<size_t> column = std::nullopt)} {public local
   }
   decl {void clear_filter()} {public local
   }

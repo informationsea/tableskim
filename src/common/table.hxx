@@ -30,6 +30,7 @@
 
 #include "column_stats.hxx"
 #include "histogram.hxx"
+#include "scatter.hxx"
 #include "table_types.hxx"
 #include "table_source.hxx"
 
@@ -61,6 +62,7 @@ struct TableEvent
         SearchProgress,
         StatsProgress,
         HistogramProgress,
+        ScatterProgress,
         MemoryCheckpoint, // reading paused, see TableModel::memoryCheckpoint()
         CellsChanged,     // edited, undone or redone (see TableModel::setCells())
         Error,
@@ -123,6 +125,23 @@ struct HistogramState
     Histogram histogram;
     // Changes whenever the histogram starts over (new column, cancel, or a
     // view change), even if the column stays the same.
+    uint64_t generation = 0;
+};
+
+struct ScatterState
+{
+    bool active = false;
+    bool done = false;
+    size_t x_column = 0;
+    size_t y_column = 0;
+    ScatterOptions options;
+    // The first pass finds the ranges; the second counts the rows into the
+    // grid and samples the points, which `plot` then has (growing until done).
+    bool counting = false;
+    size_t scanned_rows = 0; // view rows of the current pass
+    ScatterPlot plot;
+    // Changes whenever the plot starts over (new columns, cancel, or a view
+    // change).
     uint64_t generation = 0;
 };
 
@@ -306,6 +325,14 @@ public:
     void cancelHistogram();
     HistogramState histogramState() const;
 
+    // Two columns plotted against each other over the rows of the view
+    // (points and a 2D density), computed in the background in two passes
+    // like a histogram; ScatterProgress is emitted as rows are counted. A
+    // view change starts it over.
+    void startScatter(size_t x_column, size_t y_column, ScatterOptions options = {});
+    void cancelScatter();
+    ScatterState scatterState() const;
+
     // Reads the rows of the view (the one being applied, if setView() is
     // pending) in order on the worker, a few blocks ahead of the reader. One
     // reader at a time: a new one makes the previous one fail.
@@ -420,6 +447,9 @@ private:
     bool stepHistogram(std::unique_lock<std::mutex> &lock, std::stop_token stop, std::vector<TableEvent> &events);
     void finishHistogramPassLocked(std::vector<TableEvent> &events);
     void restartHistogramLocked();
+    bool stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token stop, std::vector<TableEvent> &events);
+    void finishScatterPassLocked(std::vector<TableEvent> &events);
+    void restartScatterLocked();
     bool stepCount(std::unique_lock<std::mutex> &lock, std::stop_token stop, std::vector<TableEvent> &events);
     bool stepScan(std::unique_lock<std::mutex> &lock, std::stop_token stop, std::vector<TableEvent> &events);
     bool scanWantsRowsLocked() const;
@@ -484,6 +514,18 @@ private:
     HistogramState histogram_;
     uint64_t histogram_generation_ = 0;
     std::chrono::steady_clock::time_point histogram_published_;
+    // Scatter plot, like the histogram.
+    struct ScatterJob
+    {
+        size_t next_row = 0;
+        bool pushdown_tried = false; // SheetSource::columnValueCounts() for the first pass
+        std::shared_ptr<ScatterRange> range;
+        std::shared_ptr<ScatterCounter> counter;
+    };
+    std::optional<ScatterJob> scatter_job_;
+    ScatterState scatter_;
+    uint64_t scatter_generation_ = 0;
+    std::chrono::steady_clock::time_point scatter_published_;
     std::shared_ptr<detail::ViewScan> scan_; // readView()
     bool detached_ = false;                  // the book is gone: nothing reads rows any more
     size_t next_memory_checkpoint_ = 0;      // cache_bytes_ at which reading pauses; 0: never

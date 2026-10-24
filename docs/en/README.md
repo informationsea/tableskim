@@ -11,7 +11,7 @@ TableSkim has two user interfaces in one program:
 - a **terminal interface (TUI)** for use in a terminal, for example over SSH.
 
 Both offer the same features: sorting, filtering, searching, column
-statistics, histograms, SQL, hiding and freezing columns, exporting, and
+statistics, histograms, scatter plots, SQL, hiding and freezing columns, exporting, and
 editing cells of CSV / TSV and Excel files in edit mode.
 
 ![The TableSkim window](../images/gui-main-window.png)

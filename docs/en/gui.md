@@ -13,6 +13,7 @@
 - [Searching](#searching)
 - [Column statistics](#column-statistics)
 - [Histograms](#histograms)
+- [Scatter plots and 2D density](#scatter-plots-and-2d-density)
 - [Hiding and freezing columns](#hiding-and-freezing-columns)
 - [Sheets](#sheets)
 - [Running SQL](#running-sql)
@@ -232,6 +233,55 @@ sheet to that value.
 How bins are chosen is described in [Sorting, Filtering, Searching and
 Statistics](filtering.md#histograms).
 
+## Scatter plots and 2D density
+
+**Edit → Scatter Plot...** (`Ctrl+Shift+P`), or **Scatter Plot** in a
+column or cell menu, plots two columns against each other in a window of
+its own. If two or more columns are selected, the first and last are X and
+Y. Otherwise TableSkim picks columns holding numbers or dates (judged by
+the rows around the current cell): Y is the current column, or the nearest
+such column, and X the nearest such column to its left (or, if there is
+none, to its right). Choose other columns from the **X** and **Y** lists,
+and the kind of plot from **Show**:
+
+- **Points** draws a point per row. Many points on top of each other look
+  darker, so dense areas stand out. A large table is plotted as a random
+  sample of 200,000 rows (the summary says so); the sample is the same
+  each time.
+- **Density** divides the plot into a grid of about 50 × 50 cells and
+  colours each cell by the number of rows in it, from dark purple (few) to
+  yellow (many), with the scale on the right. **Log color scale** (on by
+  default) keeps cells with a few rows visible next to very dense ones.
+  Empty cells stay blank. The density always counts every row.
+
+![Scatter plot of two number columns](../images/gui-scatter.png)
+
+Both columns must hold numbers or dates; rows where either value is empty
+or of another kind are left out and counted as "skipped" in the summary.
+
+The line under the summary shows how closely the columns are related, for
+example `r = 0.0945, R² = 0.0089, y = 2641.23 x + 744351`: Pearson's
+correlation coefficient *r* (from −1 to 1), its square *R²*, and the
+least-squares line. They are computed over every row plotted, not only the
+sample of points. **Regression line** draws that line on the plot. The
+equation is left out when a column holds dates, whose values would be in
+microseconds.
+
+- **Point at a point** to see its values and row number below the plot;
+  **click it** to move the current cell of the sheet to that row.
+- **Point at a cell** of the density to see its ranges and count, for
+  example `x [-30000, -25000) × y [60, 65): 22 rows (0.2%)`;
+  **double-click it** to filter the sheet to the rows of that cell.
+- **Drag a rectangle** (in either view) to filter the sheet to the rows
+  whose X and Y values lie inside it.
+
+![2D density of the same columns](../images/gui-density.png)
+
+Like the histogram, the plot follows the current view of the sheet, so
+after filtering it is drawn again for the rows left. **Edit → Clear
+Filter** goes back to all rows. See [Sorting, Filtering, Searching and
+Statistics](filtering.md#scatter-plots-and-2d-density) for the details.
+
 ## Hiding and freezing columns
 
 ### Hiding columns
@@ -355,6 +405,7 @@ for a Parquet file) are disabled.
 | Clear Filter                       |                |
 | Column Statistics                  | `Ctrl+Shift+I` |
 | Histogram...                       | `Ctrl+Shift+H` |
+| Scatter Plot...                    | `Ctrl+Shift+P` |
 | Run SQL...                         | `Ctrl+E`       |
 | Edit Mode                          | `Ctrl+Shift+M` |
 

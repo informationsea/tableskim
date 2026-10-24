@@ -180,3 +180,32 @@ edit these conditions in the Filter pane (`f` in the TUI).
 
 For Parquet, JSON and DuckDB files the values are counted inside the
 database.
+
+## Scatter plots and 2D density
+
+A scatter plot draws one column (X) against another (Y) over the rows of
+the current view; its 2D density counts those rows on a grid. They are
+opened with **Edit → Scatter Plot...** in the GUI (see [Using the
+GUI](gui.md#scatter-plots-and-2d-density)) and, as a density only, `M` in
+the terminal UI (see [Using the Terminal UI](tui.md#2d-density)).
+
+- Each column is read as for a [histogram](#what-is-counted): numbers or
+  times, whichever it holds more of. A row is plotted only if both of its
+  values are of the column's kind; the other rows are reported as
+  "skipped".
+- The grid's cells are the bins of a histogram of each column, chosen as
+  [above](#how-bins-are-chosen) but about 50 per axis in the GUI and as
+  many as the terminal fits in the TUI.
+- The density counts every row. The points of the GUI's scatter plot are a
+  random sample of at most **200,000** rows, the same sample each time.
+- **r** is Pearson's correlation coefficient of the rows plotted, **R²** its
+  square, and the line `y = a x + b` the least-squares fit of Y on X. Dates
+  are taken as points in time, so *r* works for them too, but the line's
+  equation is shown for numbers only. *r* is undefined when a column has a
+  single value.
+
+Choosing a cell (double-click in the GUI, `Enter` in the TUI) adds the
+conditions of both columns' bins to the filter, which keep exactly the rows
+counted in the cell. Dragging a rectangle in the GUI adds `is a number` (or
+`is a date`), `≥` and `≤` conditions on both columns, with the bounds
+rounded a little finer than the bins.

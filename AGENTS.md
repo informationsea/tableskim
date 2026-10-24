@@ -229,6 +229,17 @@ read their header comments before changing anything in `src/common/`.
   must keep exactly the rows counted in it (tested). The GUI shows it in
   `HistogramWindow` (`gui_histogram.cxx`), the TUI instead of the sheet
   (`B`).
+- `TableModel::startScatter()` plots two columns against each other
+  (`scatter.{hxx,cxx}`) the same way: `ScatterRange` takes each column's
+  range (pushdown sources by `columnValueCounts()` per column), then
+  `ScatterCounter` scans the view, counting a density grid of two
+  histograms' bins (`HistogramCounter::binOf()`, so that
+  `densityCellConditions()` keeps exactly a cell's rows; tested) and
+  keeping a reservoir sample of points with their view rows (fixed seed)
+  and `ScatterStats` (Pearson's r and the least-squares line, by Welford's
+  updates) over every row counted.
+  The GUI shows points or the density in `ScatterWindow` (`gui_scatter.cxx`),
+  the TUI the density only, instead of the sheet (`M`).
 - Editing (CSV/TSV and Excel only, `SourceCapabilities::edits`) happens in
   the model: `TableModel::setCells()` copies the cached `RowBlock`s it
   changes (they are shared with readers) and keeps the steps for

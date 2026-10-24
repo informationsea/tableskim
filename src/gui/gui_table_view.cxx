@@ -42,6 +42,7 @@ namespace
         ClearFilter,
         ColumnStats,
         Histogram,
+        ScatterPlot,
         HideColumns,
         ShowAllColumns,
         FreezeColumns,
@@ -1085,8 +1086,9 @@ void GuiTableView::showSortMenu(int col)
     items.push_back(menuItem("Clear Filter", MenuAction::ClearFilter,
                              (spec.filtered() ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER));
     items.push_back(menuItem("Column Statistics", MenuAction::ColumnStats, stats_column_callback_ ? 0 : FL_MENU_INACTIVE));
-    items.push_back(menuItem("Histogram", MenuAction::Histogram,
-                             (histogram_column_callback_ ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER));
+    items.push_back(menuItem("Histogram", MenuAction::Histogram, histogram_column_callback_ ? 0 : FL_MENU_INACTIVE));
+    items.push_back(menuItem("Scatter Plot", MenuAction::ScatterPlot,
+                             (scatter_column_callback_ ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER));
     // The selected columns, if this is one of them; else this column.
     int row_top, col_left, row_bottom, col_right;
     get_selection(row_top, col_left, row_bottom, col_right);
@@ -1123,6 +1125,9 @@ void GuiTableView::showSortMenu(int col)
         return;
     case MenuAction::Histogram:
         histogram_column_callback_(column);
+        return;
+    case MenuAction::ScatterPlot:
+        scatter_column_callback_(column);
         return;
     case MenuAction::HideColumns:
         hideColumns(col_left, col_right);
@@ -1210,6 +1215,7 @@ void GuiTableView::showCellMenu(int row, int col, TableContext context)
         items.back().flags |= FL_MENU_DIVIDER;
         items.push_back(menuItem("Column Statistics", MenuAction::ColumnStats, stats_column_callback_ ? 0 : FL_MENU_INACTIVE));
         items.push_back(menuItem("Histogram", MenuAction::Histogram, histogram_column_callback_ ? 0 : FL_MENU_INACTIVE));
+        items.push_back(menuItem("Scatter Plot", MenuAction::ScatterPlot, scatter_column_callback_ ? 0 : FL_MENU_INACTIVE));
     }
     items.push_back({nullptr});
 
@@ -1229,6 +1235,9 @@ void GuiTableView::showCellMenu(int row, int col, TableContext context)
         break;
     case MenuAction::Histogram:
         histogram_column_callback_(column);
+        break;
+    case MenuAction::ScatterPlot:
+        scatter_column_callback_(column);
         break;
     case MenuAction::Copy:
         copySelection();

@@ -1,6 +1,7 @@
 #ifndef _CELL_FORMAT_HXX_
 #define _CELL_FORMAT_HXX_
 
+#include <array>
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "histogram.hxx"
+#include "scatter.hxx"
 #include "table.hxx"
 
 // Helpers shared by the GUI and TUI table views.
@@ -142,6 +144,51 @@ std::string histogramBinRange(const Histogram &histogram, size_t bin);
 std::vector<FilterCondition> histogramBinConditions(const Histogram &histogram, size_t column, size_t bin);
 // "53 numbers in 10 bins, 2 other values, 1 empty"
 std::string histogramSummary(const Histogram &histogram);
+
+// Scatter plot texts. A coordinate on an axis (see histogramCoordinate()):
+// the number, or the time as a date or date-time.
+std::string scatterValueText(const Histogram &axis, double coordinate);
+// Conditions that keep the rows of a cell of the density grid, by
+// histogramBinConditions() on each column.
+std::vector<FilterCondition> densityCellConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
+                                                   size_t x_bin, size_t y_bin);
+// Conditions that keep the rows whose values lie in [x_low, x_high] ×
+// [y_low, y_high] (coordinates; rounded a little finer than the density
+// bins, as for a rectangle drawn with the mouse).
+std::vector<FilterCondition> scatterRangeConditions(const ScatterPlot &plot, size_t x_column, size_t y_column,
+                                                    double x_low, double x_high, double y_low, double y_high);
+// "x [10, 20) × y [5, 6): 42 rows (3.1%)"
+std::string densityCellText(const ScatterPlot &plot, size_t x_bin, size_t y_bin);
+// "r = 0.8123, R² = 0.6598, y = 2641.23 x + 744351": Pearson's correlation,
+// its square and the least-squares line (only when both axes are numbers;
+// times would be in microseconds). Empty without two points.
+std::string scatterStatsText(const ScatterPlot &plot);
+
+// Whether the loaded cells of a column in view rows [first_row, last_row)
+// are mostly numbers or times, as a scatter plot reads them. Cells not
+// loaded yet are skipped (and requested); false if none is loaded.
+bool columnLooksPlottable(TableModel &model, size_t column, size_t first_row, size_t last_row);
+struct ScatterColumns
+{
+    size_t x = 0;
+    size_t y = 0;
+};
+// The columns to plot when none are chosen: Y is `column`, or the visible
+// column nearest to it that looks plottable; X the nearest such column to
+// the left of Y, else to its right. Without plottable columns, the visible
+// column left of `column` (right of it for the first) against `column`.
+ScatterColumns defaultScatterColumns(TableModel &model, size_t column, const HiddenColumns &hidden, size_t first_row,
+                                     size_t last_row);
+
+// A count of a density cell on the colour scale, from 0 to 1: linear, or
+// logarithmic (log(1 + count)), relative to the largest count.
+double densityScale(size_t count, size_t most, bool log_scale);
+// The colour of a position on the scale (Viridis: perceptually even, and
+// readable on light and dark backgrounds), as RGB.
+std::array<unsigned char, 3> densityColor(double t);
+// "1200 rows plotted, 3 skipped (empty or not numbers or dates)", and with
+// points, "a sample of 200000 points" when there are more rows.
+std::string scatterSummary(const ScatterPlot &plot, bool points);
 
 // "100 MB" below 1 GB, else "2.0 GB" (binary units, as memory is counted).
 std::string memorySizeText(size_t bytes);

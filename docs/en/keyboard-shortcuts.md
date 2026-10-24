@@ -25,6 +25,7 @@ On macOS, use `Cmd` instead of `Ctrl`.
 | `Ctrl+Shift+F`  | Filter pane                              |
 | `Ctrl+Shift+I`  | Column statistics                        |
 | `Ctrl+Shift+H`  | Histogram                                |
+| `Ctrl+Shift+P`  | Scatter plot                             |
 | `Ctrl+E`        | Run SQL                                  |
 | `F1`            | User manual                              |
 | Arrow keys, `Page Up` / `Page Down`, `Home` / `End` | Move the current cell |
@@ -66,6 +67,7 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `Enter`, double click | Show the whole cell in the sidebar (edit mode: edit it)      |
 | `S`                  | Statistics of the cursor's column in the sidebar (again: the cell) |
 | `B`                  | Histogram of the cursor's column (`Enter`: filter to a bar; `Esc`: back) |
+| `M`                  | 2D density of the two selected columns, else of number or date columns near the cursor (`Enter`: filter to a cell; `Esc`: back) |
 | `s`                  | Show / hide the sidebar                                       |
 | `<` / `>`            | Narrow / widen the column                                     |
 | `x` / `X`            | Hide the column (or the selected ones) / show all columns     |
@@ -134,3 +136,16 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `Enter`              | Filter the sheet to the selected bar      |
 | `F`                  | Clear the filter                          |
 | `Esc`, `B`, `q`      | Back to the sheet                         |
+
+### 2D density
+
+| Key                  | Action                                    |
+| -------------------- | ----------------------------------------- |
+| Arrows, `h j k l`    | Select a cell                             |
+| `x` / `X`            | Next / previous column on X               |
+| `y` / `Y`            | Next / previous column on Y               |
+| `t`                  | Swap X and Y                              |
+| `L`                  | Logarithmic / linear colour scale         |
+| `Enter`              | Filter the sheet to the selected cell     |
+| `F`                  | Clear the filter                          |
+| `Esc`, `M`, `q`      | Back to the sheet                         |

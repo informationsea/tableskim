@@ -334,13 +334,23 @@ HistogramCounter::HistogramCounter(Histogram layout) : histogram_(std::move(layo
 void HistogramCounter::add(const CellValue &value, size_t count)
 {
     histogram_.rows += count;
-    const Classified c = classify(value);
-    std::optional<size_t> bin;
-    if (c.kind == Classified::Kind::Empty)
+    if (isEmptyCell(value))
     {
         histogram_.empty += count;
         return;
     }
+    if (const auto bin = binOf(value))
+    {
+        histogram_.counts[*bin] += count;
+        histogram_.values += count;
+    }
+    else
+        histogram_.others += count;
+}
+
+std::optional<size_t> HistogramCounter::binOf(const CellValue &value) const
+{
+    const Classified c = classify(value);
     if (c.kind == Classified::Kind::Number && histogram_.kind == HistogramKind::Number)
     {
         // Use the same comparisons as filtering the bin: converting an int64
@@ -349,15 +359,19 @@ void HistogramCounter::add(const CellValue &value, size_t count)
                                              [&](const FilterCondition &condition)
                                              { return cellMatchesCondition(value, condition); });
         if (it != number_lower_bounds_.begin() && cellMatchesCondition(value, number_upper_bound_))
-            bin = static_cast<size_t>(it - number_lower_bounds_.begin()) - 1;
+            return static_cast<size_t>(it - number_lower_bounds_.begin()) - 1;
     }
     else if (c.kind == Classified::Kind::Time && histogram_.kind == HistogramKind::Time)
-        bin = histogramBin(histogram_.edges, static_cast<double>(c.micros));
-    if (bin)
-    {
-        histogram_.counts[*bin] += count;
-        histogram_.values += count;
-    }
-    else
-        histogram_.others += count;
+        return histogramBin(histogram_.edges, static_cast<double>(c.micros));
+    return std::nullopt;
+}
+
+std::optional<double> histogramCoordinate(HistogramKind kind, const CellValue &value)
+{
+    const Classified c = classify(value);
+    if (c.kind == Classified::Kind::Number && kind == HistogramKind::Number)
+        return c.number;
+    if (c.kind == Classified::Kind::Time && kind == HistogramKind::Time)
+        return static_cast<double>(c.micros);
+    return std::nullopt;
 }

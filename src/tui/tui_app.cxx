@@ -51,6 +51,7 @@ namespace
         {"Enter, double click", "Show the whole cell in the sidebar (in edit mode: edit it)"},
         {"S", "Statistics of the cursor's column in the sidebar (again: the cell)"},
         {"B", "Histogram of the cursor's column (Enter: filter to a bar; Esc: back)"},
+        {"M", "2D density of the selected two columns, else of number or date columns near the cursor"},
         {"< / >", "Narrow / widen the column"},
         {"x / X", "Hide the column (or the selected ones) / show all columns"},
         {"|", "Freeze the columns up to the cursor's (again: unfreeze)"},
@@ -391,6 +392,11 @@ void TuiApp::showSheet(size_t index)
             // The sheet was reopened or replaced: its new model's histogram.
             if (histogram_model_ && currentView() == raw && raw->model() && raw->model() != histogram_model_)
                 showHistogram(histogram_model_->histogramState().column);
+            if (density_model_ && currentView() == raw && raw->model() && raw->model() != density_model_)
+            {
+                const ScatterState state = density_model_->scatterState();
+                showDensity(state.x_column, state.y_column);
+            }
             if (currentView() == raw)
                 refreshSearch(); });
         if (auto it = restore_positions_.find(name); it != restore_positions_.end())
@@ -1332,7 +1338,8 @@ bool TuiApp::handlePasteEvent(const Event &event, const Component &target)
     if (!typingText())
     {
         // In edit mode, into the selected cells.
-        if (editing() && !show_filter_dialog_ && !show_text_dialog_ && !histogram_model_ && !memory_prompt_model_ &&
+        if (editing() && !show_filter_dialog_ && !show_text_dialog_ && !histogram_model_ && !density_model_ &&
+            !memory_prompt_model_ &&
             !unsaved_action_)
         {
             if (event == Event::Return || event == Event::Tab)
@@ -1388,6 +1395,8 @@ bool TuiApp::handleEvent(Event event)
         return handleMemoryPromptEvent(event);
     if (histogram_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_)
         return handleHistogramEvent(event);
+    if (density_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_)
+        return handleDensityEvent(event);
     if (search_prompt_ && !event.is_mouse())
         return handleSearchPromptEvent(event);
     if (goto_prompt_ && !event.is_mouse())
@@ -1541,6 +1550,27 @@ bool TuiApp::handleEvent(Event event)
     {
         if (TuiTableView *view = currentView(); view && view->model() && view->model()->columnCount() > 0)
             showHistogram(view->cursorColumn());
+        return true;
+    }
+    if (event == Event::M)
+    {
+        TuiTableView *view = currentView();
+        if (!view || !view->model() || view->model()->columnCount() == 0)
+            return true;
+        const TuiTableView::Selection selection = view->selection();
+        size_t x_column = selection.col_left;
+        size_t y_column = selection.col_right;
+        if (x_column == y_column)
+        {
+            // Columns holding numbers or dates near the cursor's, judged by
+            // the rows around it, which are loaded.
+            const size_t row = view->cursorRow();
+            const ScatterColumns columns = defaultScatterColumns(*view->model(), view->cursorColumn(),
+                                                                 view->hiddenColumns(), row > 50 ? row - 50 : 0, row + 50);
+            x_column = columns.x;
+            y_column = columns.y;
+        }
+        showDensity(x_column, y_column);
         return true;
     }
     if (event == Event::Character('|'))
@@ -1734,6 +1764,8 @@ Element TuiApp::renderMain()
     Element body;
     if (histogram_model_)
         body = renderHistogram();
+    else if (density_model_)
+        body = renderDensity();
     else if (view)
     {
         view->setSearchState(&search_);
@@ -1746,7 +1778,7 @@ Element TuiApp::renderMain()
                    text("?: help    q: quit") | dim | center,
                }) |
                center;
-    if (show_sidebar_ && !histogram_model_)
+    if (show_sidebar_ && !histogram_model_ && !density_model_)
     {
         const int width = std::max(Terminal::Size().dimx / 3, 20);
         body = hbox({body | flex, separator(), renderSidebar(width) | size(WIDTH, EQUAL, width)});
@@ -1947,6 +1979,212 @@ Element TuiApp::renderHistogram()
         hbox({text(title) | bold, text(fitText(status, std::max(width - string_width(title), 1), TextAlign::Left)) | dim}),
         separator(),
         vbox(std::move(rows)) | flex,
+        text(fitText(hint, width, TextAlign::Left)) | dim,
+    });
+}
+
+void TuiApp::showDensity(size_t x_column, size_t y_column)
+{
+    TuiTableView *view = currentView();
+    if (!view || !view->model())
+        return;
+    if (density_model_ && density_model_ != view->model())
+        density_model_->cancelScatter();
+    density_model_ = view->model();
+    // About two characters per X bin, so that cells look square, and a line
+    // per Y bin (less the title, separator, X labels, hint and status bar).
+    const auto size = Terminal::Size();
+    ScatterOptions options;
+    options.density_bins_x = static_cast<size_t>(std::max((size.dimx - 12) / 2, 4));
+    options.density_bins_y = static_cast<size_t>(std::max(size.dimy - 6 - (views_.size() > 1 ? 1 : 0), 4));
+    options.max_points = 0;
+    density_model_->startScatter(x_column, y_column, options);
+    density_chosen_ = false;
+}
+
+void TuiApp::closeDensity()
+{
+    if (density_model_)
+        density_model_->cancelScatter();
+    density_model_.reset();
+}
+
+bool TuiApp::handleDensityEvent(Event event)
+{
+    if (event.is_mouse() || event == Event::Custom)
+        return false;
+    const ScatterState state = density_model_->scatterState();
+    const ScatterPlot &plot = state.plot;
+    const size_t x_bins = plot.x_bins.binCount();
+    const size_t y_bins = plot.y_bins.binCount();
+    const size_t columns = density_model_->columnCount();
+    auto choose = [this] { density_chosen_ = true; };
+    if (event == Event::Escape || event == Event::M || event == Event::q)
+        closeDensity();
+    else if (event == Event::ArrowUp || event == Event::k)
+    {
+        if (density_y_ + 1 < y_bins)
+            ++density_y_;
+        choose();
+    }
+    else if (event == Event::ArrowDown || event == Event::j)
+    {
+        if (density_y_ > 0)
+            --density_y_;
+        choose();
+    }
+    else if (event == Event::ArrowLeft || event == Event::h)
+    {
+        if (density_x_ > 0)
+            --density_x_;
+        choose();
+    }
+    else if (event == Event::ArrowRight || event == Event::l)
+    {
+        if (density_x_ + 1 < x_bins)
+            ++density_x_;
+        choose();
+    }
+    else if (columns > 0 && (event == Event::x || event == Event::X))
+        showDensity((state.x_column + (event == Event::x ? 1 : columns - 1)) % columns, state.y_column);
+    else if (columns > 0 && (event == Event::y || event == Event::Y))
+        showDensity(state.x_column, (state.y_column + (event == Event::y ? 1 : columns - 1)) % columns);
+    else if (event == Event::t)
+        showDensity(state.y_column, state.x_column);
+    else if (event == Event::L)
+        density_log_ = !density_log_;
+    else if (event == Event::F)
+        clearFilter();
+    else if (event == Event::Return && state.done && density_x_ < x_bins && density_y_ < y_bins)
+    {
+        if (!density_model_->viewCapabilities().filter)
+            return true;
+        ViewSpec spec = density_model_->requestedView();
+        for (FilterCondition &condition :
+             densityCellConditions(plot, state.x_column, state.y_column, density_x_, density_y_))
+            addFilterCondition(spec, std::move(condition));
+        // The density starts over on the rows left.
+        density_model_->setView(std::move(spec));
+    }
+    return true;
+}
+
+Element TuiApp::renderDensity()
+{
+    const auto &model = density_model_;
+    const ScatterState state = model->scatterState();
+    const ScatterPlot &plot = state.plot;
+    const int width = Terminal::Size().dimx;
+    // The title, a separator, the X labels, the hint and the status bar.
+    const int height = std::max(Terminal::Size().dimy - 5 - (views_.size() > 1 ? 1 : 0), 2);
+    if (state.generation != density_generation_)
+    {
+        density_generation_ = state.generation;
+        density_chosen_ = false;
+    }
+
+    std::string status;
+    if (!state.done)
+        status = (state.counting ? "counting… " : "reading… ") + std::to_string(state.scanned_rows) + " rows";
+    else
+    {
+        status = scatterSummary(plot, false) + (model->view().filtered() ? " (filtered rows)" : "");
+        if (const std::string stats = scatterStatsText(plot); !stats.empty())
+            status += "  " + stats;
+    }
+    const std::string title = " Density: " + singleLine(model->columnName(state.x_column)) + " × " +
+                              singleLine(model->columnName(state.y_column)) + "  ";
+    std::string hint = " ↑↓←→: cell  x/X y/Y: columns  t: swap  L: log scale  Enter: filter  F: clear filter  Esc: back";
+
+    Elements lines;
+    const size_t x_bins = plot.x_bins.binCount();
+    const size_t y_bins = plot.y_bins.binCount();
+    if (plot.plottable())
+    {
+        size_t most = 0;
+        size_t densest = 0;
+        for (size_t i = 0; i < plot.counts.size(); ++i)
+        {
+            if (plot.counts[i] > most)
+            {
+                most = plot.counts[i];
+                densest = i;
+            }
+        }
+        if (!density_chosen_ && most > 0)
+        {
+            density_x_ = densest / y_bins;
+            density_y_ = densest % y_bins;
+            density_chosen_ = state.done;
+        }
+        density_x_ = std::min(density_x_, x_bins - 1);
+        density_y_ = std::min(density_y_, y_bins - 1);
+
+        // Y labels on the rows of the axis ticks.
+        std::vector<std::string> y_labels(y_bins);
+        int label_width = 0;
+        for (const double edge : plot.y_axis.edges)
+        {
+            if (const auto bin = histogramBin(plot.y_bins.edges, edge))
+            {
+                y_labels[*bin] = histogramEdgeText(plot.y_axis, edge);
+                label_width = std::max(label_width, string_width(y_labels[*bin]));
+            }
+        }
+        const int grid_width = std::max(width - label_width - 3, 1);
+        const int cell_width = std::max(1, grid_width / static_cast<int>(x_bins));
+        // The rows around the selected one, if not all fit; the highest first.
+        const size_t shown = std::min(y_bins, static_cast<size_t>(height));
+        const size_t first = density_y_ >= shown ? density_y_ + 1 - shown : 0;
+        for (size_t r = 0; r < shown; ++r)
+        {
+            const size_t y_bin = first + shown - 1 - r;
+            Elements cells;
+            cells.push_back(text(" " + fitText(y_labels[y_bin], label_width, TextAlign::Right) + " │"));
+            for (size_t x_bin = 0; x_bin < x_bins; ++x_bin)
+            {
+                const size_t count = plot.count(x_bin, y_bin);
+                const bool selected = x_bin == density_x_ && y_bin == density_y_;
+                std::string content(static_cast<size_t>(cell_width), ' ');
+                if (selected)
+                    content = cell_width >= 2 ? "[" + std::string(static_cast<size_t>(cell_width - 2), ' ') + "]" : "▪";
+                Element cell = text(content);
+                if (count > 0)
+                {
+                    const double t = densityScale(count, most, density_log_);
+                    const auto rgb = densityColor(t);
+                    cell = cell | bgcolor(Color::RGB(rgb[0], rgb[1], rgb[2])) | color(t > 0.6 ? Color::Black : Color::White);
+                }
+                cells.push_back(cell | (selected ? bold : nothing));
+            }
+            lines.push_back(hbox(std::move(cells)));
+        }
+        // X labels at the ticks, as many as fit.
+        const auto offset = static_cast<size_t>(label_width + 3);
+        std::string axis(offset + x_bins * static_cast<size_t>(cell_width), ' ');
+        size_t free_from = 0;
+        for (const double edge : plot.x_axis.edges)
+        {
+            const auto bin = histogramBin(plot.x_bins.edges, edge);
+            if (!bin)
+                continue;
+            const size_t at = offset + *bin * static_cast<size_t>(cell_width);
+            const std::string label = histogramEdgeText(plot.x_axis, edge);
+            if (at < free_from || at + label.size() > axis.size())
+                continue;
+            axis.replace(at, label.size(), label);
+            free_from = at + label.size() + 2;
+        }
+        lines.push_back(text(axis) | dim);
+        hint = " " + densityCellText(plot, density_x_, density_y_) + "  " + hint;
+    }
+    else
+        lines.push_back(text(state.done ? " " + scatterSummary(plot, false) : " Reading the columns…") | dim);
+
+    return vbox({
+        hbox({text(title) | bold, text(fitText(status, std::max(width - string_width(title), 1), TextAlign::Left)) | dim}),
+        separator(),
+        vbox(std::move(lines)) | flex,
         text(fitText(hint, width, TextAlign::Left)) | dim,
     });
 }
