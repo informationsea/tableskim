@@ -71,7 +71,14 @@ private:
     // scrolled area; their widths are kept here. Frozen columns (the first
     // frozen_) are drawn in the row header, right of the row numbers.
     HiddenColumns hidden_;
+    ColumnFormats formats_;
+    // What the columns seem to hold, for the marks in their headers.
+    std::vector<ColumnType> column_types_;
     int frozen_ = 0;
+    // Follow (tail -f): the cursor goes to the last row whenever the row
+    // count (exact) changes; the count it went to.
+    bool follow_end_ = false;
+    size_t followed_rows_ = 0;
     std::map<int, int> saved_widths_;
     int row_number_width_ = 0;
     bool frozen_drag_ = false; // a selection started on a frozen cell
@@ -99,6 +106,7 @@ private:
     std::function<void(size_t)> stats_column_callback_;
     std::function<void(size_t)> histogram_column_callback_;
     std::function<void(size_t)> scatter_column_callback_;
+    std::function<void(size_t)> group_by_column_callback_;
     std::function<void()> cell_activate_callback_;
     std::function<void()> columns_changed_callback_;
     // Editing a cell (in edit mode): an input over it.
@@ -114,6 +122,7 @@ private:
     void autosizeColumns();
     void applyPendingScroll();
     void applyPendingJump();
+    void followEnd();
     void skipHiddenColumn(int direction);
     void columnsChanged();
     bool collapsed(int col) const { return col < frozen_ || hidden_.contains(static_cast<size_t>(col)); }
@@ -190,6 +199,11 @@ public:
     {
         scatter_column_callback_ = std::move(callback);
     }
+    // Called with the column to group by (column header menu).
+    void setGroupByColumnCallback(std::function<void(size_t)> callback)
+    {
+        group_by_column_callback_ = std::move(callback);
+    }
     // Called when a cell is double-clicked (after it was selected) and not
     // edited.
     void setCellActivateCallback(std::function<void()> callback) { cell_activate_callback_ = std::move(callback); }
@@ -224,6 +238,14 @@ public:
     const HiddenColumns &hiddenColumns() const { return hidden_; }
     // Hides the columns hidden in a previous view of the same sheet (after a reopen).
     void restoreHiddenColumns(const HiddenColumns &hidden);
+    // How the columns show their values (column header menu > Format).
+    const ColumnFormats &columnFormats() const { return formats_; }
+    // The formats of a previous view of the same sheet (after a reopen).
+    void restoreColumnFormats(const ColumnFormats &formats)
+    {
+        formats_ = formats;
+        redraw();
+    }
     // Keeps the first `count` columns in place when scrolling sideways; 0 unfreezes.
     void freezeColumns(int count);
     int frozenColumns() const { return frozen_; }
@@ -238,6 +260,8 @@ public:
     // beyond those read so far is selected once it is read (or the last row,
     // if there are fewer).
     void jumpTo(int row, int col);
+    // Keeps the cursor on the last row as rows are added (File > Follow).
+    void setFollowEnd(bool follow);
     // Picks up the model's search hits. Model events do this too, but
     // starting or cancelling a search emits none.
     void updateSearchHits();

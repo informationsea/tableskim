@@ -14,7 +14,9 @@
 - [Column statistics](#column-statistics)
 - [Histograms](#histograms)
 - [Scatter plots and 2D density](#scatter-plots-and-2d-density)
+- [Group By](#group-by)
 - [Hiding and freezing columns](#hiding-and-freezing-columns)
+- [Column types and formats](#column-types-and-formats)
 - [Sheets](#sheets)
 - [Running SQL](#running-sql)
 - [Exporting and converting](#exporting-and-converting)
@@ -31,7 +33,9 @@ On macOS, use `Cmd` wherever this manual says `Ctrl`.
 - **Menu bar**: File, Edit, View, Window and Help. On macOS the menus are
   in the system menu bar.
 - **Column headers**: the column name, a sort button (the small arrows on
-  the right) and, when the column is filtered, a filter mark.
+  the right) and, when the column is filtered, a filter mark. A small mark
+  on the left tells what the column seems to hold: `#` numbers, `@` dates,
+  `?` booleans (see [Column types and formats](#column-types-and-formats)).
 - **Row numbers**: the position of the row in the current view (after
   sorting and filtering).
 - **Sheet tabs** at the bottom: one tab per sheet. A filtered sheet shows
@@ -46,6 +50,9 @@ windows so that you can switch between them.
 
 - **File → Open...** (`Ctrl+O`), or the **Open...** button of an empty
   window. The file dialog lists every supported format.
+- **File → Open Recent** lists the last ten files opened, newest first, in
+  every window. **Clear Recent Files** empties the list. A file that cannot
+  be opened any more is taken off it.
 - Give files on the command line: `tableskim a.csv b.xlsx`.
 - macOS: drop files on the application icon, or use *Open With* in the
   Finder.
@@ -282,6 +289,36 @@ after filtering it is drawn again for the rows left. **Edit → Clear
 Filter** goes back to all rows. See [Sorting, Filtering, Searching and
 Statistics](filtering.md#scatter-plots-and-2d-density) for the details.
 
+## Group By
+
+**Edit → Group By...** (`Ctrl+Shift+G`), or **Group By…** in a column
+menu, counts the rows of the current sheet by the values of some columns,
+like a pivot table or SQL's `GROUP BY`, and shows the result in a new
+sheet named **Group By**.
+
+![The Group By dialog](../images/gui-group-by.png)
+
+- **Group by**: rows with equal values in these columns form a group. The
+  selected columns (or the clicked one) are checked at first. With none,
+  every row is in one group, which gives totals.
+- **Aggregate**: columns to summarize in each group, with the functions
+  checked below: **count** (non-empty values), **distinct** (distinct
+  values), **sum**, **mean**, **min**, **max** and **std dev** (sample
+  standard deviation).
+
+The result has one row per group, in sort order of the group's values: the
+group columns, **count** (the rows of the group), and a column such as
+`Salary sum` for each aggregated column and function. It covers the rows of
+the current view, so it follows the filter.
+
+![Rows counted by City, with the sum and mean of Salary](../images/gui-group-by-result.png)
+
+The **Group By** sheet can be sorted, filtered, exported and grouped again
+like any other. Grouping again replaces it. It is a snapshot: it does not
+change when the original sheet does, but stays when the file is reloaded.
+Empty cells form a group of their own; how values are compared is described
+in [Sorting, Filtering, Searching and Statistics](filtering.md#group-by).
+
 ## Hiding and freezing columns
 
 ### Hiding columns
@@ -302,6 +339,34 @@ column and all columns to its left stay in place when you scroll sideways.
 turns it off. At least one column must remain unfrozen.
 
 ![ID and Name frozen while scrolling right; the Email column is hidden](../images/gui-frozen.png)
+
+## Column types and formats
+
+TableSkim looks at the first 1,000 rows read to tell what each column
+holds, and marks the header: `#` for numbers, `@` for dates and date-times,
+`?` for booleans (TRUE / FALSE). Text and mixed columns have no mark. Text
+cells count as what they read as, so a CSV column of `42` and `3.5` is a
+number column. A few stray values (a `-` among numbers) do not change the
+kind, as long as 90% of the values agree.
+
+**Format** in the column header menu changes how the column shows its
+values; the first line of the submenu shows its type, for example
+"Type: Number (whole numbers)":
+
+![The Format menu of a column](../images/gui-format-menu.png)
+
+- **Thousands Separator**: `1234567.5` is shown as `1,234,567.5`.
+- **Decimal Places**: **As Stored**, or 0 to 6 places, rounded
+  (`1234.5678` with 2 places is `1234.57`).
+- **Date Format**: `2024-01-31`, `2024/01/31`, `01/31/2024`, `31/01/2024`,
+  `2024年1月31日` or `Jan 31, 2024`. A time of day stays as it is.
+- **Reset Format** goes back to the values as stored.
+
+If several columns are selected and you right-click one of them, the
+change applies to all of them. Numbers and dates held as text are formatted
+too. Only the display changes: sorting, filtering, copying and exporting
+use the values as they are. Formats belong to the sheet in this window and
+are kept when the file is reloaded.
 
 ## Sheets
 
@@ -351,6 +416,15 @@ Cells](editing.md).
   second while the window is active, every five seconds otherwise) and
   reloads it when it has changed. This is handy for watching a file that
   another program writes.
+- **File → Follow End of File** (`Ctrl+Shift+T`) keeps showing the end of
+  a file that grows, like `tail -f`: the file is checked twice a second
+  (whether or not Auto Revert is on), and the current cell moves to the
+  last row whenever rows are added. For CSV / TSV files that are not
+  compressed (in UTF-8 or Shift_JIS), only the appended lines are read, so
+  even a large log file keeps up; a line being written is shown once it
+  ends. Other files, and files that were rewritten rather than appended to,
+  are reloaded. A sorted or filtered sheet sorts and filters the new rows
+  too. Choose the item again to stop following.
 - **File → Show File in File Browser** opens the folder of the file in the
   system file manager.
 
@@ -383,11 +457,13 @@ for a Parquet file) are disabled.
 | File menu                          | Shortcut       |
 | ---------------------------------- | -------------- |
 | Open...                            | `Ctrl+O`       |
+| Open Recent                        |                |
 | Close                              | `Ctrl+W`       |
 | Save (edit mode)                   | `Ctrl+S`       |
 | Save As... (edit mode)             | `Ctrl+Shift+S` |
 | Revert                             |                |
 | Auto Revert                        |                |
+| Follow End of File                 | `Ctrl+Shift+T` |
 | Export View...                     | `Ctrl+Shift+E` |
 | Convert to Parquet / DuckDB...     |                |
 | Show File in File Browser          |                |
@@ -406,6 +482,7 @@ for a Parquet file) are disabled.
 | Column Statistics                  | `Ctrl+Shift+I` |
 | Histogram...                       | `Ctrl+Shift+H` |
 | Scatter Plot...                    | `Ctrl+Shift+P` |
+| Group By...                        | `Ctrl+Shift+G` |
 | Run SQL...                         | `Ctrl+E`       |
 | Edit Mode                          | `Ctrl+Shift+M` |
 

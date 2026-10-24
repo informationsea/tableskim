@@ -45,6 +45,14 @@ struct SheetEdits
     std::vector<Row> rows; // by row
 };
 
+// What following a growing file found (TableBook::readAppended()).
+enum class AppendResult
+{
+    None,     // nothing new yet
+    Appended, // rows were added at the end
+    Changed,  // the file was changed otherwise, or cannot be followed: reopen it
+};
+
 // One sheet / table. All methods are called from the owning TableBook's
 // worker thread only, so implementations need no locking.
 class SheetSource
@@ -89,6 +97,12 @@ public:
     {
         return std::nullopt;
     }
+
+    // Following a growing file (DataSource::readsAppendedRows()): once
+    // read() has reached the end, looks for whole rows appended to the file
+    // since, which read() then returns after the last row. None while the
+    // rows are still being read (they may include the new ones).
+    virtual AppendResult readAppended(std::stop_token) { return AppendResult::Changed; }
 };
 
 struct SqlOutcome
@@ -130,6 +144,10 @@ public:
     // the file's and temporary ones, but not TableSkim's own. Throws
     // std::runtime_error.
     virtual std::vector<SqlTable> sqlSchema() { return {}; }
+
+    // Whether its sheets can read rows appended to the file without reading
+    // it again (SheetSource::readAppended()).
+    virtual bool readsAppendedRows() const { return false; }
 
     // Whether saveEdits() is supported: its sheets have
     // SourceCapabilities::edits (CSV, Excel).

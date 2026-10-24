@@ -19,6 +19,12 @@ bool readFileStamp(const std::filesystem::path &path, std::filesystem::file_time
 // Empty if the home directory is unknown.
 std::filesystem::path userDataDirectory();
 
+// Writes a small file of TableSkim's own (e.g. the SQL history) next to
+// `file` under a unique name and renames it over `file`, so that a reader
+// never sees half of it and windows and processes may save at once.
+// Creates the directory. Returns the error, empty on success.
+std::string replaceFileContents(const std::filesystem::path &file, const std::string &contents);
+
 // A file:// URI for an absolute path, every byte but unreserved characters
 // and '/' percent-encoded (so ',', '#', '%', '?' and spaces too).
 std::string fileUri(const std::string &absolute_path);

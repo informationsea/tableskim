@@ -54,12 +54,17 @@ inline constexpr int FILTER_ICON_WIDTH = 12;
 // margin that keeps it clear of the column resize area. Clicks within it sort.
 inline constexpr int SORT_ICON_WIDTH = 16;
 
+// Width of the mark of a column's kind (columnKindMark()) at the left end
+// of a header cell.
+inline constexpr int TYPE_MARK_WIDTH = 12;
+
 // Draws a row or column header cell of a custom-drawn table. Classic schemes
 // use a raised box in classic_color (e.g. Fl_Table::row_header_color()). A
 // sort indicator is drawn in the rightmost SORT_ICON_WIDTH pixels, and a
-// filtered column gets a funnel left of it.
+// filtered column gets a funnel left of it. A non-empty `mark` is drawn,
+// muted, in the leftmost TYPE_MARK_WIDTH pixels.
 void drawHeaderCell(const char *label, int x, int y, int w, int h, Fl_Color classic_color,
-                    SortIndicator sort = SortIndicator::None, bool filtered = false);
+                    SortIndicator sort = SortIndicator::None, bool filtered = false, const char *mark = nullptr);
 
 // Widget labels treat '@' as the start of a symbol name, which drops the
 // rest of the text, and menu items also treat '&' as a shortcut marker;

@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <tuple>
@@ -510,4 +511,76 @@ TEST_CASE("pastedCells fills the selection from its top-left cell")
     CHECK(cells(pastedCells({{"x"}}, 0, 0, 1, 2, 10, 5, &hidden)) ==
           Expected{{0, 0, "x"}, {0, 1, "x"}, {1, 0, "x"}, {1, 1, "x"}});
     CHECK(pastedCells({}, 0, 0, 0, 0, 10, 5).empty());
+}
+
+TEST_CASE("formatCellAs: numbers with thousands separators and fixed decimals")
+{
+    using S = std::string;
+    ColumnFormat thousands{.thousands = true};
+    CHECK(formatCellAs(int64_t{1234567}, thousands) == "1,234,567");
+    CHECK(formatCellAs(int64_t{-1234}, thousands) == "-1,234");
+    CHECK(formatCellAs(int64_t{123}, thousands) == "123");
+    CHECK(formatCellAs(1234567.25, thousands) == "1,234,567.25");
+    CHECK(formatCellAs(1e20, thousands) == "1e+20");
+    CHECK(formatCellAs(S(" +1234567.891 "), thousands) == "1,234,567.891");
+    CHECK(formatCellAs(S("Tokyo"), thousands) == "Tokyo");
+    CHECK(formatCellAs(true, thousands) == "TRUE");
+    CHECK(formatCellAs(std::monostate{}, thousands).empty());
+
+    ColumnFormat two{.decimals = 2};
+    CHECK(formatCellAs(int64_t{5}, two) == "5.00");
+    CHECK(formatCellAs(2.345678, two) == "2.35");
+    CHECK(formatCellAs(S("1e3"), two) == "1000.00");
+    CHECK(formatCellAs(-0.001, two) == "0.00");
+    CHECK(formatCellAs(std::numeric_limits<double>::infinity(), two) == "inf");
+    // Integers too large for a double keep their digits.
+    CHECK(formatCellAs(int64_t{9007199254740993}, two) == "9007199254740993.00");
+    CHECK(formatCellAs(2.5, ColumnFormat{.decimals = 0}) == "2");
+
+    ColumnFormat both{.thousands = true, .decimals = 1};
+    CHECK(formatCellAs(1234567.25, both) == "1,234,567.2");
+    CHECK(formatCellAs(S("2024-01-31"), both) == "2024-01-31");
+}
+
+TEST_CASE("formatCellAs: date styles")
+{
+    using S = std::string;
+    const Date date{19753}; // 2024-01-31
+    CHECK(formatCellAs(date, {}) == "2024-01-31");
+    CHECK(formatCellAs(date, {.date = DateStyle::Slash}) == "2024/01/31");
+    CHECK(formatCellAs(date, {.date = DateStyle::MonthDayYear}) == "01/31/2024");
+    CHECK(formatCellAs(date, {.date = DateStyle::DayMonthYear}) == "31/01/2024");
+    CHECK(formatCellAs(date, {.date = DateStyle::Japanese}) == "2024年1月31日");
+    CHECK(formatCellAs(date, {.date = DateStyle::MonthName}) == "Jan 31, 2024");
+    for (const DateStyle style : DATE_STYLES)
+        CHECK(dateStyleExample(style) == formatCellAs(date, {.date = style}));
+
+    // The time of day stays as it is.
+    const DateTime noon{(19753LL * 86400 + 12 * 3600 + 5) * 1000000 + 250000};
+    CHECK(formatCellAs(noon, {.date = DateStyle::Slash}) == "2024/01/31 12:00:05.250");
+    const DateTime before_1970{-1000000}; // 1969-12-31 23:59:59
+    CHECK(formatCellAs(before_1970, {.date = DateStyle::Japanese}) == "1969年12月31日 23:59:59");
+    // ISO text too; other text and numbers are left alone.
+    CHECK(formatCellAs(S("2024-01-31"), {.date = DateStyle::MonthDayYear}) == "01/31/2024");
+    CHECK(formatCellAs(S("2024-01-31T08:30"), {.date = DateStyle::Slash}) == "2024/01/31 08:30:00");
+    CHECK(formatCellAs(S("31 Jan"), {.date = DateStyle::Slash}) == "31 Jan");
+    CHECK(formatCellAs(int64_t{2024}, {.date = DateStyle::Slash}) == "2024");
+}
+
+TEST_CASE("ColumnFormats and cellDisplayText with a format")
+{
+    ColumnFormats formats;
+    CHECK(formats.empty());
+    CHECK(formats.find(2) == nullptr);
+    formats.set(2, {.thousands = true});
+    REQUIRE(formats.find(2) != nullptr);
+    CHECK(formats.get(2).thousands);
+    CHECK(formats.get(3).isDefault());
+    formats.set(2, {});
+    CHECK(formats.empty());
+
+    const ColumnFormat format{.thousands = true};
+    CHECK(cellDisplayText(int64_t{1234}, 256, &format) == "1,234");
+    CHECK(cellDisplayText(int64_t{1234}) == "1234");
+    CHECK(cellDisplayText(int64_t{1234567}, 3, &format) == "1,2…");
 }

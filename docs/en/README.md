@@ -11,8 +11,10 @@ TableSkim has two user interfaces in one program:
 - a **terminal interface (TUI)** for use in a terminal, for example over SSH.
 
 Both offer the same features: sorting, filtering, searching, column
-statistics, histograms, scatter plots, SQL, hiding and freezing columns, exporting, and
-editing cells of CSV / TSV and Excel files in edit mode.
+statistics, histograms, scatter plots, grouping (Group By), SQL, hiding and
+freezing columns, number and date formats, following a growing file
+(`tail -f`), exporting, and editing cells of CSV / TSV and Excel files in
+edit mode.
 
 ![The TableSkim window](../images/gui-main-window.png)
 
@@ -25,8 +27,8 @@ editing cells of CSV / TSV and Excel files in edit mode.
 3. [Using the GUI](gui.md): the window, menus, sidebar and all GUI features
 4. [Using the Terminal UI](tui.md): the terminal interface and its keys
 5. [Sorting, Filtering, Searching and Statistics](filtering.md): how
-   comparisons work and how histogram bins are chosen, shared by both
-   interfaces
+   comparisons work, how histogram bins are chosen and how rows are
+   grouped, shared by both interfaces
 6. [Running SQL](sql.md): querying DuckDB, SQLite, Parquet and JSON files
 7. [Exporting and Converting](exporting.md): saving the view and converting
    text files to Parquet / DuckDB

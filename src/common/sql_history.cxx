@@ -1,13 +1,7 @@
 #include "sql_history.hxx"
 
 #include <algorithm>
-#include <chrono>
-#include <cstdio>
 #include <fstream>
-#include <mutex>
-#include <random>
-#include <system_error>
-#include <thread>
 
 #include "spdlog/spdlog.h"
 
@@ -94,50 +88,15 @@ void SqlHistory::add(const std::string &sql)
     save();
 }
 
-// Written next to the file and renamed over it, so that a reader never sees
-// half of it. The name is unique: windows and processes may save at once.
 void SqlHistory::save() const
 {
     if (file_.empty())
         return;
-    std::error_code ec;
-    std::filesystem::create_directories(file_.parent_path(), ec);
-    std::filesystem::path partial = file_;
-    static std::mt19937_64 random{std::random_device{}()};
-    static std::mutex random_mutex;
-    {
-        std::lock_guard lock(random_mutex);
-        char suffix[32];
-        std::snprintf(suffix, sizeof(suffix), ".%016llx", static_cast<unsigned long long>(random()));
-        partial += suffix;
-    }
-    partial += ".tableskim-partial";
-    {
-        std::ofstream out(partial, std::ios::binary | std::ios::trunc);
-        for (const auto &entry : entries_)
-            out << escapeSqlHistoryEntry(entry) << '\n';
-        out.close();
-        if (!out)
-        {
-            spdlog::warn("Cannot write the SQL history to {}", utf8String(partial));
-            std::filesystem::remove(partial, ec);
-            return;
-        }
-    }
-    // Windows refuses to replace a file another window is reading at that
-    // moment, so try again briefly.
-    for (int attempt = 0; attempt < 20; ++attempt)
-    {
-        std::filesystem::rename(partial, file_, ec);
-        if (!ec)
-            break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    if (ec)
-    {
-        spdlog::warn("Cannot write the SQL history to {}: {}", utf8String(file_), ec.message());
-        std::filesystem::remove(partial, ec);
-    }
+    std::string contents;
+    for (const auto &entry : entries_)
+        contents += escapeSqlHistoryEntry(entry) + '\n';
+    if (const std::string error = replaceFileContents(file_, contents); !error.empty())
+        spdlog::warn("Cannot write the SQL history to {}: {}", utf8String(file_), error);
 }
 
 std::optional<std::string> SqlHistoryCursor::previous(const std::vector<std::string> &entries,

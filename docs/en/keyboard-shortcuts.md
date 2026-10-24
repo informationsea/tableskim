@@ -26,6 +26,8 @@ On macOS, use `Cmd` instead of `Ctrl`.
 | `Ctrl+Shift+I`  | Column statistics                        |
 | `Ctrl+Shift+H`  | Histogram                                |
 | `Ctrl+Shift+P`  | Scatter plot                             |
+| `Ctrl+Shift+G`  | Group By                                 |
+| `Ctrl+Shift+T`  | Follow the end of the file on / off      |
 | `Ctrl+E`        | Run SQL                                  |
 | `F1`            | User manual                              |
 | Arrow keys, `Page Up` / `Page Down`, `Home` / `End` | Move the current cell |
@@ -68,6 +70,8 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `S`                  | Statistics of the cursor's column in the sidebar (again: the cell) |
 | `B`                  | Histogram of the cursor's column (`Enter`: filter to a bar; `Esc`: back) |
 | `M`                  | 2D density of the two selected columns, else of number or date columns near the cursor (`Enter`: filter to a cell; `Esc`: back) |
+| `A`                  | Group By: count and aggregate the rows by the values of columns, into a sheet |
+| `%`                  | Format the column (or the selected ones): thousands separator, decimals, date format |
 | `s`                  | Show / hide the sidebar                                       |
 | `<` / `>`            | Narrow / widen the column                                     |
 | `x` / `X`            | Hide the column (or the selected ones) / show all columns     |
@@ -98,6 +102,7 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `E`        | Next text encoding: UTF-8, UTF-16LE, UTF-16BE, Shift_JIS (CP932)            |
 | `r`        | Revert (reload the file)                                                    |
 | `R`        | Toggle Auto Revert                                                          |
+| `T`        | Follow the end of the file as it grows (`tail -f`) on / off                 |
 | `e`        | Show the file in the file browser                                           |
 | `?`, `F1`  | Help                                                                        |
 | `q`, `Ctrl+C` | Quit (asks about unsaved changes; `Ctrl+C` again: quit without saving)   |
@@ -149,3 +154,24 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `Enter`              | Filter the sheet to the selected cell     |
 | `F`                  | Clear the filter                          |
 | `Esc`, `M`, `q`      | Back to the sheet                         |
+
+### Group By dialog
+
+| Key                  | Action                                    |
+| -------------------- | ----------------------------------------- |
+| `↑` / `↓`, `k` / `j` | Move between lines                        |
+| `g`, `Space`         | Group by the column on / off              |
+| `a`                  | Aggregate the column on / off             |
+| `←` / `→`, `Space`   | Last line: choose a function, on / off    |
+| `Enter`              | Group                                     |
+| `Esc`                | Cancel                                    |
+
+### Format dialog
+
+| Key                  | Action                                    |
+| -------------------- | ----------------------------------------- |
+| `↑` / `↓`            | Move between lines                        |
+| `←` / `→`, `Space`   | Change the setting                        |
+| `Delete`             | Reset the format                          |
+| `Enter`              | Apply                                     |
+| `Esc`                | Cancel                                    |

@@ -230,7 +230,7 @@ void styleScrollbar(Fl_Scrollbar *scrollbar)
 }
 
 void drawHeaderCell(const char *label, int x, int y, int w, int h, Fl_Color classic_color, SortIndicator sort,
-                    bool filtered)
+                    bool filtered, const char *mark)
 {
     const ThemeColors &colors = themeColors();
     fl_push_clip(x, y, w, h);
@@ -247,11 +247,18 @@ void drawHeaderCell(const char *label, int x, int y, int w, int h, Fl_Color clas
     {
         fl_draw_box(FL_THIN_UP_BOX, x, y, w, h, classic_color);
     }
+    const int mark_width = mark && *mark ? TYPE_MARK_WIDTH : 0;
+    if (mark_width > 0)
+    {
+        fl_color(colors.cell_muted_text);
+        fl_draw(mark, x + 4, y, mark_width, h, FL_ALIGN_LEFT | FL_ALIGN_CLIP, nullptr, 0);
+    }
     fl_color(colors.header_text);
     // The label keeps clear of the indicator.
     const int indicator_width = sort == SortIndicator::None ? 0 : SORT_ICON_WIDTH;
     const int filter_width = filtered ? FILTER_ICON_WIDTH : 0;
-    fl_draw(label, x + 4, y, w - 8 - indicator_width - filter_width, h, FL_ALIGN_CENTER | FL_ALIGN_CLIP, nullptr, 0);
+    fl_draw(label, x + 4 + mark_width, y, w - 8 - mark_width - indicator_width - filter_width, h,
+            FL_ALIGN_CENTER | FL_ALIGN_CLIP, nullptr, 0);
     if (filtered)
     {
         const int cx = x + w - indicator_width - filter_width / 2 - 2;

@@ -24,6 +24,8 @@ namespace
     const int SORT_INDICATOR_WIDTH = 2;
     // " ▿" after a filtered column's name; columns are not widened for it.
     const int FILTER_INDICATOR_WIDTH = 2;
+    // "# " before the name of a column of numbers (columnKindMark()).
+    const int TYPE_MARK_WIDTH = 2;
     const size_t WHEEL_ROWS = 3;
     const auto DOUBLE_CLICK_TIME = std::chrono::milliseconds(400);
 
@@ -127,6 +129,7 @@ void TuiTableView::sync()
     view_ = model_->view();
     autosizeColumns();
     applyPendingScroll();
+    followEnd();
     if (update_callback_)
         update_callback_();
 }
@@ -145,7 +148,7 @@ void TuiTableView::autosizeColumns()
     const ColumnWidthMetrics metrics{
         .measure = [](const std::string &text)
         { return string_width(text); },
-        .header_padding = CELL_PADDING + SORT_INDICATOR_WIDTH,
+        .header_padding = CELL_PADDING + TYPE_MARK_WIDTH + SORT_INDICATOR_WIDTH,
         .cell_padding = CELL_PADDING,
         .min_width = MIN_COLUMN_WIDTH,
         .max_width = MAX_AUTO_COLUMN_WIDTH,
@@ -194,6 +197,25 @@ void TuiTableView::applyPendingView()
         model_->setView(std::move(*pending_view_));
         pending_view_.reset();
     }
+}
+
+void TuiTableView::setFollowEnd(bool follow)
+{
+    follow_end_ = follow;
+    followed_rows_ = 0;
+    followEnd();
+}
+
+void TuiTableView::followEnd()
+{
+    if (!follow_end_ || !model_)
+        return;
+    const RowCount count = model_->rowCount();
+    if (!count.isExact() || count.value == 0 || count.value == followed_rows_)
+        return;
+    followed_rows_ = count.value;
+    pending_scroll_.reset();
+    jumpTo(count.value - 1, cursor_col_);
 }
 
 void TuiTableView::applyPendingScroll()
@@ -436,6 +458,7 @@ Element TuiTableView::renderGrid(const Box &box)
 
     const Selection sel = selection();
     const bool range = anchor_.has_value();
+    const std::vector<ColumnType> types = model_->columnTypes();
     const auto header_style = bold | bgcolor(Color::GrayDark) | color(Color::White);
     const auto cursor_style = bgcolor(Color::Blue) | color(Color::White);
     // Black on yellow reads well on both light and dark terminals.
@@ -473,9 +496,13 @@ Element TuiTableView::renderGrid(const Box &box)
                 suffix += view_.sort.front().ascending ? " ▲" : " ▼";
                 suffix_width += SORT_INDICATOR_WIDTH;
             }
-            const int name_width = std::max(w - CELL_PADDING - suffix_width, 0);
-            std::string label =
-                " " + fitText(singleLine(model_->columnName(drawn.column)), name_width, TextAlign::Center) + suffix + " ";
+            std::string mark = drawn.column < types.size() ? columnKindMark(types[drawn.column].kind) : "";
+            if (!mark.empty())
+                mark += " ";
+            const int name_width = std::max(w - CELL_PADDING - suffix_width - string_width(mark), 0);
+            std::string label = " " + mark +
+                                fitText(singleLine(model_->columnName(drawn.column)), name_width, TextAlign::Center) +
+                                suffix + " ";
             label = fitText(label, drawn.x_max - drawn.x_min, TextAlign::Left, false);
             const bool active = drawn.column >= sel.col_left && drawn.column <= sel.col_right;
             cells.push_back(text(label) | (active ? cursor_style : header_style));
@@ -502,7 +529,7 @@ Element TuiTableView::renderGrid(const Box &box)
             switch (cell.state)
             {
             case CellState::Ready:
-                content = fitText(cellDisplayText(*cell.value), w - CELL_PADDING,
+                content = fitText(cellDisplayText(*cell.value, 256, formats_.find(drawn.column)), w - CELL_PADDING,
                                   isNumericCell(*cell.value) ? TextAlign::Right : TextAlign::Left);
                 break;
             case CellState::Loading:

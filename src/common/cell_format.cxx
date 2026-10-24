@@ -2,12 +2,199 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
-std::string cellDisplayText(const CellValue &value, size_t max_bytes)
+namespace
 {
-    std::string text = formatCell(value);
+    // Commas between the groups of three digits of a plain number's integer
+    // part ("-1234567.5" → "-1,234,567.5"); anything else ("1e+20") as it is.
+    std::string groupThousands(const std::string &number)
+    {
+        const size_t begin = !number.empty() && (number[0] == '-' || number[0] == '+') ? 1 : 0;
+        size_t end = begin;
+        while (end < number.size() && number[end] >= '0' && number[end] <= '9')
+            ++end;
+        if (end == begin)
+            return number;
+        if (end < number.size())
+        {
+            if (number[end] != '.')
+                return number;
+            for (size_t i = end + 1; i < number.size(); ++i)
+            {
+                if (number[i] < '0' || number[i] > '9')
+                    return number;
+            }
+        }
+        std::string grouped = number.substr(0, begin);
+        const size_t digits = end - begin;
+        for (size_t i = 0; i < digits; ++i)
+        {
+            if (i > 0 && (digits - i) % 3 == 0)
+                grouped += ',';
+            grouped += number[begin + i];
+        }
+        return grouped + number.substr(end);
+    }
+
+    std::string fixedDecimals(double value, int decimals)
+    {
+        const int size = std::snprintf(nullptr, 0, "%.*f", decimals, value);
+        std::string text(static_cast<size_t>(std::max(size, 0)), '\0');
+        std::snprintf(text.data(), text.size() + 1, "%.*f", decimals, value);
+        // -0.001 rounded is 0.
+        if (text.starts_with('-') && text.find_first_not_of("-0.") == std::string::npos)
+            text.erase(0, 1);
+        return text;
+    }
+
+    std::optional<std::string> formatNumberAs(const CellValue &value, const ColumnFormat &format)
+    {
+        std::string text;
+        if (const auto *i = std::get_if<int64_t>(&value))
+        {
+            // Large integers would lose digits as doubles.
+            constexpr int64_t exact = int64_t{1} << 53;
+            if (format.decimals && *i >= -exact && *i <= exact)
+                text = fixedDecimals(static_cast<double>(*i), *format.decimals);
+            else
+            {
+                text = std::to_string(*i);
+                if (format.decimals && *format.decimals > 0)
+                    text += "." + std::string(static_cast<size_t>(*format.decimals), '0');
+            }
+        }
+        else if (const auto *d = std::get_if<double>(&value))
+        {
+            if (!std::isfinite(*d))
+                return std::nullopt;
+            text = format.decimals ? fixedDecimals(*d, *format.decimals) : formatCell(value);
+        }
+        else if (const auto *s = std::get_if<std::string>(&value))
+        {
+            const auto number = parseNumber(*s);
+            if (!number || !std::isfinite(*number))
+                return std::nullopt;
+            if (format.decimals)
+                text = fixedDecimals(*number, *format.decimals);
+            else
+            {
+                // The digits as written, without the spaces and "+" parseNumber() allows.
+                const size_t first = s->find_first_not_of(" \t+");
+                text = s->substr(first, s->find_last_not_of(" \t") - first + 1);
+            }
+        }
+        else
+            return std::nullopt;
+        return format.thousands ? groupThousands(text) : text;
+    }
+
+    std::string dateText(int32_t days, DateStyle style)
+    {
+        static const char *const months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        const std::chrono::year_month_day ymd{std::chrono::sys_days{std::chrono::days{days}}};
+        const int y = static_cast<int>(ymd.year());
+        const unsigned m = static_cast<unsigned>(ymd.month());
+        const unsigned d = static_cast<unsigned>(ymd.day());
+        char buf[64];
+        switch (style)
+        {
+        case DateStyle::Iso:
+            std::snprintf(buf, sizeof(buf), "%04d-%02u-%02u", y, m, d);
+            break;
+        case DateStyle::Slash:
+            std::snprintf(buf, sizeof(buf), "%04d/%02u/%02u", y, m, d);
+            break;
+        case DateStyle::MonthDayYear:
+            std::snprintf(buf, sizeof(buf), "%02u/%02u/%04d", m, d, y);
+            break;
+        case DateStyle::DayMonthYear:
+            std::snprintf(buf, sizeof(buf), "%02u/%02u/%04d", d, m, y);
+            break;
+        case DateStyle::Japanese:
+            std::snprintf(buf, sizeof(buf), "%d年%u月%u日", y, m, d);
+            break;
+        case DateStyle::MonthName:
+            std::snprintf(buf, sizeof(buf), "%s %u, %d", months[(m + 11) % 12], d, y);
+            break;
+        }
+        return buf;
+    }
+
+    std::optional<std::string> formatDateAs(const CellValue &value, DateStyle style)
+    {
+        constexpr int64_t micros_per_day = 86400LL * 1000000;
+        std::optional<DateTime> date_time;
+        if (const auto *date = std::get_if<Date>(&value))
+            return dateText(date->days_since_epoch, style);
+        if (const auto *dt = std::get_if<DateTime>(&value))
+            date_time = *dt;
+        else if (const auto *s = std::get_if<std::string>(&value))
+        {
+            const auto temporal = parseTemporal(*s);
+            if (!temporal)
+                return std::nullopt;
+            if (!temporal->has_time)
+                return dateText(static_cast<int32_t>(temporal->micros / micros_per_day), style);
+            date_time = DateTime{temporal->micros};
+        }
+        if (!date_time)
+            return std::nullopt;
+        // The time of day as formatCell() writes it, after "YYYY-MM-DD".
+        const std::string iso = formatCell(*date_time);
+        const int64_t micros = date_time->micros_since_epoch;
+        const int64_t days = micros / micros_per_day - (micros % micros_per_day < 0 ? 1 : 0);
+        return dateText(static_cast<int32_t>(days), style) + iso.substr(std::min<size_t>(iso.size(), 10));
+    }
+} // namespace
+
+std::string dateStyleExample(DateStyle style)
+{
+    // 2024-01-31
+    return dateText(19753, style);
+}
+
+std::string formatCellAs(const CellValue &value, const ColumnFormat &format)
+{
+    if (format.thousands || format.decimals)
+    {
+        if (auto text = formatNumberAs(value, format))
+            return *text;
+    }
+    if (format.date != DateStyle::Iso)
+    {
+        if (auto text = formatDateAs(value, format.date))
+            return *text;
+    }
+    return formatCell(value);
+}
+
+const ColumnFormat *ColumnFormats::find(size_t column) const
+{
+    const auto it = formats_.find(column);
+    return it != formats_.end() ? &it->second : nullptr;
+}
+
+ColumnFormat ColumnFormats::get(size_t column) const
+{
+    const ColumnFormat *format = find(column);
+    return format ? *format : ColumnFormat{};
+}
+
+void ColumnFormats::set(size_t column, const ColumnFormat &format)
+{
+    if (format.isDefault())
+        formats_.erase(column);
+    else
+        formats_[column] = format;
+}
+
+std::string cellDisplayText(const CellValue &value, size_t max_bytes, const ColumnFormat *format)
+{
+    std::string text = format ? formatCellAs(value, *format) : formatCell(value);
     if (text.size() > max_bytes)
     {
         // cut at a UTF-8 character boundary

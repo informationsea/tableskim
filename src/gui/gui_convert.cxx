@@ -138,6 +138,18 @@ bool runViewExport(const std::shared_ptr<TableModel> &model, const std::filesyst
                            { return exportView(model, target, format, options, stop, progress); });
 }
 
+std::optional<ResultSheet> runGroupBy(const std::shared_ptr<TableModel> &model, const GroupBySpec &spec)
+{
+    std::optional<ResultSheet> sheet;
+    runWithProgress("Group By", "Grouping " + model->name() + "...", "Failed to group the rows",
+                    [&](std::stop_token stop, const std::function<void(size_t)> &progress) -> std::optional<size_t>
+                    {
+                        sheet = groupByView(model, spec, stop, progress);
+                        return sheet ? std::optional(sheet->rows.size()) : std::nullopt;
+                    });
+    return sheet;
+}
+
 TableBook::SaveResult runSave(TableBook &book, const std::filesystem::path &target)
 {
     struct SaveState

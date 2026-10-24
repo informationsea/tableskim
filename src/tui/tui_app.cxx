@@ -37,6 +37,18 @@ namespace
     const int MAX_FILTER_STATUS_WIDTH = 24;
     const int MAX_FILTER_DIALOG_WIDTH = 76;
     const int FILTER_OP_WIDTH = 12;
+    // The sheet a Group By adds (TableBook::addResultSheet()).
+    const char *const GROUP_BY_SHEET = "Group By";
+
+    // Adds the column to the list in column order, or takes it out.
+    void toggleColumn(std::vector<size_t> &columns, size_t column)
+    {
+        const auto it = std::lower_bound(columns.begin(), columns.end(), column);
+        if (it != columns.end() && *it == column)
+            columns.erase(it);
+        else
+            columns.insert(it, column);
+    }
 
     const char *const KEY_HELP[][2] = {
         {"Arrows, h j k l", "Move the cursor"},
@@ -52,6 +64,8 @@ namespace
         {"S", "Statistics of the cursor's column in the sidebar (again: the cell)"},
         {"B", "Histogram of the cursor's column (Enter: filter to a bar; Esc: back)"},
         {"M", "2D density of the selected two columns, else of number or date columns near the cursor"},
+        {"A", "Group By: rows per value of columns, with sums, means, ..., in a sheet"},
+        {"%", "Format the column(s): thousands separator, decimal places, date format"},
         {"< / >", "Narrow / widen the column"},
         {"x / X", "Hide the column (or the selected ones) / show all columns"},
         {"|", "Freeze the columns up to the cursor's (again: unfreeze)"},
@@ -74,6 +88,7 @@ namespace
         {"P / D", "Convert to Parquet / DuckDB next to the file and open it (Esc: cancel)"},
         {"r", "Revert (reload the file)"},
         {"R", "Toggle Auto Revert"},
+        {"T", "Follow the end of the file as it grows, like tail -f (again: stop)"},
         {"e", "Show the file in the file browser"},
         {"I", "Edit mode on / off (CSV / TSV / Excel); cells can be changed only in it"},
         {"Enter, i, F2 (edit mode)", "Edit the cell (Enter: done, Tab: done and next column, Esc: cancel)"},
@@ -144,9 +159,18 @@ TuiApp::TuiApp(App &app) : app_(app)
                                        { return renderFilterDialog(); });
     filter_dialog = CatchEvent(filter_dialog, [this](Event event)
                                { return handleFilterDialogEvent(event); });
+    Component group_dialog = Renderer([this](bool)
+                                      { return renderGroupDialog(); });
+    group_dialog = CatchEvent(group_dialog, [this](Event event)
+                              { return handleGroupDialogEvent(event); });
+    Component format_dialog = Renderer([this](bool)
+                                       { return renderFormatDialog(); });
+    format_dialog = CatchEvent(format_dialog, [this](Event event)
+                               { return handleFormatDialogEvent(event); });
 
-    // The text dialog (e.g. an error) goes over the filter dialog.
-    Component dialogs = main | Modal(filter_dialog, &show_filter_dialog_) | Modal(text_dialog, &show_text_dialog_);
+    // The text dialog (e.g. an error) goes over the others.
+    Component dialogs = main | Modal(filter_dialog, &show_filter_dialog_) | Modal(group_dialog, &show_group_dialog_) |
+                        Modal(format_dialog, &show_format_dialog_) | Modal(text_dialog, &show_text_dialog_);
     root_ = CatchEvent(dialogs, [this, dialogs](Event event)
                        {
         // Quit through the destructor, which stops an export or conversion
@@ -253,6 +277,8 @@ bool TuiApp::open(const std::string &path, std::string *error)
                 restore_views_[names[i]] = views_[i]->model()->requestedView();
                 if (!views_[i]->hiddenColumns().empty())
                     restore_hidden_[names[i]] = views_[i]->hiddenColumns();
+                if (!views_[i]->columnFormats().empty())
+                    restore_formats_[names[i]] = views_[i]->columnFormats();
                 if (views_[i]->frozenColumns() > 0)
                     restore_frozen_[names[i]] = views_[i]->frozenColumns();
                 if (const ColumnStatsState stats = views_[i]->model()->columnStatsState(); stats.active)
@@ -267,8 +293,12 @@ bool TuiApp::open(const std::string &path, std::string *error)
         restore_stats_.clear();
         restore_hidden_.clear();
         restore_frozen_.clear();
+        restore_formats_.clear();
         last_query_.clear();
         sql_sheet_.clear();
+        group_result_.reset();
+        group_sheet_.clear();
+        group_draft_ = {};
         editing_ = false;
     }
     path_ = path;
@@ -284,6 +314,11 @@ bool TuiApp::open(const std::string &path, std::string *error)
     // while the new file waits at its own checkpoint without asking.
     memory_prompt_model_.reset();
     book_ = std::move(book);
+    // What the old book was asked to read is dropped with it.
+    append_pending_ = false;
+    // A Group By's rows are kept in memory: the new book shows them again.
+    if (group_result_)
+        group_sheet_ = book_->addResultSheet(GROUP_BY_SHEET, group_result_);
     // Edit mode stays on when the same file is reopened (e.g. after saving).
     book_->setEditing(editing_);
     editing_ = book_->editing();
@@ -356,6 +391,7 @@ void TuiApp::sqlFinished(const std::shared_ptr<TableBook> &book, const std::stri
         restore_stats_.erase(result.sheet);
         restore_hidden_.erase(result.sheet);
         restore_frozen_.erase(result.sheet);
+        restore_formats_.erase(result.sheet);
     }
     if (!rerun || sql_reselect_)
         showSheet(index);
@@ -419,12 +455,18 @@ void TuiApp::showSheet(size_t index)
             view->freezeColumns(it->second);
             restore_frozen_.erase(it);
         }
+        if (auto it = restore_formats_.find(name); it != restore_formats_.end())
+        {
+            view->setColumnFormats(it->second);
+            restore_formats_.erase(it);
+        }
         if (auto it = restore_stats_.find(name); it != restore_stats_.end())
         {
             if (view->model())
                 view->model()->startColumnStats(it->second);
             restore_stats_.erase(it);
         }
+        view->setFollowEnd(follow_);
         views_[index] = std::move(view);
     }
     table_holder_->DetachAllChildren();
@@ -457,11 +499,56 @@ bool TuiApp::refuseReopen()
     return true;
 }
 
+void TuiApp::setFollow(bool enabled)
+{
+    follow_ = enabled;
+    for (const auto &view : views_)
+    {
+        if (view)
+            view->setFollowEnd(enabled);
+    }
+    setStatus(enabled ? "Following the end of the file" : "Not following the file");
+    if (enabled)
+        revertIfChanged();
+}
+
 void TuiApp::revertIfChanged()
 {
     // An export reads the open file to the end; a reopen would stop it.
-    if (!auto_revert_ || path_.empty() || converting_)
+    if ((!auto_revert_ && !follow_) || path_.empty() || converting_)
         return;
+    // Following: only the appended rows are read, if the file allows. Edit
+    // mode reads the file again as Auto Revert does, which keeps the edits.
+    if (follow_ && book_ && book_->readsAppendedRows() && !editing())
+    {
+        if (append_pending_)
+            return;
+        append_pending_ = true;
+        book_->readAppended([this, post = poster(), book = std::weak_ptr<TableBook>(book_)](AppendResult result)
+                            { post([this, book, result]
+                                   {
+            // A reopen meanwhile: the new book has read the file anew.
+            if (book.lock() != book_)
+                return;
+            append_pending_ = false;
+            if (result == AppendResult::Appended)
+                readFileStamp(utf8Path(path_), file_mtime_, file_size_); // read up to here
+            else if (result == AppendResult::Changed)
+            {
+                std::filesystem::file_time_type mtime;
+                std::uintmax_t size;
+                // Being replaced: tried again on the next poll.
+                if (!readFileStamp(utf8Path(path_), mtime, size) || size == 0)
+                    return;
+                spdlog::debug("Follow: {} was changed, reading it again", path_);
+                file_mtime_ = mtime;
+                file_size_ = size;
+                const std::string path = path_;
+                std::string error;
+                open(path, &error);
+            } }); });
+        return;
+    }
     std::filesystem::file_time_type mtime;
     std::uintmax_t size;
     // A missing or empty file is usually being replaced or rewritten; wait
@@ -1338,7 +1425,8 @@ bool TuiApp::handlePasteEvent(const Event &event, const Component &target)
     if (!typingText())
     {
         // In edit mode, into the selected cells.
-        if (editing() && !show_filter_dialog_ && !show_text_dialog_ && !histogram_model_ && !density_model_ &&
+        if (editing() && !show_filter_dialog_ && !show_text_dialog_ && !show_group_dialog_ && !show_format_dialog_ &&
+            !histogram_model_ && !density_model_ &&
             !memory_prompt_model_ &&
             !unsaved_action_)
         {
@@ -1365,7 +1453,7 @@ bool TuiApp::handlePasteEvent(const Event &event, const Component &target)
 // Whether character keys go into text being typed.
 bool TuiApp::typingText() const
 {
-    if (show_text_dialog_)
+    if (show_text_dialog_ || show_group_dialog_ || show_format_dialog_)
         return false;
     if (show_filter_dialog_)
     {
@@ -1573,6 +1661,19 @@ bool TuiApp::handleEvent(Event event)
         showDensity(x_column, y_column);
         return true;
     }
+    if (event == Event::A)
+    {
+        if (converting_)
+            setStatus("Another export or conversion is running (Esc: cancel it)", true);
+        else
+            openGroupDialog();
+        return true;
+    }
+    if (event == Event::Character('%'))
+    {
+        openFormatDialog();
+        return true;
+    }
     if (event == Event::Character('|'))
     {
         TuiTableView *view = currentView();
@@ -1631,6 +1732,11 @@ bool TuiApp::handleEvent(Event event)
         const auto it = std::find(TEXT_ENCODINGS.begin(), TEXT_ENCODINGS.end(), textEncoding());
         const size_t next = it == TEXT_ENCODINGS.end() ? 0 : (it - TEXT_ENCODINGS.begin() + 1) % TEXT_ENCODINGS.size();
         checkUnsaved([this, encoding = TEXT_ENCODINGS[next]] { setTextEncoding(encoding); });
+        return true;
+    }
+    if (event == Event::T)
+    {
+        setFollow(!follow_);
         return true;
     }
     if (event == Event::R)
@@ -2346,6 +2452,8 @@ Element TuiApp::renderStatusBar()
     }
     if (skipMetaLinesAvailable() && textEncoding() != TextEncoding::Utf8)
         right.push_back(text(std::string("│ ") + textEncodingName(textEncoding()) + " "));
+    if (follow_)
+        right.push_back(text("│ follow "));
     right.push_back(text(auto_revert_ ? "│ auto-revert " : "│ no auto-revert "));
     right.push_back(text("│ ? help "));
 
@@ -2390,7 +2498,7 @@ std::string TuiApp::keyHintText(int width) const
         hints = {"Enter edit", "u undo", "^R redo", "^S save", "I leave edit mode"};
     else
     {
-        hints = {"/ search", "f filter", "o sort", "S stats", "B histogram", "M density"};
+        hints = {"/ search", "f filter", "o sort", "S stats", "B histogram", "M density", "A group by"};
         if (book_->supportsSql())
             hints.push_back(": SQL");
         hints.push_back("w export");
@@ -2628,6 +2736,309 @@ Element TuiApp::renderFilterDialog()
     body.push_back(text("Ctrl+N: add  Ctrl+D: delete  Ctrl+U: clear the value") | dim);
     return window(text(" Filter ") | bold, vbox(std::move(body)) | size(WIDTH, EQUAL, width)) |
            size(HEIGHT, LESS_THAN, std::max(terminal.dimy - 2, 8));
+}
+
+// ===========================================================================
+// Group By and column formats
+// ===========================================================================
+
+void TuiApp::openGroupDialog()
+{
+    TuiTableView *view = currentView();
+    if (!view || !view->model() || view->model()->columnCount() == 0)
+        return;
+    const size_t column_count = view->model()->columnCount();
+    group_columns_.clear();
+    for (size_t c = 0; c < column_count; ++c)
+    {
+        if (!view->hiddenColumns().contains(c))
+            group_columns_.push_back(c);
+    }
+    // The choices of last time that this sheet has; the selected columns
+    // (or the cursor's, the first time) to group by.
+    const auto missing = [this](size_t column)
+    { return !std::binary_search(group_columns_.begin(), group_columns_.end(), column); };
+    std::erase_if(group_draft_.keys, missing);
+    std::erase_if(group_draft_.values, missing);
+    const TuiTableView::Selection sel = view->selection();
+    if (sel.col_right > sel.col_left || group_draft_.keys.empty())
+    {
+        group_draft_.keys.clear();
+        for (size_t c = sel.col_left; c <= sel.col_right; ++c)
+        {
+            if (!missing(c))
+                group_draft_.keys.push_back(c);
+        }
+    }
+    if (group_draft_.aggregates.empty())
+        group_draft_.aggregates = {Aggregate::Sum, Aggregate::Mean};
+    const auto cursor = std::lower_bound(group_columns_.begin(), group_columns_.end(), view->cursorColumn());
+    group_line_ = static_cast<size_t>(cursor - group_columns_.begin());
+    group_aggregate_ = 0;
+    show_group_dialog_ = true;
+}
+
+bool TuiApp::handleGroupDialogEvent(Event event)
+{
+    if (event == Event::Custom)
+        return false;
+    if (event.is_mouse())
+        return true;
+    const size_t aggregates_line = group_columns_.size();
+    const bool on_column = group_line_ < aggregates_line;
+    const size_t page = 10;
+    if (event == Event::Escape)
+        show_group_dialog_ = false;
+    else if (event == Event::Return)
+    {
+        show_group_dialog_ = false;
+        startGroupBy();
+    }
+    else if (event == Event::ArrowUp || event == Event::k)
+        group_line_ = group_line_ > 0 ? group_line_ - 1 : 0;
+    else if (event == Event::ArrowDown || event == Event::j)
+        group_line_ = std::min(group_line_ + 1, aggregates_line);
+    else if (event == Event::PageUp)
+        group_line_ = group_line_ > page ? group_line_ - page : 0;
+    else if (event == Event::PageDown)
+        group_line_ = std::min(group_line_ + page, aggregates_line);
+    else if (on_column && (event == Event::g || event == Event::Character(' ')))
+        toggleColumn(group_draft_.keys, group_columns_[group_line_]);
+    else if (on_column && event == Event::a)
+        toggleColumn(group_draft_.values, group_columns_[group_line_]);
+    else if (!on_column && (event == Event::ArrowLeft || event == Event::h))
+        group_aggregate_ = (group_aggregate_ + std::size(AGGREGATES) - 1) % std::size(AGGREGATES);
+    else if (!on_column && (event == Event::ArrowRight || event == Event::l))
+        group_aggregate_ = (group_aggregate_ + 1) % std::size(AGGREGATES);
+    else if (!on_column && event == Event::Character(' '))
+    {
+        auto &aggregates = group_draft_.aggregates;
+        const Aggregate aggregate = AGGREGATES[group_aggregate_];
+        if (std::erase(aggregates, aggregate) == 0)
+        {
+            // In the order of AGGREGATES, which the result's columns follow.
+            aggregates.push_back(aggregate);
+            std::sort(aggregates.begin(), aggregates.end());
+        }
+    }
+    return true;
+}
+
+Element TuiApp::renderGroupDialog()
+{
+    TuiTableView *view = currentView();
+    const std::shared_ptr<TableModel> model = view ? view->model() : nullptr;
+    const Dimensions terminal = Terminal::Size();
+    const int width = std::clamp(terminal.dimx - 8, 40, MAX_FILTER_DIALOG_WIDTH);
+    const std::string flags_header = "  group  aggregate";
+    const int name_width = std::max(width - 2 - static_cast<int>(flags_header.size()), 8);
+    const auto mark = [](bool on)
+    { return std::string(on ? "[x]" : "[ ]"); };
+
+    Elements lines;
+    for (size_t i = 0; i < group_columns_.size(); ++i)
+    {
+        const size_t column = group_columns_[i];
+        const bool current = group_line_ == i;
+        const auto chosen = [column](const std::vector<size_t> &list)
+        { return std::find(list.begin(), list.end(), column) != list.end(); };
+        const std::string name = model ? singleLine(model->columnName(column)) : columnLetter(column);
+        Element line = hbox({
+            text(current ? "▶ " : "  ") | dim,
+            text(fitText(name, name_width, TextAlign::Left)),
+            text("   " + mark(chosen(group_draft_.keys)) + "     " + mark(chosen(group_draft_.values)) + "   "),
+        });
+        lines.push_back(current ? line | inverted | focus : line);
+    }
+
+    Elements aggregates{text(" Of each: ")};
+    for (size_t i = 0; i < std::size(AGGREGATES); ++i)
+    {
+        const bool on = std::find(group_draft_.aggregates.begin(), group_draft_.aggregates.end(), AGGREGATES[i]) !=
+                        group_draft_.aggregates.end();
+        Element item = text(mark(on) + " " + aggregateName(AGGREGATES[i]));
+        if (group_line_ == group_columns_.size() && group_aggregate_ == i)
+            item = item | inverted;
+        aggregates.push_back(item);
+        aggregates.push_back(text(" "));
+    }
+
+    Elements body{
+        text("  " + fitText("Column", name_width, TextAlign::Left) + flags_header) | bold,
+        vbox(std::move(lines)) | vscroll_indicator | frame | flex_shrink,
+        separator(),
+        hflow(std::move(aggregates)),
+        separator(),
+        text("↑↓: line  g, Space: group by the column  a: aggregate it") | dim,
+        text("Last line: ←→: choose  Space: on / off    Enter: group  Esc: cancel") | dim,
+    };
+    return window(text(" Group By ") | bold, vbox(std::move(body)) | size(WIDTH, EQUAL, width)) |
+           size(HEIGHT, LESS_THAN, std::max(terminal.dimy - 2, 8));
+}
+
+void TuiApp::startGroupBy()
+{
+    TuiTableView *view = currentView();
+    if (converting_ || !view || !view->model())
+        return;
+    const std::shared_ptr<TableModel> model = view->model();
+    const GroupBySpec spec = group_draft_;
+    converting_ = true;
+    convert_label_ = "grouping";
+    convert_rows_ = 0;
+    convert_thread_ = std::jthread([this, model, spec, book = std::weak_ptr<TableBook>(book_), post = poster()](std::stop_token stop)
+                                   {
+        // Shared: posted closures are copied.
+        auto sheet = std::make_shared<std::optional<ResultSheet>>();
+        std::string error;
+        try
+        {
+            *sheet = groupByView(model, spec, stop, [this, &post](size_t n)
+                                 { post([this, n] { convert_rows_ = n; }); });
+        }
+        catch (const std::exception &e)
+        {
+            error = e.what();
+        }
+        post([this, sheet, book, error]
+             {
+            converting_ = false;
+            if (!error.empty())
+            {
+                spdlog::error("Failed to group the rows: {}", error);
+                showError("Failed to group the rows:\n" + error);
+                return;
+            }
+            if (!*sheet)
+            {
+                setStatus("Group By canceled");
+                return;
+            }
+            // The file was reopened meanwhile: the rows were the old book's.
+            if (!book_ || book.lock() != book_)
+                return;
+            const size_t groups = (*sheet)->rows.size();
+            group_result_ = std::make_shared<const ResultSheet>(std::move(**sheet));
+            group_sheet_ = book_->addResultSheet(GROUP_BY_SHEET, group_result_);
+            showResultSheet(group_sheet_);
+            setStatus(std::to_string(groups) + " groups in the sheet \"" + group_sheet_ + "\"");
+        }); });
+}
+
+void TuiApp::showResultSheet(const std::string &sheet)
+{
+    const auto names = book_->sheetNames();
+    const size_t index = static_cast<size_t>(std::find(names.begin(), names.end(), sheet) - names.begin());
+    if (index >= names.size())
+        return;
+    views_.resize(names.size());
+    // New rows: a fresh view, not the old position, sort or filter.
+    views_[index].reset();
+    restore_positions_.erase(sheet);
+    restore_views_.erase(sheet);
+    restore_stats_.erase(sheet);
+    restore_hidden_.erase(sheet);
+    restore_frozen_.erase(sheet);
+    restore_formats_.erase(sheet);
+    showSheet(index);
+}
+
+void TuiApp::openFormatDialog()
+{
+    TuiTableView *view = currentView();
+    if (!view || !view->model() || view->model()->columnCount() == 0)
+        return;
+    format_draft_ = view->columnFormats().get(view->cursorColumn());
+    format_line_ = 0;
+    show_format_dialog_ = true;
+}
+
+bool TuiApp::handleFormatDialogEvent(Event event)
+{
+    if (event == Event::Custom)
+        return false;
+    if (event.is_mouse())
+        return true;
+    TuiTableView *view = currentView();
+    if (!view || !view->model())
+    {
+        show_format_dialog_ = false;
+        return true;
+    }
+    const bool forward = event == Event::ArrowRight || event == Event::l || event == Event::Character(' ');
+    const bool backward = event == Event::ArrowLeft || event == Event::h;
+    if (event == Event::Escape)
+        show_format_dialog_ = false;
+    else if (event == Event::Return)
+    {
+        show_format_dialog_ = false;
+        const TuiTableView::Selection sel = view->selection();
+        ColumnFormats formats = view->columnFormats();
+        for (size_t c = sel.col_left; c <= sel.col_right; ++c)
+        {
+            if (!view->hiddenColumns().contains(c))
+                formats.set(c, format_draft_);
+        }
+        view->setColumnFormats(formats);
+    }
+    else if (event == Event::Delete || event == Event::Backspace)
+        format_draft_ = {};
+    else if (event == Event::ArrowUp || event == Event::k)
+        format_line_ = format_line_ > 0 ? format_line_ - 1 : 0;
+    else if (event == Event::ArrowDown || event == Event::j || event == Event::Tab)
+        format_line_ = std::min<size_t>(format_line_ + 1, 2);
+    else if ((forward || backward) && format_line_ == 0)
+        format_draft_.thousands = !format_draft_.thousands;
+    else if ((forward || backward) && format_line_ == 1)
+    {
+        // As stored (-1), then 0 to MAX_DECIMALS.
+        const int count = MAX_DECIMALS + 2;
+        const int index = format_draft_.decimals.value_or(-1) + 1;
+        const int next = (index + (forward ? 1 : count - 1)) % count;
+        format_draft_.decimals = next == 0 ? std::nullopt : std::optional(next - 1);
+    }
+    else if ((forward || backward) && format_line_ == 2)
+    {
+        const size_t count = std::size(DATE_STYLES);
+        const auto it = std::find(std::begin(DATE_STYLES), std::end(DATE_STYLES), format_draft_.date);
+        const size_t index = static_cast<size_t>(it - std::begin(DATE_STYLES));
+        format_draft_.date = DATE_STYLES[(index + (forward ? 1 : count - 1)) % count];
+    }
+    return true;
+}
+
+Element TuiApp::renderFormatDialog()
+{
+    TuiTableView *view = currentView();
+    const std::shared_ptr<TableModel> model = view ? view->model() : nullptr;
+    if (!model)
+        return text("");
+    const Dimensions terminal = Terminal::Size();
+    const int width = std::clamp(terminal.dimx - 8, 40, 60);
+    const TuiTableView::Selection sel = view->selection();
+    const size_t columns = view->hiddenColumns().visibleIn(sel.col_left, sel.col_right);
+    const size_t column = view->cursorColumn();
+    const std::vector<ColumnType> types = model->columnTypes();
+    const std::string title = columns > 1 ? std::to_string(columns) + " columns" : singleLine(model->columnName(column));
+
+    const auto line = [this](size_t index, const std::string &label, const std::string &value)
+    {
+        Element element = hbox({text(" " + label), filler(), text(value + " ")});
+        return format_line_ == index ? element | inverted : element;
+    };
+    const std::string decimals = format_draft_.decimals ? std::to_string(*format_draft_.decimals) : "as stored";
+    Elements body{
+        text(" " + fitText(title, width - 4, TextAlign::Left)) | bold,
+        text(" Type: " + columnTypeText(column < types.size() ? types[column] : ColumnType{})) | dim,
+        separator(),
+        line(0, "Thousands separator", format_draft_.thousands ? "[x]" : "[ ]"),
+        line(1, "Decimal places", "◂ " + decimals + " ▸"),
+        line(2, "Date format", "◂ " + dateStyleExample(format_draft_.date) + " ▸"),
+        separator(),
+        text("↑↓: line  ←→, Space: change  Del: reset") | dim,
+        text("Enter: apply  Esc: cancel (only the display changes)") | dim,
+    };
+    return window(text(" Format ") | bold, vbox(std::move(body)) | size(WIDTH, EQUAL, width));
 }
 
 // ===========================================================================

@@ -3,7 +3,12 @@
 #include "spdlog/spdlog.h"
 
 #include <cctype>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <mutex>
+#include <random>
 #include <string>
 #include <thread>
 
@@ -76,6 +81,44 @@ std::filesystem::path userDataDirectory()
     return std::filesystem::path(home) / ".local" / "state" / "tableskim";
 #endif
 #endif
+}
+
+std::string replaceFileContents(const std::filesystem::path &file, const std::string &contents)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(file.parent_path(), ec);
+    std::filesystem::path partial = file;
+    static std::mt19937_64 random{std::random_device{}()};
+    static std::mutex random_mutex;
+    {
+        std::lock_guard lock(random_mutex);
+        char suffix[32];
+        std::snprintf(suffix, sizeof(suffix), ".%016llx", static_cast<unsigned long long>(random()));
+        partial += suffix;
+    }
+    partial += ".tableskim-partial";
+    {
+        std::ofstream out(partial, std::ios::binary | std::ios::trunc);
+        out << contents;
+        out.close();
+        if (!out)
+        {
+            std::filesystem::remove(partial, ec);
+            return "cannot write " + utf8String(partial);
+        }
+    }
+    // Windows refuses to replace a file another window is reading at that
+    // moment, so try again briefly.
+    for (int attempt = 0; attempt < 20; ++attempt)
+    {
+        std::filesystem::rename(partial, file, ec);
+        if (!ec)
+            return {};
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::string error = ec.message();
+    std::filesystem::remove(partial, ec);
+    return error;
 }
 
 bool readFileStamp(const std::filesystem::path &path, std::filesystem::file_time_type &mtime, std::uintmax_t &size)

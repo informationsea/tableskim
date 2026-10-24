@@ -123,6 +123,14 @@ struct ColumnInfo
     std::string name;
 };
 
+// The rows of a sheet computed in memory, e.g. by a Group By (see
+// TableBook::addResultSheet()).
+struct ResultSheet
+{
+    std::vector<ColumnInfo> columns;
+    std::vector<TableRow> rows;
+};
+
 // Merged cells are a property of the sheet, not of individual cells.
 struct CellRange
 {

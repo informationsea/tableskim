@@ -5,6 +5,7 @@
 #include <deque>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 #include <span>
 #include <streambuf>
@@ -134,6 +135,79 @@ namespace
             exceptions(std::ios::badbit);
         }
     };
+
+    // Counts the bytes of the file read through it and keeps the last few,
+    // so that a follow knows where the file was read up to (readAppended()).
+    class CountingBuf : public std::streambuf
+    {
+    public:
+        static constexpr size_t TAIL_BYTES = 64;
+
+    private:
+        static constexpr size_t CHUNK_SIZE = 64 * 1024;
+        std::unique_ptr<std::istream> source_;
+        std::vector<char> buffer_;
+        uint64_t count_ = 0;
+        std::string tail_;
+
+    protected:
+        int_type underflow() override
+        {
+            if (gptr() < egptr())
+                return traits_type::to_int_type(*gptr());
+            const std::streamsize n = source_->rdbuf()->sgetn(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
+            if (n <= 0)
+                return traits_type::eof();
+            count_ += static_cast<uint64_t>(n);
+            tail_.append(buffer_.data(), static_cast<size_t>(n));
+            if (tail_.size() > TAIL_BYTES)
+                tail_.erase(0, tail_.size() - TAIL_BYTES);
+            setg(buffer_.data(), buffer_.data(), buffer_.data() + n);
+            return traits_type::to_int_type(*gptr());
+        }
+
+    public:
+        explicit CountingBuf(std::unique_ptr<std::istream> source) : source_(std::move(source)), buffer_(CHUNK_SIZE) {}
+        uint64_t count() const { return count_; }
+        const std::string &tail() const { return tail_; }
+    };
+
+    class CountingStream : public std::istream
+    {
+    private:
+        CountingBuf buf_;
+
+    public:
+        explicit CountingStream(std::unique_ptr<std::istream> source) : std::istream(nullptr), buf_(std::move(source))
+        {
+            rdbuf(&buf_);
+            exceptions(std::ios::badbit);
+        }
+        const CountingBuf &counter() const { return buf_; }
+    };
+
+    // Whether appended rows can be read on their own: from a byte offset of
+    // the file, with line breaks that are single bytes (not UTF-16).
+    bool followable(Compression compression, TextEncoding encoding)
+    {
+        return compression == Compression::None && (encoding == TextEncoding::Utf8 || encoding == TextEncoding::Cp932);
+    }
+
+    // The length of the whole records at the start of `text`: up to the last
+    // line break outside double quotes.
+    size_t wholeRecordsLength(std::string_view text)
+    {
+        size_t length = 0;
+        bool quoted = false;
+        for (size_t i = 0; i < text.size(); ++i)
+        {
+            if (text[i] == '"')
+                quoted = !quoted; // a doubled quote toggles twice
+            else if (text[i] == '\n' && !quoted)
+                length = i + 1;
+        }
+        return length;
+    }
 
     // path::string() uses the ANSI code page on Windows; sheet names must be UTF-8.
     std::string utf8FileName(const std::filesystem::path &path)
@@ -492,30 +566,55 @@ namespace
         out->finish();
     }
 
+    bool readCsvRow(csv::CSVReader &reader, TableRow &out)
+    {
+        csv::CSVRow row;
+        if (!reader.read_row(row))
+            return false;
+        out.clear();
+        out.reserve(row.size());
+        for (size_t i = 0; i < row.size(); ++i)
+            out.emplace_back(std::string(row[i].get<csv::string_view>()));
+        return true;
+    }
+
     class CsvSheetSource : public SheetSource
     {
     private:
+        // Appended bytes read at a time; the rest waits for the next follow.
+        static constexpr size_t MAX_APPENDED_BYTES = size_t{64} << 20;
+
         std::unique_ptr<csv::CSVReader> reader_;
         std::vector<ColumnInfo> columns_;
-        std::deque<TableRow> pending_; // rows read ahead while detecting the header
+        std::deque<TableRow> pending_; // rows read ahead while detecting the header, or appended
         size_t next_row_ = 0;
         bool eof_ = false;
+        // Following the file: where it was read up to, and the bytes before.
+        std::filesystem::path path_;
+        TextEncoding encoding_;
+        bool skip_meta_lines_;
+        char delimiter_ = ',';
+        const CountingBuf *counter_ = nullptr; // the file's bytes, if it can be followed
+        uint64_t offset_ = 0;
+        std::string tail_;
 
         bool readRow(TableRow &out)
         {
-            csv::CSVRow row;
-            if (!reader_->read_row(row))
-                return false;
-            out.clear();
-            out.reserve(row.size());
-            for (size_t i = 0; i < row.size(); ++i)
-                out.emplace_back(std::string(row[i].get<csv::string_view>()));
-            return true;
+            if (readCsvRow(*reader_, out))
+                return true;
+            eof_ = true;
+            if (counter_)
+            {
+                offset_ = counter_->count();
+                tail_ = counter_->tail();
+            }
+            return false;
         }
 
     public:
         CsvSheetSource(const std::filesystem::path &path, const OpenOptions &options, bool skip_meta_lines, TextEncoding encoding,
                        CsvLayout &layout)
+            : path_(path), encoding_(encoding), skip_meta_lines_(skip_meta_lines)
         {
             csv::CSVFormat format;
             if (const auto delimiter = delimiterFor(path, options))
@@ -531,12 +630,19 @@ namespace
             // A mapped file can fault if another process truncates it before
             // Auto Revert notices. Streams also accept native Windows paths.
             auto stream = openRawStream(path, compression);
+            if (followable(compression, encoding))
+            {
+                auto counting = std::make_unique<CountingStream>(std::move(stream));
+                counter_ = &counting->counter();
+                stream = std::move(counting);
+            }
             if (decode)
                 stream = openDecodingStream(std::move(stream), encoding);
             if (skip_meta_lines)
                 stream = std::make_unique<MetaLineFilterStream>(std::move(stream));
             reader_ = std::make_unique<csv::CSVReader>(std::move(stream), format);
             layout = {.known = true, .delimiter = reader_->get_format().get_delim()};
+            delimiter_ = layout.delimiter;
 
             // Read the first two rows: the second one helps to tell a title from a header.
             for (int i = 0; i < 2 && !eof_; ++i)
@@ -544,8 +650,6 @@ namespace
                 TableRow row;
                 if (readRow(row))
                     pending_.push_back(std::move(row));
-                else
-                    eof_ = true;
             }
             if (pending_.empty())
                 return;
@@ -590,14 +694,64 @@ namespace
             {
                 TableRow row;
                 if (!readRow(row))
-                {
-                    eof_ = true;
                     break;
-                }
                 block->rows.push_back(std::move(row));
             }
             next_row_ += block->rows.size();
             return block;
+        }
+
+        AppendResult readAppended(std::stop_token) override
+        {
+            if (!counter_)
+                return AppendResult::Changed;
+            if (!eof_ || !pending_.empty())
+                return AppendResult::None;
+            std::error_code ec;
+            const uint64_t size = std::filesystem::file_size(path_, ec);
+            if (ec)
+                return AppendResult::None; // being replaced, say
+            if (size < offset_)
+                return AppendResult::Changed;
+            if (size == offset_)
+                return AppendResult::None;
+            // A file written anew is read again, not followed: the bytes
+            // before the offset must be the ones read, and the last row
+            // must have ended (more of it would be taken for a new row).
+            if (offset_ > 0 && (tail_.empty() || tail_.back() != '\n'))
+                return AppendResult::Changed;
+            std::ifstream in(path_, std::ios::binary);
+            if (!in)
+                return AppendResult::None;
+            in.seekg(static_cast<std::streamoff>(offset_ - tail_.size()));
+            std::string before(tail_.size(), '\0');
+            in.read(before.data(), static_cast<std::streamsize>(before.size()));
+            if (!in || before != tail_)
+                return AppendResult::Changed;
+            std::string appended(static_cast<size_t>(std::min<uint64_t>(size - offset_, MAX_APPENDED_BYTES)), '\0');
+            in.read(appended.data(), static_cast<std::streamsize>(appended.size()));
+            appended.resize(static_cast<size_t>(std::max<std::streamsize>(in.gcount(), 0)));
+            // A row being written waits for its line break.
+            appended.resize(wholeRecordsLength(appended));
+            if (appended.empty())
+                return AppendResult::None;
+
+            std::unique_ptr<std::istream> stream = std::make_unique<std::istringstream>(appended);
+            if (encoding_ != TextEncoding::Utf8)
+                stream = openDecodingStream(std::move(stream), encoding_);
+            if (skip_meta_lines_)
+                stream = std::make_unique<MetaLineFilterStream>(std::move(stream));
+            csv::CSVFormat format;
+            format.delimiter(delimiter_).quote('"').no_header().variable_columns(csv::VariableColumnPolicy::KEEP);
+            csv::CSVReader reader(std::move(stream), format);
+            TableRow row;
+            while (readCsvRow(reader, row))
+                pending_.push_back(std::move(row));
+            offset_ += appended.size();
+            tail_ += appended.substr(appended.size() - std::min(appended.size(), CountingBuf::TAIL_BYTES));
+            if (tail_.size() > CountingBuf::TAIL_BYTES)
+                tail_.erase(0, tail_.size() - CountingBuf::TAIL_BYTES);
+            return pending_.empty() ? AppendResult::None : AppendResult::Appended;
         }
     };
 
@@ -622,6 +776,7 @@ namespace
         bool skipsMetaLines() const override { return skip_meta_lines_; }
         std::optional<TextEncoding> textEncoding() const override { return encoding_; }
         bool supportsEditing() const override { return true; }
+        bool readsAppendedRows() const override { return followable(detectCompression(path_), encoding_); }
 
         std::unique_ptr<SheetSource> openSheet(const std::string &sheet_name) override
         {

@@ -12,15 +12,18 @@ histograms; of the scatter plot, it shows the 2D density.
 - [The sidebar: cell contents and statistics](#the-sidebar-cell-contents-and-statistics)
 - [Histograms](#histograms)
 - [2D density](#2d-density)
+- [Group By](#group-by)
 - [Sorting](#sorting)
 - [Filtering](#filtering)
 - [Searching](#searching)
 - [Going to a row, cell or column](#going-to-a-row-cell-or-column)
 - [Hiding and freezing columns](#hiding-and-freezing-columns)
+- [Column types and formats](#column-types-and-formats)
 - [Copying](#copying)
 - [Sheets](#sheets)
 - [Running SQL](#running-sql)
 - [Exporting and converting](#exporting-and-converting)
+- [Following a growing file](#following-a-growing-file)
 - [Other settings](#other-settings)
 - [Key reference](#key-reference)
 
@@ -42,7 +45,9 @@ quit.
 ![The terminal UI](../images/tui-main.png)
 
 - The **header** shows the column names (or letters) and the sort and
-  filter marks. The current cell is highlighted.
+  filter marks. The current cell is highlighted. A mark before the name
+  tells what the column seems to hold: `#` numbers, `@` dates, `?`
+  booleans (see [Column types and formats](#column-types-and-formats)).
 - The **row numbers** are on the left.
 - The **status bar** at the bottom shows the file name, the current cell
   (`R1C1`), messages, the number of rows and columns, and the active
@@ -140,6 +145,30 @@ Both columns must hold numbers or dates, as for the GUI's [scatter
 plot](gui.md#scatter-plots-and-2d-density). The colours need a terminal
 with 256 or more colours.
 
+## Group By
+
+`A` counts the rows of the current sheet (sorted and filtered as shown) by
+the values of some columns and shows the result in a new sheet named
+**Group By**, as the GUI's [Group By](gui.md#group-by) does. A dialog lists
+the columns: the selected ones (or the cursor's) are checked to group by.
+
+![The Group By dialog](../images/tui-group-by.png)
+
+| Key                  | Action                                                   |
+| -------------------- | -------------------------------------------------------- |
+| `↑` / `↓`, `k` / `j` | Move between the columns and the last line               |
+| `g`, `Space`         | Group by the column (again: not)                          |
+| `a`                  | Aggregate the column (again: not)                         |
+| `←` / `→`, `Space`   | On the last line: choose a function, turn it on or off    |
+| `Enter`              | Group the rows                                            |
+| `Esc`                | Close without grouping                                    |
+
+The functions are **count** (non-empty values), **distinct**, **sum**,
+**mean**, **min**, **max** and **std dev**; each one makes a column for
+each aggregated column, after the group columns and **count**, the rows of
+the group. The status bar shows the progress, and `Esc` cancels. The
+sheet stays when the file is reloaded; grouping again replaces it.
+
 ## Sorting
 
 `o` sorts by the current column: ascending, then descending, then back to
@@ -198,6 +227,25 @@ letter or name), as in the GUI.
   columns again.
 - `|` freezes the columns up to the cursor, so that they stay in place when
   scrolling sideways; press `|` again to unfreeze.
+
+## Column types and formats
+
+The mark before a column name is judged from the first 1,000 rows read, as
+in the [GUI](gui.md#column-types-and-formats): `#` numbers, `@` dates and
+date-times, `?` booleans; text and mixed columns have none.
+
+`%` changes how the current column (or the selected columns) shows its
+values. The dialog also shows the column's type.
+
+| Line                | `←` / `→`, `Space`                                       |
+| ------------------- | -------------------------------------------------------- |
+| Thousands separator | On / off: `1234567.5` is shown as `1,234,567.5`          |
+| Decimal places      | As stored, or 0 to 6 places (rounded)                    |
+| Date format         | `2024-01-31`, `2024/01/31`, `01/31/2024`, `31/01/2024`, `2024年1月31日`, `Jan 31, 2024` |
+
+`↑` / `↓` move between the lines, `Delete` resets the format, `Enter`
+applies it and `Esc` closes the dialog. Only the display changes: sorting,
+filtering, copying and exporting use the values as they are.
 
 ## Copying
 
@@ -258,6 +306,16 @@ saved. Before unsaved changes would be lost (`q`, `r`, `H`, `#`, `E`, or
 leaving edit mode), TableSkim asks: `y` saves, `n` discards, `Esc`
 cancels. See [Editing Cells](editing.md).
 
+## Following a growing file
+
+`T` follows the end of the file, like `tail -f`: the file is checked every
+second (with or without Auto Revert), and the cursor moves to the last row
+whenever rows are added. The status bar shows `follow`. For CSV / TSV
+files that are not compressed (in UTF-8 or Shift_JIS), only the appended
+lines are read, and a line being written is shown once it ends. Other
+files, and files that were rewritten rather than appended to, are
+reloaded. Press `T` again to stop following.
+
 ## Other settings
 
 | Key | Action                                                                |
@@ -267,6 +325,7 @@ cancels. See [Editing Cells](editing.md).
 | `E` | Switch the text encoding: UTF-8, UTF-16LE, UTF-16BE, Shift_JIS (CP932) |
 | `r` | Revert (reload the file)                                               |
 | `R` | Toggle Auto Revert (reload the file when it changes)                   |
+| `T` | Follow the end of the file as it grows (`tail -f`)                     |
 | `e` | Show the file in the file browser                                      |
 
 When the rows of a large CSV / TSV file take a lot of memory, the status bar

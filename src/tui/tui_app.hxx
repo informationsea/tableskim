@@ -14,6 +14,7 @@
 #include <ftxui/component/app.hpp>
 #include <ftxui/component/component.hpp>
 
+#include "group_by.hxx"
 #include "table.hxx"
 #include "sql_history.hxx"
 #include "sql_text.hxx"
@@ -38,6 +39,7 @@ private:
     std::map<std::string, size_t> restore_stats_;
     std::map<std::string, HiddenColumns> restore_hidden_;
     std::map<std::string, size_t> restore_frozen_;
+    std::map<std::string, ColumnFormats> restore_formats_;
     size_t sheet_ = 0;
     std::filesystem::file_time_type file_mtime_{};
     std::uintmax_t file_size_ = 0;
@@ -48,6 +50,11 @@ private:
     // Set by E or --encoding; unset: detected.
     std::optional<TextEncoding> text_encoding_;
     bool auto_revert_ = true;
+    // Follow (T): the file is watched (also without Auto Revert) and the
+    // cursor kept on the last row; appended rows are read on their own if
+    // the file allows. A readAppended() is running.
+    bool follow_ = false;
+    bool append_pending_ = false;
     bool show_sidebar_ = false;
     // What the sidebar shows: the cursor's cell, or column statistics (S).
     enum class SidebarMode
@@ -178,6 +185,25 @@ private:
     size_t filter_line_ = 0;
     FilterField filter_field_ = FilterField::Value;
 
+    // Group By dialog (A): edits group_draft_, kept for next time. Lines:
+    // one per visible column, then the aggregates. The rows are grouped on
+    // convert_thread_ and shown in a result sheet, added again after a
+    // reopen.
+    bool show_group_dialog_ = false;
+    GroupBySpec group_draft_;
+    std::vector<size_t> group_columns_; // the column of each line
+    size_t group_line_ = 0;
+    size_t group_aggregate_ = 0; // the aggregate selected on its line
+    std::shared_ptr<const ResultSheet> group_result_;
+    std::string group_sheet_;
+
+    // Format dialog (%): edits the format of the cursor's column, applied
+    // to it (or the selected columns) with Enter. Lines: thousands
+    // separator, decimal places, date format.
+    bool show_format_dialog_ = false;
+    ColumnFormat format_draft_;
+    size_t format_line_ = 0;
+
     // Text dialog (help, errors)
     bool show_text_dialog_ = false;
     // Between the bracketed paste markers: pasted keys are text, not commands.
@@ -204,6 +230,7 @@ private:
     void showSheet(size_t index);
     void revert();
     void revertIfChanged();
+    void setFollow(bool enabled);
     bool headerOptionAvailable() const;
     void setFirstRowAsHeader(bool enabled);
     bool skipMetaLinesAvailable() const;
@@ -267,6 +294,15 @@ private:
     void completeSqlInput();
     void loadSqlSchema();
     bool handleFilterDialogEvent(ftxui::Event event);
+    void openGroupDialog();
+    bool handleGroupDialogEvent(ftxui::Event event);
+    ftxui::Element renderGroupDialog();
+    void startGroupBy();
+    // Shows a sheet that TableBook::addResultSheet() added or gave new rows.
+    void showResultSheet(const std::string &sheet);
+    void openFormatDialog();
+    bool handleFormatDialogEvent(ftxui::Event event);
+    ftxui::Element renderFormatDialog();
     const std::vector<std::string> &dialogRows() const;
     ftxui::Element renderMain();
     ftxui::Element renderTabs();

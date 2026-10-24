@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -16,9 +17,67 @@
 
 // Helpers shared by the GUI and TUI table views.
 
+// How a column shows its dates and date-times (with the time of day after
+// the date, as it is).
+enum class DateStyle
+{
+    Iso,          // 2024-01-31
+    Slash,        // 2024/01/31
+    MonthDayYear, // 01/31/2024
+    DayMonthYear, // 31/01/2024
+    Japanese,     // 2024年1月31日
+    MonthName,    // Jan 31, 2024
+};
+inline constexpr DateStyle DATE_STYLES[] = {
+    DateStyle::Iso,          DateStyle::Slash,    DateStyle::MonthDayYear,
+    DateStyle::DayMonthYear, DateStyle::Japanese, DateStyle::MonthName,
+};
+// 2024-01-31 in the style, as the format menus show it.
+std::string dateStyleExample(DateStyle style);
+
+inline constexpr int MAX_DECIMALS = 6;
+
+// How a column shows its values. Only the display changes: filters,
+// copying and exports keep the values as they are.
+struct ColumnFormat
+{
+    // Numbers (numeric text too): thousands separated by commas, and a
+    // fixed number of decimals (0 to MAX_DECIMALS, rounded; nullopt: as
+    // stored).
+    bool thousands = false;
+    std::optional<int> decimals;
+    // Dates and date-times (ISO date text too).
+    DateStyle date = DateStyle::Iso;
+
+    bool isDefault() const { return *this == ColumnFormat{}; }
+    bool operator==(const ColumnFormat &) const = default;
+};
+
+// The text of a value in a format; other values (text, booleans) as formatCell().
+std::string formatCellAs(const CellValue &value, const ColumnFormat &format);
+
+// The formats of a sheet's columns in a view, by model column, like
+// HiddenColumns.
+class ColumnFormats
+{
+private:
+    std::map<size_t, ColumnFormat> formats_;
+
+public:
+    // nullptr if the column has the default format.
+    const ColumnFormat *find(size_t column) const;
+    ColumnFormat get(size_t column) const;
+    // The default format takes the column off the list.
+    void set(size_t column, const ColumnFormat &format);
+    bool empty() const { return formats_.empty(); }
+    void clear() { formats_.clear(); }
+    bool operator==(const ColumnFormats &) const = default;
+};
+
 // One-line text for drawing a cell: at most max_bytes bytes (cut at a UTF-8
-// character boundary and followed by "…"), with line breaks turned into spaces.
-std::string cellDisplayText(const CellValue &value, size_t max_bytes = 256);
+// character boundary and followed by "…"), with line breaks turned into
+// spaces, in the column's format if given.
+std::string cellDisplayText(const CellValue &value, size_t max_bytes = 256, const ColumnFormat *format = nullptr);
 
 // Numbers, including text that parses as one, are right-aligned.
 bool isNumericCell(const CellValue &value);

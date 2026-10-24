@@ -26,6 +26,7 @@ decl {\#include <memory>
 \#include "gui_stats_pane.hxx"
 \#include "gui_histogram.hxx"
 \#include "gui_scatter.hxx"
+\#include "group_by.hxx"
 \#include "licenses.hxx"
 \#include "gui_sql.hxx"} {public global
 }
@@ -50,7 +51,57 @@ class TableWindow {open
           MenuItem {} {
             label {Open...}
             callback open_callback
-            xywh {0 0 100 20} shortcut 0x40006f divider
+            xywh {0 0 100 20} shortcut 0x40006f
+          }
+          Submenu menuitem_open_recent {
+            label {Open Recent} open
+            xywh {0 0 100 20} divider
+          } {
+            MenuItem menuitem_recent_0 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_1 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_2 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_3 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_4 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_5 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_6 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_7 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_8 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_recent_9 {
+              callback callback_open_recent
+              xywh {0 0 100 20} hide
+            }
+            MenuItem menuitem_clear_recent {
+              label {Clear Recent Files}
+              callback callback_clear_recent
+              xywh {0 0 100 20}
+            }
           }
           MenuItem {} {
             label Close
@@ -75,7 +126,12 @@ class TableWindow {open
           MenuItem menuitem_auto_revert {
             label {Auto Revert}
             callback callback_auto_revert
-            xywh {0 0 100 20} type Toggle value 1 divider
+            xywh {0 0 100 20} type Toggle value 1
+          }
+          MenuItem menuitem_follow {
+            label {Follow End of File}
+            callback callback_follow
+            xywh {0 0 100 20} type Toggle shortcut 0x410074 divider
           }
           MenuItem menuitem_export_view {
             label {Export View...}
@@ -155,7 +211,12 @@ class TableWindow {open
           MenuItem menuitem_scatter_plot {
             label {Scatter Plot...}
             callback callback_scatter_plot
-            xywh {0 0 100 20} shortcut 0x410070 divider
+            xywh {0 0 100 20} shortcut 0x410070
+          }
+          MenuItem menuitem_group_by {
+            label {Group By...}
+            callback callback_group_by
+            xywh {0 0 100 20} shortcut 0x410067 divider
           }
           MenuItem menuitem_run_sql {
             label {Run SQL...}
@@ -494,6 +555,14 @@ requestWindowMenuUpdate();} {}
   }
   decl {void set_auto_revert(bool enabled)} {public local
   }
+  decl {void set_follow(bool enabled)} {public local
+  }
+  decl {void appended_rows_read(const std::shared_ptr<TableBook> &book, AppendResult result)} {public local
+  }
+  decl {bool follow_ = false} {private local
+  }
+  decl {bool append_pending_ = false} {private local
+  }
   decl {void set_focused(bool focused)} {public local
   }
   decl {void set_show_sidebar(bool show)} {public local
@@ -503,6 +572,10 @@ requestWindowMenuUpdate();} {}
   Function {auto_revert() const} {open return_type bool
   } {
     code {return auto_revert_;} {}
+  }
+  Function {follow() const} {open return_type bool
+  } {
+    code {return follow_;} {}
   }
   Function {use_monospace_font() const} {open return_type bool
   } {
@@ -604,6 +677,16 @@ return !table_book || table_book->usesHeaderOption();} {}
   decl {void show_histogram(std::optional<size_t> column = std::nullopt)} {public local
   }
   decl {void show_scatter_plot(std::optional<size_t> column = std::nullopt)} {public local
+  }
+  decl {void show_group_by(std::optional<size_t> column = std::nullopt)} {public local
+  }
+  decl {GuiTableView *result_sheet_view(const std::string &sheet)} {private local
+  }
+  decl {std::shared_ptr<const ResultSheet> group_result_} {private local
+  }
+  decl {std::string group_sheet_} {private local
+  }
+  decl {GroupBySpec group_spec_} {private local
   }
   decl {void clear_filter()} {public local
   }

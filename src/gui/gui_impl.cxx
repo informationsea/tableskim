@@ -1,10 +1,12 @@
 #include "gui.h"
 #include "gui_table_view.hxx"
 #include "gui_convert.hxx"
+#include "gui_group_by.hxx"
 #include "gui_help.hxx"
 #include "gui_sql.hxx"
 #include "table_export.hxx"
 #include "file_util.hxx"
+#include "recent_files.hxx"
 #include "gui_theme.hxx"
 #include "gui_window_menu.hxx"
 
@@ -12,6 +14,7 @@
 #include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <algorithm>
+#include <array>
 #include <climits>
 #include <filesystem>
 #include <map>
@@ -21,8 +24,27 @@ const int TAB_HEIGHT = 25;
 // works on network drives.
 const double AUTO_REVERT_FOCUSED_INTERVAL = 1.0;
 const double AUTO_REVERT_UNFOCUSED_INTERVAL = 5.0;
+// Follow watches the file closely, also in the background.
+const double FOLLOW_INTERVAL = 0.5;
 const int SIDEBAR_MIN_WIDTH = 80;
 const int TABLE_MIN_WIDTH = 200;
+// Opens the file in the front window if it is empty, else in a new window
+// (closed again if the file cannot be opened). Errors are shown. False if
+// the file could not be opened.
+bool openFileInWindow(const std::string &path);
+
+// The sheet a Group By adds (TableBook::addResultSheet()).
+const char *const GROUP_BY_SHEET = "Group By";
+
+namespace
+{
+    // Shared by every window; the file keeps other processes' entries.
+    RecentFiles &recentFiles()
+    {
+        static RecentFiles shared;
+        return shared;
+    }
+} // namespace
 
 // Returns false (keeping the current file) if the file cannot be read.
 // `keep_state`: a file saved from this one (Save As) keeps what the same
@@ -35,6 +57,7 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
     std::uintmax_t size = 0;
     const bool has_stamp = readFileStamp(utf8Path(path), mtime, size);
     const bool same_file = path == current_path || keep_state;
+    const bool new_path = path != current_path;
     // A choice made with View > Skip lines starting with ## or View > Text
     // Encoding applies to that file only (or, made before any file was
     // opened, to the first one).
@@ -79,6 +102,7 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
     std::map<std::string, ViewSpec> views;
     std::map<std::string, size_t> stats_columns;
     std::map<std::string, HiddenColumns> hidden_columns;
+    std::map<std::string, ColumnFormats> column_formats;
     std::map<std::string, int> frozen_columns;
     if (!keep_skip_choice)
     {
@@ -99,6 +123,8 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
             views[old_sheet_names[i]] = gui_table_views[i]->restorableView();
             if (!gui_table_views[i]->hiddenColumns().empty())
                 hidden_columns[old_sheet_names[i]] = gui_table_views[i]->hiddenColumns();
+            if (!gui_table_views[i]->columnFormats().empty())
+                column_formats[old_sheet_names[i]] = gui_table_views[i]->columnFormats();
             if (gui_table_views[i]->frozenColumns() > 0)
                 frozen_columns[old_sheet_names[i]] = gui_table_views[i]->frozenColumns();
             if (const auto &model = gui_table_views[i]->model(); model && model->columnStatsState().active)
@@ -116,6 +142,9 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
     {
         last_query_.clear();
         sql_sheet_.clear();
+        group_result_.reset();
+        group_sheet_.clear();
+        group_spec_ = {};
         editing_ = false;
     }
     current_path = path;
@@ -125,6 +154,13 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
     tab->clear();
     gui_table_views.clear();
     table_book = std::move(book);
+    // What the old book was asked to read is dropped with it.
+    append_pending_ = false;
+    // A Group By's rows are kept in memory: the new book shows them again.
+    if (group_result_)
+        group_sheet_ = table_book->addResultSheet(GROUP_BY_SHEET, group_result_);
+    if (new_path)
+        recentFiles().add(path);
     // Edit mode stays on when the same file is reopened (e.g. after saving).
     table_book->setEditing(editing_);
     editing_ = table_book->editing();
@@ -145,6 +181,8 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
             table_view->restoreView(it->second);
         if (auto it = hidden_columns.find(sheet_name); it != hidden_columns.end())
             table_view->restoreHiddenColumns(it->second);
+        if (auto it = column_formats.find(sheet_name); it != column_formats.end())
+            table_view->restoreColumnFormats(it->second);
         if (auto it = frozen_columns.find(sheet_name); it != frozen_columns.end())
             table_view->freezeColumns(it->second);
         if (auto it = stats_columns.find(sheet_name); it != stats_columns.end() && table_view->model())
@@ -219,6 +257,8 @@ GuiTableView *TableWindow::add_sheet_view(const std::string &sheet_name)
                                            { show_histogram(column); });
     table_view->setScatterColumnCallback([this](size_t column)
                                          { show_scatter_plot(column); });
+    table_view->setGroupByColumnCallback([this](size_t column)
+                                         { show_group_by(column); });
     table_view->setColumnsChangedCallback([this]
                                           {
         if (frontTableWindow() == this)
@@ -227,6 +267,7 @@ GuiTableView *TableWindow::add_sheet_view(const std::string &sheet_name)
     table_view->setCellActivateCallback([this]
                                         { show_content(); });
     table_view->setModel(table_book->sheet(sheet_name));
+    table_view->setFollowEnd(follow_);
     gui_table_views.push_back(table_view);
     return table_view;
 }
@@ -349,28 +390,7 @@ void TableWindow::sql_finished(const std::shared_ptr<TableBook> &book, const std
 
     last_query_ = sql;
     sql_sheet_ = result.sheet;
-    const auto names = table_book->sheetNames();
-    const size_t index = static_cast<size_t>(std::find(names.begin(), names.end(), result.sheet) - names.begin());
-    GuiTableView *table_view = nullptr;
-    if (index < gui_table_views.size())
-    {
-        // The same sheet with new rows.
-        table_view = gui_table_views[index];
-        table_view->setModel(table_book->sheet(result.sheet));
-        table_view->restoreScrollPosition({});
-    }
-    else
-    {
-        tab->begin();
-        table_view = add_sheet_view(result.sheet);
-        tab->end();
-        if (gui_table_views.size() == 1)
-        {
-            // See open(): the first view keeps the tab bar height fixed.
-            tab->resizable(table_view);
-        }
-        tab->init_sizes();
-    }
+    GuiTableView *table_view = result_sheet_view(result.sheet);
     bool select = !rerun;
     if (rerun && sql_restore_)
     {
@@ -389,10 +409,169 @@ void TableWindow::sql_finished(const std::shared_ptr<TableBook> &book, const std
         sql_window_->setStatus("The result is shown in the sheet \"" + result.sheet + "\"");
 }
 
+// The view of a sheet that a query or a Group By added, or gave new rows.
+GuiTableView *TableWindow::result_sheet_view(const std::string &sheet)
+{
+    const auto names = table_book->sheetNames();
+    const size_t index = static_cast<size_t>(std::find(names.begin(), names.end(), sheet) - names.begin());
+    GuiTableView *table_view = nullptr;
+    if (index < gui_table_views.size())
+    {
+        // The same sheet with new rows.
+        table_view = gui_table_views[index];
+        table_view->setModel(table_book->sheet(sheet));
+        table_view->restoreScrollPosition({});
+    }
+    else
+    {
+        tab->begin();
+        table_view = add_sheet_view(sheet);
+        tab->end();
+        if (gui_table_views.size() == 1)
+        {
+            // See open(): the first view keeps the tab bar height fixed.
+            tab->resizable(table_view);
+        }
+        tab->init_sizes();
+    }
+    return table_view;
+}
+
+void TableWindow::show_group_by(std::optional<size_t> column)
+{
+    auto *table_view = dynamic_cast<GuiTableView *>(tab->value());
+    if (!table_book || !table_view || !table_view->model())
+        return;
+    const std::shared_ptr<TableModel> model = table_view->model();
+    // The columns chosen last time, if they are this sheet's; else the
+    // clicked or selected columns.
+    GroupBySpec initial = group_spec_;
+    if (column)
+        initial.keys = {*column};
+    else
+    {
+        int row_top, col_left, row_bottom, col_right;
+        table_view->get_selection(row_top, col_left, row_bottom, col_right);
+        // Several selected columns, or the cursor's when nothing was chosen before.
+        if (col_left >= 0 && (col_right > col_left || initial.keys.empty()))
+        {
+            initial.keys.clear();
+            for (int c = col_left; c <= col_right; ++c)
+            {
+                if (!table_view->hiddenColumns().contains(static_cast<size_t>(c)))
+                    initial.keys.push_back(static_cast<size_t>(c));
+            }
+        }
+    }
+    if (initial.aggregates.empty())
+        initial.aggregates = {Aggregate::Sum, Aggregate::Mean};
+    const std::optional<GroupBySpec> spec = askGroupBySpec(*model, table_view->hiddenColumns(), initial);
+    if (!spec)
+        return;
+    group_spec_ = *spec;
+    std::optional<ResultSheet> sheet = runGroupBy(model, *spec);
+    // A reopen meanwhile (Auto Revert waits for the dialog, but a closed
+    // window does not).
+    if (!sheet || !table_book || !main_window->shown())
+        return;
+    group_result_ = std::make_shared<const ResultSheet>(std::move(*sheet));
+    group_sheet_ = table_book->addResultSheet(GROUP_BY_SHEET, group_result_);
+    tab->value(result_sheet_view(group_sheet_));
+    current_sheet_changed();
+    tab->redraw();
+    if (frontTableWindow() == this)
+        sync_menu_items();
+    requestWindowMenuUpdate();
+}
+
+void callback_group_by(Fl_Menu_ *, void *)
+{
+    if (auto *self = frontTableWindow())
+        self->show_group_by();
+}
+
 void callback_run_sql(Fl_Menu_ *, void *)
 {
     if (auto *self = frontTableWindow())
         self->show_sql();
+}
+
+namespace
+{
+    // Labels of File > Open Recent, which the menu items point to.
+    std::array<std::string, RecentFiles::DEFAULT_LIMIT> recent_labels;
+
+    Fl_Menu_Item *recentItem(size_t index)
+    {
+        Fl_Menu_Item *const items[] = {
+            TableWindow::menuitem_recent_0, TableWindow::menuitem_recent_1, TableWindow::menuitem_recent_2,
+            TableWindow::menuitem_recent_3, TableWindow::menuitem_recent_4, TableWindow::menuitem_recent_5,
+            TableWindow::menuitem_recent_6, TableWindow::menuitem_recent_7, TableWindow::menuitem_recent_8,
+            TableWindow::menuitem_recent_9,
+        };
+        static_assert(std::size(items) == RecentFiles::DEFAULT_LIMIT);
+        return index < std::size(items) ? items[index] : nullptr;
+    }
+
+    // Read again each time: other windows and processes add to the list.
+    void syncRecentFilesMenu()
+    {
+        RecentFiles &recent = recentFiles();
+        recent.reload();
+        const auto &entries = recent.entries();
+        for (size_t i = 0; i < recent_labels.size(); ++i)
+        {
+            Fl_Menu_Item *item = recentItem(i);
+            if (i < entries.size())
+            {
+                recent_labels[i] = escapeLabel(entries[i], true);
+                item->label(recent_labels[i].c_str());
+                item->show();
+                // Above Clear Recent Files.
+                if (i + 1 == entries.size())
+                    item->flags |= FL_MENU_DIVIDER;
+                else
+                    item->flags &= ~FL_MENU_DIVIDER;
+            }
+            else
+                item->hide();
+        }
+        if (entries.empty())
+            TableWindow::menuitem_open_recent->deactivate();
+        else
+            TableWindow::menuitem_open_recent->activate();
+    }
+} // namespace
+
+void callback_open_recent(Fl_Menu_ *menu, void *)
+{
+    const Fl_Menu_Item *chosen = menu ? menu->mvalue() : nullptr;
+    const auto &entries = recentFiles().entries();
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        if (recentItem(i) != chosen)
+            continue;
+        // Opening shows alerts and may open a window: not from inside the menu.
+        NestedLoopGuard::defer([path = entries[i]]
+                               {
+            if (!openFileInWindow(path))
+            {
+                // Moved or deleted: off the list.
+                recentFiles().remove(path);
+                if (auto *self = frontTableWindow())
+                    self->sync_menu_items();
+                requestWindowMenuUpdate();
+            } });
+        return;
+    }
+}
+
+void callback_clear_recent(Fl_Menu_ *, void *)
+{
+    recentFiles().clear();
+    if (auto *self = frontTableWindow())
+        self->sync_menu_items();
+    requestWindowMenuUpdate();
 }
 
 // All windows share the static menu items, so they show the front window's state.
@@ -433,18 +612,22 @@ void TableWindow::sync_menu_items()
         menuitem_column_stats->activate();
         menuitem_histogram->activate();
         menuitem_scatter_plot->activate();
+        menuitem_group_by->activate();
     }
     else
     {
         menuitem_column_stats->deactivate();
         menuitem_histogram->deactivate();
         menuitem_scatter_plot->deactivate();
+        menuitem_group_by->deactivate();
     }
+    syncRecentFilesMenu();
     auto *current_view = dynamic_cast<GuiTableView *>(tab->value());
     const bool has_sheet = current_view && current_view->model();
     // Commands that need an open file or sheet.
     const std::pair<Fl_Menu_Item *, bool> file_items[] = {
         {menuitem_revert, !current_path.empty()},
+        {menuitem_follow, !current_path.empty()},
         {menuitem_show_in_file_browser, !current_path.empty()},
         {menuitem_export_view, has_sheet},
         {menuitem_copy, has_sheet},
@@ -474,6 +657,7 @@ void TableWindow::sync_menu_items()
     else
         menuitem_run_sql->deactivate();
     menuitem_auto_revert->value(auto_revert());
+    menuitem_follow->value(follow_);
     menuitem_show_sidebar->value(show_sidebar());
 
     const bool can_edit = table_book && table_book->supportsEditing();
@@ -864,31 +1048,34 @@ namespace
             break;
         default:
             spdlog::debug("Selected file: {}", chooser.filename());
-            if (auto *self = frontTableWindow())
-            {
-                if (self->current_path.empty())
-                {
-                    self->open(chooser.filename());
-                }
-                else
-                {
-                    // If a file is already open, open the new file in a new window.
-                    // Register it first: on macOS show() sends FL_FOCUS right away,
-                    // and my_dispatch() only syncs the menu for known windows.
-                    table_windows.push_back(std::make_unique<TableWindow>());
-                    TableWindow *new_window = table_windows.back().get();
-                    new_window->show();
-                    new_window->open(chooser.filename());
-                }
-            }
-            else
-            {
-                spdlog::error("No TableWindow to apply the menu item to");
-            }
+            openFileInWindow(chooser.filename());
             break;
         }
     }
 } // namespace
+
+bool openFileInWindow(const std::string &path)
+{
+    auto *self = frontTableWindow();
+    if (!self)
+    {
+        spdlog::error("No TableWindow to apply the menu item to");
+        return false;
+    }
+    if (self->current_path.empty())
+        return self->open(path);
+    // If a file is already open, open the new file in a new window.
+    // Register it first: on macOS show() sends FL_FOCUS right away,
+    // and my_dispatch() only syncs the menu for known windows.
+    table_windows.push_back(std::make_unique<TableWindow>());
+    TableWindow *new_window = table_windows.back().get();
+    new_window->show();
+    if (new_window->open(path))
+        return true;
+    // Nothing to show in it.
+    new_window->close_window();
+    return false;
+}
 
 void open_callback2(Fl_Button *widget, void *userdata)
 {
@@ -932,6 +1119,26 @@ void callback_revert(Fl_Menu_ *, void *)
     }
 }
 
+namespace
+{
+    // Carries what TableBook::readAppended() found to the main thread.
+    struct AppendDone
+    {
+        std::weak_ptr<TableWindow *> window;
+        std::weak_ptr<TableBook> book;
+        AppendResult result;
+    };
+
+    void appendDoneHandler(void *data)
+    {
+        std::unique_ptr<AppendDone> done(static_cast<AppendDone *>(data));
+        const auto window = done->window.lock();
+        const auto book = done->book.lock();
+        if (window && book)
+            (*window)->appended_rows_read(book, done->result);
+    }
+} // namespace
+
 void TableWindow::revert_if_changed()
 {
     // Checked before the stamp is read so that the change is picked up by a
@@ -939,6 +1146,19 @@ void TableWindow::revert_if_changed()
     // that pop up without a guard (menu bar, Fl_Choice).
     if (current_path.empty() || NestedLoopGuard::active() || Fl::grab())
         return;
+    // Following: only the appended rows are read, if the file allows. Edit
+    // mode reads the file again as Auto Revert does, which keeps the edits.
+    if (follow_ && table_book && table_book->readsAppendedRows() && !editing())
+    {
+        if (!append_pending_)
+        {
+            append_pending_ = true;
+            table_book->readAppended([window = std::weak_ptr<TableWindow *>(alive_token_),
+                                      book = std::weak_ptr<TableBook>(table_book)](AppendResult result)
+                                     { Fl::awake(appendDoneHandler, new AppendDone{window, book, result}); });
+        }
+        return;
+    }
     std::filesystem::file_time_type mtime;
     std::uintmax_t size;
     // A missing or empty file is usually being replaced or rewritten; wait
@@ -966,11 +1186,60 @@ void TableWindow::revert_if_changed()
     open(path, false);
 }
 
+void TableWindow::appended_rows_read(const std::shared_ptr<TableBook> &book, AppendResult result)
+{
+    // A reopen meanwhile: the new book has read the file anew.
+    if (book != table_book)
+        return;
+    append_pending_ = false;
+    if (result == AppendResult::None)
+        return;
+    if (result == AppendResult::Appended)
+    {
+        // Read up to here: no reopen when Follow is turned off.
+        readFileStamp(utf8Path(current_path), file_mtime_, file_size_);
+        return;
+    }
+    spdlog::debug("Follow: {} was changed, reading it again", current_path);
+    std::filesystem::file_time_type mtime;
+    std::uintmax_t size;
+    if (!readFileStamp(utf8Path(current_path), mtime, size) || size == 0)
+        return; // being replaced: tried again on the next poll
+    file_mtime_ = mtime;
+    file_size_ = size;
+    const std::string path = current_path;
+    open(path, false);
+}
+
 void TableWindow::schedule_auto_revert()
 {
     Fl::remove_timeout(auto_revert_timeout, this);
-    if (auto_revert_ && main_window->shown())
+    if (!main_window->shown())
+        return;
+    if (follow_)
+        Fl::add_timeout(FOLLOW_INTERVAL, auto_revert_timeout, this);
+    else if (auto_revert_)
         Fl::add_timeout(focused_ ? AUTO_REVERT_FOCUSED_INTERVAL : AUTO_REVERT_UNFOCUSED_INTERVAL, auto_revert_timeout, this);
+}
+
+void TableWindow::set_follow(bool enabled)
+{
+    follow_ = enabled;
+    for (auto *table_view : gui_table_views)
+        table_view->setFollowEnd(enabled);
+    schedule_auto_revert();
+    if (enabled)
+        revert_if_changed();
+}
+
+void callback_follow(Fl_Menu_ *w, void *)
+{
+    if (auto *self = frontTableWindow())
+    {
+        self->set_follow(!self->follow());
+        self->sync_menu_items();
+        requestWindowMenuUpdate();
+    }
 }
 
 void TableWindow::auto_revert_timeout(void *data)

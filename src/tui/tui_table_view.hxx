@@ -65,9 +65,14 @@ private:
 
     std::vector<int> column_widths_;
     HiddenColumns hidden_; // skipped when drawing and moving the cursor
+    ColumnFormats formats_;
     size_t frozen_ = 0;    // leftmost columns that stay in place when scrolling
     size_t sized_columns_ = 0;
     bool error_reported_ = false;
+    // Follow (tail -f): the cursor goes to the last row whenever the row
+    // count (exact) changes; the count it went to.
+    bool follow_end_ = false;
+    size_t followed_rows_ = 0;
 
     size_t cursor_row_ = 0;
     size_t cursor_col_ = 0;
@@ -102,6 +107,7 @@ private:
     void sync();
     void autosizeColumns();
     void applyPendingScroll();
+    void followEnd();
     void applyPendingView();
     void clampCursor();
     void scrollCursorIntoView(int body_width);
@@ -146,9 +152,14 @@ public:
     void showAllColumns() { hidden_.clear(); }
     const HiddenColumns &hiddenColumns() const { return hidden_; }
     void restoreHiddenColumns(const HiddenColumns &hidden) { hidden_ = hidden; }
+    // How the columns show their values (%); also restores them after a reopen.
+    const ColumnFormats &columnFormats() const { return formats_; }
+    void setColumnFormats(const ColumnFormats &formats) { formats_ = formats; }
     // Keeps the columns up to `column` in place when scrolling sideways; 0 unfreezes.
     void freezeColumns(size_t count);
     size_t frozenColumns() const { return frozen_; }
+    // Keeps the cursor on the last row as rows are added (T).
+    void setFollowEnd(bool follow);
     // Sorts by the cursor column: ascending, then descending, then file order.
     // False if the model cannot sort yet (still opening).
     bool cycleSort();

@@ -209,3 +209,23 @@ conditions of both columns' bins to the filter, which keep exactly the rows
 counted in the cell. Dragging a rectangle in the GUI adds `is a number` (or
 `is a date`), `≥` and `≤` conditions on both columns, with the bounds
 rounded a little finer than the bins.
+
+## Group By
+
+**Edit → Group By...** in the GUI (see [Using the GUI](gui.md#group-by))
+and `A` in the terminal UI (see [Using the Terminal UI](tui.md#group-by))
+count the rows of the current view by the values of some columns.
+
+- Rows whose values are equal in every group column form a group. Values
+  are equal only when they are the same value: `1`, `01` and `1.0` as text
+  are three groups, although they sort alike. Empty cells (and the missing
+  cells of short rows) form one group, shown last.
+- Groups are listed in the sort order of their values, the first group
+  column first, as [sorting](#sorting) orders them.
+- The aggregates follow the [column statistics](#column-statistics):
+  **count** and **distinct** count the non-empty values; **sum**, **mean**
+  and **std dev** (the sample standard deviation) use the values that are
+  numbers, including numeric text; **min** and **max** are the first and
+  last values in sort order, so numbers come before text.
+- A group column whose values are all different would make one group per
+  row; more than 1,000,000 groups stop the grouping with an error.

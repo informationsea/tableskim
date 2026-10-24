@@ -240,6 +240,34 @@ read their header comments before changing anything in `src/common/`.
   updates) over every row counted.
   The GUI shows points or the density in `ScatterWindow` (`gui_scatter.cxx`),
   the TUI the density only, instead of the sheet (`M`).
+- `groupByView()` (`group_by.{hxx,cxx}`) groups the rows of a view, read
+  through `readView()` like an export, with a `GroupByAccumulator`: groups
+  keyed by their values (sort order, exact values apart), and one
+  `ColumnStatsAccumulator` per aggregated column, so the aggregates follow
+  the statistics. The result (`ResultSheet`) is shown with
+  `TableBook::addResultSheet()`: a sheet backed by a `ResultSheetSource`
+  (sequential, in memory) that a later result of the same name replaces,
+  retiring its model like an SQL result. The UIs keep the rows and add the
+  sheet again after a reopen (GUI: Edit > Group By..., `gui_group_by.cxx`;
+  TUI: `A`).
+- `TableModel::columnTypes()` judges what each column holds
+  (`ColumnTypeCounter`, `column_type.{hxx,cxx}`) from the first
+  `Options::type_sample_rows` rows read, counted in `loadBlock()`; the
+  headers show `columnKindMark()`. Display formats (`ColumnFormat`,
+  `ColumnFormats` in `cell_format`) belong to a view like hidden columns and
+  only change `cellDisplayText()`; copies and exports keep the values.
+- Follow (tail -f; GUI: File > Follow End of File, TUI: `T`) polls the
+  file; `TableBook::readAppended()` asks each sheet's model to read the
+  rows appended since the end (`TableModel::readAppendedRows()`, merging
+  them into the partly filled last block and applying the view again).
+  Only sources with `DataSource::readsAppendedRows()` can (uncompressed
+  CSV/TSV in UTF-8 or CP932: `SheetSource::readAppended()` parses the whole
+  records after the byte offset counted while reading, after checking the
+  bytes before it); `AppendResult::Changed` makes the UIs reopen the file.
+- Recent files (GUI: File > Open Recent) are kept by `RecentFiles`
+  (`recent_files.{hxx,cxx}`) in `userDataDirectory()` like the SQL
+  history, both written with `replaceFileContents()` (`file_util`); tests
+  must not use the default path.
 - Editing (CSV/TSV and Excel only, `SourceCapabilities::edits`) happens in
   the model: `TableModel::setCells()` copies the cached `RowBlock`s it
   changes (they are shared with readers) and keeps the steps for

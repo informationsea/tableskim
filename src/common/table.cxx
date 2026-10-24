@@ -676,6 +676,33 @@ std::optional<std::string> filterError(const Filter &filter)
     return std::nullopt;
 }
 
+namespace
+{
+    // The rows of a result sheet (TableBook::addResultSheet()). Sequential, so
+    // that the model keeps every row and sorts and filters them in memory.
+    class ResultSheetSource : public SheetSource
+    {
+    public:
+        explicit ResultSheetSource(std::shared_ptr<const ResultSheet> sheet) : sheet_(std::move(sheet)) {}
+
+        SourceCapabilities capabilities() const override { return {}; }
+        std::vector<ColumnInfo> columns() override { return sheet_->columns; }
+        RowCount rowCount() override { return {sheet_->rows.size(), RowCount::Kind::Exact}; }
+        RowBlockPtr read(size_t first_row, size_t max_rows, std::stop_token) override
+        {
+            auto block = std::make_shared<RowBlock>();
+            block->first_row = first_row;
+            const size_t end = std::min(sheet_->rows.size(), first_row + std::min(max_rows, sheet_->rows.size()));
+            for (size_t row = first_row; row < end; ++row)
+                block->rows.push_back(sheet_->rows[row]);
+            return block;
+        }
+
+    private:
+        std::shared_ptr<const ResultSheet> sheet_;
+    };
+} // namespace
+
 // ===========================================================================
 // Scheduler: the worker loop shared by all sheets of a book
 // ===========================================================================
@@ -973,6 +1000,15 @@ std::vector<CellRange> TableModel::mergedCells() const
 {
     std::lock_guard lock(mutex_);
     return merged_cells_;
+}
+
+std::vector<ColumnType> TableModel::columnTypes() const
+{
+    std::lock_guard lock(mutex_);
+    std::vector<ColumnType> types(std::max(column_count_, columns_.size()));
+    for (size_t c = 0; c < types.size() && c < type_counters_.size(); ++c)
+        types[c] = type_counters_[c].type();
+    return types;
 }
 
 Subscription TableModel::subscribe(Listener listener)
@@ -1628,8 +1664,84 @@ void TableModel::retire()
     source_.reset();
     std::lock_guard lock(mutex_);
     state_ = ModelState::Error;
-    error_message_ = "The query was replaced";
+    error_message_ = "The sheet was replaced";
     failScanLocked(error_message_);
+}
+
+AppendResult TableModel::readAppendedRows(std::stop_token stop)
+{
+    {
+        std::lock_guard lock(mutex_);
+        // Rows still being read may include the new ones; a table cut short
+        // (stopReading()) stays so.
+        if (!source_ || state_ != ModelState::Ready || !eof_ || reading_stopped_)
+            return AppendResult::None;
+        if (capabilities_.random_access)
+            return AppendResult::Changed;
+    }
+    const AppendResult result = source_->readAppended(stop);
+    if (result != AppendResult::Appended)
+        return result;
+
+    std::vector<TableEvent> events;
+    const size_t B = options_.block_rows;
+    std::unique_lock lock(mutex_);
+    const size_t first_new = sequential_rows_;
+    const size_t old_column_count = std::max(column_count_, columns_.size());
+    while (!stop.stop_requested())
+    {
+        // The last block may be partly filled: the new rows go on in a copy
+        // of it, since readers share it.
+        const size_t start = sequential_rows_;
+        const size_t block_index = start / B;
+        const auto it = blocks_.find(block_index);
+        const RowBlockPtr old = it != blocks_.end() ? it->second.block : nullptr;
+        const size_t want = (block_index + 1) * B - start;
+        lock.unlock();
+        RowBlockPtr more = source_->read(start, want, stop);
+        lock.lock();
+        if (!more || more->rows.empty())
+            break;
+        auto merged = std::make_shared<RowBlock>();
+        merged->first_row = block_index * B;
+        if (old)
+        {
+            merged->rows = old->rows;
+            merged->locked_cells = old->locked_cells;
+            cache_bytes_ -= old->approxBytes();
+        }
+        for (const TableRow &row : more->rows)
+        {
+            column_count_ = std::max(column_count_, row.size());
+            merged->rows.push_back(row);
+        }
+        cache_bytes_ += merged->approxBytes();
+        blocks_[block_index] = {std::move(merged), ++use_clock_};
+        sequential_rows_ += more->rows.size();
+        if (more->rows.size() < want)
+            break;
+    }
+    if (sequential_rows_ > first_new)
+    {
+        source_row_count_ = {sequential_rows_, RowCount::Kind::Exact};
+        events.push_back({TableEvent::Kind::RowCountChanged});
+        events.push_back({TableEvent::Kind::RowsLoaded, first_new, sequential_rows_});
+        if (std::max(column_count_, columns_.size()) != old_column_count)
+            events.push_back({TableEvent::Kind::ColumnsChanged});
+        // A sort or filter takes the new rows in when applied again.
+        if (!view_.empty() && !pending_view_)
+            pending_view_ = view_;
+        restartSearchLocked();
+        if (stats_accumulator_)
+            restartStatsLocked();
+        if (histogram_.active)
+            restartHistogramLocked();
+        if (scatter_.active)
+            restartScatterLocked();
+    }
+    lock.unlock();
+    emit(events);
+    return AppendResult::Appended;
 }
 
 bool TableModel::step(DataSource &data_source, std::stop_token stop)
@@ -1731,7 +1843,7 @@ bool TableModel::step(DataSource &data_source, std::stop_token stop)
 
 bool TableModel::stepOpen(DataSource &data_source, std::vector<TableEvent> &events)
 {
-    source_ = data_source.openSheet(name_);
+    source_ = preset_source_ ? std::move(preset_source_) : data_source.openSheet(name_);
     if (!source_)
         throw std::runtime_error("No such sheet: " + name_);
     const auto capabilities = source_->capabilities();
@@ -1815,10 +1927,30 @@ bool TableModel::loadBlock(size_t block_index, std::unique_lock<std::mutex> &loc
         block = std::move(empty);
     }
     auto columns = source_->columns();
+    // Counted before taking the lock; only the worker changes typed_rows_.
+    std::vector<ColumnTypeCounter> type_counters;
+    const size_t typed_rows = std::min(block->rows.size(), options_.type_sample_rows - std::min(typed_rows_, options_.type_sample_rows));
+    for (size_t r = 0; r < typed_rows; ++r)
+    {
+        const TableRow &row = block->rows[r];
+        if (type_counters.size() < row.size())
+            type_counters.resize(row.size());
+        for (size_t c = 0; c < row.size(); ++c)
+            type_counters[c].add(row[c]);
+    }
     lock.lock();
 
     if (stop.stop_requested())
         return true;
+
+    if (typed_rows > 0)
+    {
+        typed_rows_ += typed_rows;
+        if (type_counters_.size() < type_counters.size())
+            type_counters_.resize(type_counters.size());
+        for (size_t c = 0; c < type_counters.size(); ++c)
+            type_counters_[c].merge(type_counters[c]);
+    }
 
     const size_t n = block->rows.size();
     size_t widest = 0;
@@ -2618,6 +2750,7 @@ TableBook::TableBook(std::unique_ptr<DataSource> data_source, TableModel::Option
     text_encoding_ = data_source_->textEncoding();
     supports_sql_ = data_source_->supportsSql();
     supports_editing_ = data_source_->supportsEditing();
+    reads_appended_rows_ = data_source_->readsAppendedRows();
     worker_ = std::jthread([scheduler = scheduler_, data_source = data_source_.get()](std::stop_token stop)
                            { scheduler->run(stop, *data_source); });
 }
@@ -2649,6 +2782,8 @@ std::shared_ptr<TableModel> TableBook::sheet(const std::string &sheet_name)
     if (!model)
     {
         model = std::shared_ptr<TableModel>(new TableModel(sheet_name, model_options_, scheduler_));
+        if (const auto it = result_sheets_.find(sheet_name); it != result_sheets_.end())
+            model->preset_source_ = std::make_unique<ResultSheetSource>(it->second);
         model->setEditing(editing_);
         scheduler_->add(model);
     }
@@ -2669,6 +2804,12 @@ void TableBook::executeSql(std::string sql, std::function<void(const SqlResult &
                 // Read here, on the worker, which alone touches the data source.
                 auto names = data_source.sheetNames();
                 std::lock_guard lock(models_mutex_);
+                // Result sheets stay, after the file's.
+                for (const auto &name : sheet_names_)
+                {
+                    if (result_sheets_.contains(name))
+                        names.push_back(name);
+                }
                 sheet_names_ = std::move(names);
                 if (auto it = models_.find(outcome.sheet); it != models_.end())
                 {
@@ -2699,6 +2840,69 @@ void TableBook::loadSqlSchema(std::function<void(std::vector<SqlTable>)> done)
             // Completion goes without names.
         }
         done(std::move(schema)); });
+}
+
+std::string TableBook::addResultSheet(const std::string &name, std::shared_ptr<const ResultSheet> rows)
+{
+    std::shared_ptr<TableModel> replaced;
+    std::string sheet = name;
+    {
+        std::lock_guard lock(models_mutex_);
+        const auto listed = [this](const std::string &candidate)
+        { return std::find(sheet_names_.begin(), sheet_names_.end(), candidate) != sheet_names_.end(); };
+        for (int n = 2; listed(sheet) && !result_sheets_.contains(sheet); ++n)
+            sheet = name + " (" + std::to_string(n) + ")";
+        if (!listed(sheet))
+            sheet_names_.push_back(sheet);
+        result_sheets_[sheet] = std::move(rows);
+        if (auto it = models_.find(sheet); it != models_.end())
+        {
+            replaced = std::move(it->second);
+            models_.erase(it);
+        }
+    }
+    // Only the worker may drop a model's source.
+    if (replaced)
+        scheduler_->post([replaced](DataSource &, std::stop_token)
+                         { replaced->retire(); });
+    return sheet;
+}
+
+void TableBook::readAppended(std::function<void(AppendResult)> done)
+{
+    scheduler_->post([this, done = std::move(done)](DataSource &, std::stop_token stop)
+                     {
+        std::vector<std::shared_ptr<TableModel>> models;
+        {
+            std::lock_guard lock(models_mutex_);
+            for (const auto &[name, model] : models_)
+            {
+                if (!result_sheets_.contains(name))
+                    models.push_back(model);
+            }
+        }
+        AppendResult result = AppendResult::None;
+        for (const auto &model : models)
+        {
+            AppendResult sheet = AppendResult::Changed;
+            try
+            {
+                sheet = model->readAppendedRows(stop);
+            }
+            catch (const std::exception &)
+            {
+                // E.g. a half-written row in an encoding: reading the file again tells.
+            }
+            if (sheet == AppendResult::Changed)
+                result = AppendResult::Changed;
+            else if (sheet == AppendResult::Appended && result == AppendResult::None)
+                result = AppendResult::Appended;
+        }
+        // Saving checks the file against what was read.
+        if (result == AppendResult::Appended && has_file_stamp_)
+            has_file_stamp_ = readFileStamp(path_, file_mtime_, file_size_);
+        if (done)
+            done(result); });
 }
 
 void TableBook::setEditing(bool editing)

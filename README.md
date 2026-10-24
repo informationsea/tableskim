@@ -49,6 +49,18 @@ background while the window stays responsive.
   months, years, ...), or of the most frequent values of other columns, in
   a window of their own; double-click a bar (`Enter`) to filter the sheet
   to its rows, and the histogram follows
+- Scatter plots and 2D density of two columns (**Edit → Scatter Plot...**;
+  the density with `M` in the terminal UI), with the correlation
+  coefficient and the least-squares line
+- Group By (**Edit → Group By...**; `A` in the terminal UI): count the rows
+  by the values of some columns, with the sum, mean, min, max, ... of
+  others, into a sheet of its own
+- Column type marks in the headers (`#` numbers, `@` dates, `?` booleans)
+  and per-column display formats: thousands separators, decimal places and
+  date formats (right-click a column header → **Format**; `%`)
+- Follow a growing file like `tail -f` (**File → Follow End of File**; `T`):
+  appended lines of CSV / TSV files are read on their own, and the view
+  stays at the last row; **File → Open Recent** lists the last files opened
 - Go to a row, a cell (`B12` or `R12C2`) or a column by its name or
   letter (**Edit → Go To...**, `Ctrl+G` in both UIs)
 - Hide columns (right-click a column header; `x` in the terminal UI) and

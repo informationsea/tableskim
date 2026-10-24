@@ -22,8 +22,9 @@ namespace
     // Fl_Table adds up the row heights in an int, which more rows overflow.
     const int MAX_ROWS = INT_MAX / ROW_HEIGHT - 1;
     const int MIN_COLUMN_WIDTH = 40;
-    // Room for the sort and filter icons, so that the header label is not cut.
-    const int HEADER_PADDING = 12 + SORT_ICON_WIDTH + FILTER_ICON_WIDTH;
+    // Room for the type mark and the sort and filter icons, so that the
+    // header label is not cut.
+    const int HEADER_PADDING = 12 + TYPE_MARK_WIDTH + SORT_ICON_WIDTH + FILTER_ICON_WIDTH;
     const int MAX_COLUMN_WIDTH = 320;
     const size_t AUTOSIZE_SAMPLE_ROWS = 100;
     // Menu items whose quick filter value is longer are cut.
@@ -43,6 +44,12 @@ namespace
         ColumnStats,
         Histogram,
         ScatterPlot,
+        GroupBy,
+        FormatThousands,
+        FormatDecimalsAsStored,
+        FormatDecimals0, // FormatDecimals0 + n: n decimals, up to MAX_DECIMALS
+        FormatDate0 = FormatDecimals0 + MAX_DECIMALS + 1, // FormatDate0 + n: DATE_STYLES[n]
+        FormatReset = FormatDate0 + static_cast<intptr_t>(std::size(DATE_STYLES)),
         HideColumns,
         ShowAllColumns,
         FreezeColumns,
@@ -237,6 +244,9 @@ void GuiTableView::setModel(std::shared_ptr<TableModel> model)
         // neither hidden nor frozen, and its pending sort/filter is dropped.
         // Autosizing below gives every column its width again.
         hidden_ = {};
+        formats_ = {};
+        column_types_.clear();
+        followed_rows_ = 0;
         frozen_ = 0;
         saved_widths_.clear();
         pending_view_.reset();
@@ -350,6 +360,7 @@ void GuiTableView::syncWithModel()
     const ViewSpec view = model_->view();
     const bool view_changed = view != view_;
     view_ = view;
+    column_types_ = model_->columnTypes();
     const int new_rows = static_cast<int>(std::min<size_t>(model_->displayRowCount(), MAX_ROWS));
     const int new_cols = static_cast<int>(std::min<size_t>(model_->columnCount(), INT_MAX));
     if (new_rows != rows() || new_cols != cols())
@@ -373,6 +384,7 @@ void GuiTableView::syncWithModel()
     autosizeColumns();
     applyPendingScroll();
     applyPendingJump();
+    followEnd();
     search_ = model_->searchState();
     // The same coordinates may hold a different value after sorting/filtering.
     checkSelectionChange(view_changed);
@@ -463,6 +475,25 @@ void GuiTableView::applyPendingScroll()
         pending_scroll_.reset();
 }
 
+void GuiTableView::setFollowEnd(bool follow)
+{
+    follow_end_ = follow;
+    followed_rows_ = 0;
+    if (model_)
+        followEnd();
+}
+
+void GuiTableView::followEnd()
+{
+    if (!follow_end_ || !model_)
+        return;
+    const RowCount count = model_->rowCount();
+    if (!count.isExact() || count.value == 0 || count.value == followed_rows_)
+        return;
+    followed_rows_ = count.value;
+    jumpTo(static_cast<int>(std::min<size_t>(count.value - 1, MAX_ROWS - 1)), std::max(current_col, 0));
+}
+
 void GuiTableView::applyPendingJump()
 {
     if (!pending_jump_ || !model_)
@@ -484,11 +515,14 @@ void GuiTableView::applyPendingJump()
 void GuiTableView::scrollTo(int row, int col)
 {
     // Unlike row_position()/col_position(), this does not skip the update
-    // when asked for the same row again after more rows were added.
+    // when asked for the same row again after more rows were added. The
+    // maximum is negative while the table fits, which would shift it.
+    const auto clamped = [](double position, const Fl_Scrollbar *scrollbar)
+    { return std::max(std::min(position, scrollbar->maximum()), 0.0); };
     if (row >= 0)
-        vscrollbar->Fl_Slider::value(std::min(static_cast<double>(row_scroll_position(row)), vscrollbar->maximum()));
+        vscrollbar->Fl_Slider::value(clamped(static_cast<double>(row_scroll_position(row)), vscrollbar));
     if (col >= 0)
-        hscrollbar->Fl_Slider::value(std::min(static_cast<double>(col_scroll_position(col)), hscrollbar->maximum()));
+        hscrollbar->Fl_Slider::value(clamped(static_cast<double>(col_scroll_position(col)), hscrollbar));
     table_scrolled();
 }
 
@@ -915,7 +949,10 @@ void GuiTableView::draw()
             continue;
         if (header_height > 0)
             drawHeaderCell(model_->columnName(static_cast<size_t>(c)).c_str(), x, wiy, it->second, header_height,
-                           col_header_color(), sortIndicator(c), filtersColumn(view_, static_cast<size_t>(c)));
+                           col_header_color(), sortIndicator(c), filtersColumn(view_, static_cast<size_t>(c)),
+                           static_cast<size_t>(c) < column_types_.size()
+                               ? columnKindMark(column_types_[static_cast<size_t>(c)].kind)
+                               : nullptr);
         x += it->second;
     }
     // The edge of the frozen columns.
@@ -971,12 +1008,15 @@ void GuiTableView::draw_cell(TableContext context, int R, int C, int X, int Y, i
                                       : model_->columnName(static_cast<size_t>(C));
         SortIndicator sort = SortIndicator::None;
         bool filtered = false;
+        const char *mark = nullptr;
         if (context == CONTEXT_COL_HEADER)
         {
             sort = sortIndicator(C);
             filtered = filtersColumn(view_, static_cast<size_t>(C));
+            if (static_cast<size_t>(C) < column_types_.size())
+                mark = columnKindMark(column_types_[static_cast<size_t>(C)].kind);
         }
-        drawHeaderCell(label.c_str(), X, Y, W, H, row_header_color(), sort, filtered);
+        drawHeaderCell(label.c_str(), X, Y, W, H, row_header_color(), sort, filtered, mark);
         if (context == CONTEXT_COL_HEADER && !hidden_.empty())
         {
             // A mark where columns are hidden, as spreadsheets draw one.
@@ -1019,7 +1059,7 @@ void GuiTableView::drawDataCell(int R, int C, int X, int Y, int W, int H)
         fl_color(colors.cell_text);
         // draw_symbols = 0: FLTK would otherwise treat "@..." (e.g. in e-mail
         // addresses) as a symbol name and drop it from the text.
-        fl_draw(cellDisplayText(*cell.value).c_str(), X + 4, Y, W - 8, H,
+        fl_draw(cellDisplayText(*cell.value, 256, formats_.find(static_cast<size_t>(C))).c_str(), X + 4, Y, W - 8, H,
                 (isNumericCell(*cell.value) ? FL_ALIGN_RIGHT : FL_ALIGN_LEFT) | FL_ALIGN_CLIP, nullptr, 0);
         break;
     case CellState::Loading:
@@ -1087,14 +1127,51 @@ void GuiTableView::showSortMenu(int col)
                              (spec.filtered() ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER));
     items.push_back(menuItem("Column Statistics", MenuAction::ColumnStats, stats_column_callback_ ? 0 : FL_MENU_INACTIVE));
     items.push_back(menuItem("Histogram", MenuAction::Histogram, histogram_column_callback_ ? 0 : FL_MENU_INACTIVE));
-    items.push_back(menuItem("Scatter Plot", MenuAction::ScatterPlot,
-                             (scatter_column_callback_ ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER));
+    items.push_back(menuItem("Scatter Plot", MenuAction::ScatterPlot, scatter_column_callback_ ? 0 : FL_MENU_INACTIVE));
+    items.push_back(menuItem("Group By…", MenuAction::GroupBy,
+                             (group_by_column_callback_ ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER));
     // The selected columns, if this is one of them; else this column.
     int row_top, col_left, row_bottom, col_right;
     get_selection(row_top, col_left, row_bottom, col_right);
     if (col < col_left || col > col_right)
         col_left = col_right = col;
     const bool several = col_right > col_left;
+
+    // Format, of the clicked column as it is; changes apply to all of them.
+    const ColumnFormat format = formats_.get(column);
+    const std::string type_label =
+        escapeLabel("Type: " + columnTypeText(column < column_types_.size() ? column_types_[column] : ColumnType{}), true);
+    std::vector<std::string> date_labels;
+    for (const DateStyle style : DATE_STYLES)
+        date_labels.push_back(escapeLabel(dateStyleExample(style), true));
+    std::vector<std::string> decimal_labels;
+    for (int decimals = 0; decimals <= MAX_DECIMALS; ++decimals)
+        decimal_labels.push_back(std::to_string(decimals));
+    items.push_back({several ? "Format Columns" : "Format", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER});
+    items.push_back(menuItem(type_label.c_str(), MenuAction::None, FL_MENU_INACTIVE | FL_MENU_DIVIDER));
+    items.push_back(menuItem("Thousands Separator", MenuAction::FormatThousands,
+                             FL_MENU_TOGGLE | (format.thousands ? FL_MENU_VALUE : 0)));
+    items.push_back({"Decimal Places", 0, nullptr, nullptr, FL_SUBMENU});
+    items.push_back(menuItem("As Stored", MenuAction::FormatDecimalsAsStored,
+                             FL_MENU_RADIO | (format.decimals ? 0 : FL_MENU_VALUE) | FL_MENU_DIVIDER));
+    for (int decimals = 0; decimals <= MAX_DECIMALS; ++decimals)
+    {
+        items.push_back(menuItem(decimal_labels[static_cast<size_t>(decimals)].c_str(),
+                                 static_cast<MenuAction>(static_cast<intptr_t>(MenuAction::FormatDecimals0) + decimals),
+                                 FL_MENU_RADIO | (format.decimals == decimals ? FL_MENU_VALUE : 0)));
+    }
+    items.push_back({nullptr});
+    items.push_back({"Date Format", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER});
+    for (size_t i = 0; i < std::size(DATE_STYLES); ++i)
+    {
+        items.push_back(menuItem(date_labels[i].c_str(),
+                                 static_cast<MenuAction>(static_cast<intptr_t>(MenuAction::FormatDate0) + static_cast<intptr_t>(i)),
+                                 FL_MENU_RADIO | (format.date == DATE_STYLES[i] ? FL_MENU_VALUE : 0)));
+    }
+    items.push_back({nullptr});
+    items.push_back(menuItem("Reset Format", MenuAction::FormatReset, format.isDefault() ? FL_MENU_INACTIVE : 0));
+    items.push_back({nullptr});
+
     const bool all = hidden_.hidesAll(static_cast<size_t>(col_left), static_cast<size_t>(col_right),
                                       static_cast<size_t>(cols()));
     items.push_back(menuItem(several ? "Hide Columns" : "Hide Column", MenuAction::HideColumns, all ? FL_MENU_INACTIVE : 0));
@@ -1118,6 +1195,28 @@ void GuiTableView::showSortMenu(int col)
         return;
     // Nor keep a view that changed meanwhile (e.g. from the Filter pane).
     spec = model_->requestedView();
+    const auto action_value = static_cast<intptr_t>(action);
+    if (action_value >= static_cast<intptr_t>(MenuAction::FormatThousands) &&
+        action_value <= static_cast<intptr_t>(MenuAction::FormatReset))
+    {
+        for (int c = col_left; c <= col_right; ++c)
+        {
+            ColumnFormat changed = formats_.get(static_cast<size_t>(c));
+            if (action == MenuAction::FormatThousands)
+                changed.thousands = !format.thousands;
+            else if (action == MenuAction::FormatDecimalsAsStored)
+                changed.decimals.reset();
+            else if (action_value < static_cast<intptr_t>(MenuAction::FormatDate0))
+                changed.decimals = static_cast<int>(action_value - static_cast<intptr_t>(MenuAction::FormatDecimals0));
+            else if (action == MenuAction::FormatReset)
+                changed = {};
+            else
+                changed.date = DATE_STYLES[action_value - static_cast<intptr_t>(MenuAction::FormatDate0)];
+            formats_.set(static_cast<size_t>(c), changed);
+        }
+        redraw();
+        return;
+    }
     switch (action)
     {
     case MenuAction::ColumnStats:
@@ -1128,6 +1227,9 @@ void GuiTableView::showSortMenu(int col)
         return;
     case MenuAction::ScatterPlot:
         scatter_column_callback_(column);
+        return;
+    case MenuAction::GroupBy:
+        group_by_column_callback_(column);
         return;
     case MenuAction::HideColumns:
         hideColumns(col_left, col_right);

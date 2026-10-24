@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "column_stats.hxx"
+#include "column_type.hxx"
 #include "histogram.hxx"
 #include "scatter.hxx"
 #include "table_types.hxx"
@@ -244,6 +245,8 @@ public:
         // readView(): rows read at a time from a random-access source, past
         // the cache; twice as many are read ahead of the reader.
         size_t scan_read_rows = 8192;
+        // columnTypes(): the first rows read that are looked at.
+        size_t type_sample_rows = 1000;
     };
 
     using Listener = std::function<void(const TableEvent &)>;
@@ -273,6 +276,9 @@ public:
     size_t columnCount() const;
     std::string columnName(size_t column) const; // header name or column letter
     bool hasHeader() const;
+    // What each column seems to hold, judged from the first rows read
+    // (Options::type_sample_rows); Unknown for columns without a value yet.
+    std::vector<ColumnType> columnTypes() const;
     std::vector<CellRange> mergedCells() const;
 
     Subscription subscribe(Listener listener);
@@ -401,9 +407,12 @@ private:
     uint64_t priority() const { return priority_.load(); }
     // Called after the worker has stopped.
     void detachSource();
-    // Worker thread only: the sheet's rows were replaced (a new query). The
-    // model drops its source and is never stepped again.
+    // Worker thread only: the sheet's rows were replaced (a new query or
+    // result). The model drops its source and is never stepped again.
     void retire();
+    // Worker thread only (TableBook::readAppended()): adds the rows appended
+    // to the file once every row has been read.
+    AppendResult readAppendedRows(std::stop_token stop);
 
     // Editing, for TableBook.
     struct CellChange
@@ -467,6 +476,9 @@ private:
 
     // worker thread only
     std::unique_ptr<SheetSource> source_;
+    // A result sheet's source (TableBook::addResultSheet()), set before the
+    // worker sees the model; stepOpen() opens it instead of the file's sheet.
+    std::unique_ptr<SheetSource> preset_source_;
     bool count_attempted_ = false;
 
     mutable std::mutex mutex_;
@@ -484,6 +496,8 @@ private:
     std::vector<ColumnInfo> columns_;
     size_t column_count_ = 0;
     std::vector<CellRange> merged_cells_;
+    std::vector<ColumnTypeCounter> type_counters_;
+    size_t typed_rows_ = 0; // rows counted into type_counters_ (written by the worker only)
     std::optional<std::pair<size_t, size_t>> viewport_; // view rows, inclusive
     std::optional<size_t> adhoc_block_;                 // requested by peek() outside the viewport
     ViewSpec view_;
@@ -585,6 +599,23 @@ public:
     // gets nothing if it fails.
     void loadSqlSchema(std::function<void(std::vector<SqlTable>)> done);
 
+    // Adds a sheet showing rows computed in memory (e.g. a Group By), named
+    // `name`, or "name (2)", ... if the file has a sheet of that name. A
+    // sheet added under that name before gets the new rows instead: its
+    // model is retired, as for executeSql(), and sheet() returns a new one.
+    // Returns the sheet's name. The sheet cannot be edited, and is gone
+    // with the book.
+    std::string addResultSheet(const std::string &name, std::shared_ptr<const ResultSheet> rows);
+
+    // --- following a growing file (tail -f) ---
+    // See DataSource::readsAppendedRows().
+    bool readsAppendedRows() const { return reads_appended_rows_; }
+    // Reads the rows appended to the file into every sheet opened, on the
+    // worker after the step in progress; a sorted or filtered sheet applies
+    // its view again. `done` (on the worker) gets Appended if rows were
+    // added, Changed if the file was changed otherwise (reopen it then).
+    void readAppended(std::function<void(AppendResult)> done);
+
     // --- editing ---
     // See DataSource::supportsEditing().
     bool supportsEditing() const { return supports_editing_; }
@@ -618,6 +649,7 @@ private:
     std::uintmax_t file_size_ = 0;
     bool has_file_stamp_ = false;
     bool supports_editing_ = false;
+    bool reads_appended_rows_ = false;
     bool editing_ = false; // guarded by models_mutex_
     std::vector<std::string> sheet_names_; // guarded by models_mutex_
     bool uses_header_option_ = false;
@@ -629,6 +661,7 @@ private:
     std::shared_ptr<detail::Scheduler> scheduler_;
     mutable std::mutex models_mutex_;
     std::map<std::string, std::shared_ptr<TableModel>> models_;
+    std::map<std::string, std::shared_ptr<const ResultSheet>> result_sheets_; // guarded by models_mutex_
     std::jthread worker_; // declared last: started after, and stopped before, everything above
 };
 
