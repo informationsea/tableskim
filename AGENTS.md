@@ -72,6 +72,10 @@ ctest --preset debug                 # output is shown on failure
 - Dependencies are always built as Release, even in Debug builds (except with
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
   `cmake/Dependencies.cmake`.
+- Git dependencies are cloned shallow at their tag (`GIT_SHALLOW`), and
+  archives carry a `URL_HASH`: update the hash with the URL. DuckDB gets its
+  version from `OVERRIDE_GIT_DESCRIBE`, so that it does not depend on the
+  shallow clone having fetched the tag.
 - Debug builds define `TABLESKIM_DEBUG=1`, which enables debug logging.
 - Windows uses the `vs-debug` / `vs-release` presets (Visual Studio 2026, MSVC)
   or, from a Developer Command Prompt, `msvc-debug` / `msvc-release` (Ninja,
