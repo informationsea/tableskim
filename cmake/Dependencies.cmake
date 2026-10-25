@@ -292,6 +292,9 @@ else()
     set(XZ_TOOL_LZMAINFO OFF)
     set(XZ_NLS OFF)
     set(XZ_DOC OFF)
+    # The sandbox is for the xz tools, which are not built; it also refuses
+    # -fsanitize= (the asan preset).
+    set(XZ_SANDBOX no)
     FetchContent_Declare(
         xz
         SYSTEM
