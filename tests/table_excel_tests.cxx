@@ -216,6 +216,35 @@ TEST_CASE("Excel dates respect the workbook date system", "[regression]")
     }
 }
 
+TEST_CASE("Excel numbers beyond the date range stay numbers", "[regression]")
+{
+    const auto path = std::filesystem::temp_directory_path() / "tableskim-test-date-range.xlsx";
+    OpenXLSX::XLDocument doc;
+    doc.create(path.string(), true);
+    auto &styles = doc.styles();
+    const auto date_style = styles.cellFormats().create();
+    styles.cellFormats()[date_style].setNumberFormatId(14);
+    const auto datetime_style = styles.cellFormats().create();
+    styles.cellFormats()[datetime_style].setNumberFormatId(22);
+    auto sheet = doc.workbook().worksheet("Sheet1");
+    sheet.cell("A1").value() = static_cast<int64_t>(123456789012);
+    sheet.cell("A1").setCellFormat(date_style);
+    sheet.cell("B1").value() = 1.0e12;
+    sheet.cell("B1").setCellFormat(datetime_style);
+    sheet.cell("A2").value() = 45000.0; // a date, 2023-03-15
+    sheet.cell("A2").setCellFormat(date_style);
+    doc.save();
+    doc.close();
+    {
+        auto book = TableBook::open(path, {.header = OpenOptions::Header::No});
+        auto model = openSheet(*book, "Sheet1");
+        CHECK(cellText(*model, 0, 0) == "123456789012");
+        CHECK(cellText(*model, 0, 1) == "1000000000000");
+        CHECK(cellText(*model, 1, 0) == "2023-03-15");
+    }
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("unsupported or broken Excel files fail to open cleanly")
 {
     const auto path = std::filesystem::temp_directory_path() / "tableskim-test-broken.xlsx";

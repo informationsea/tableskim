@@ -359,6 +359,9 @@ void GuiTableView::syncWithModel()
     applyPendingView();
     const ViewSpec view = model_->view();
     const bool view_changed = view != view_;
+    // A view that changed under the editor moved the cell it was opened on.
+    if (view_changed && editingCell())
+        finishEditing(false);
     view_ = view;
     column_types_ = model_->columnTypes();
     const int new_rows = static_cast<int>(std::min<size_t>(model_->displayRowCount(), MAX_ROWS));
@@ -448,6 +451,10 @@ void GuiTableView::applyPendingView()
     const ViewCapabilities capabilities = model_->viewCapabilities();
     if ((pending_view_->sort.empty() || capabilities.sort) && (!pending_view_->filtered() || capabilities.filter))
     {
+        // The editor holds view coordinates: write the text to the row it
+        // was opened on, before the rows move.
+        if (editingCell())
+            finishEditing(true);
         model_->setView(std::move(*pending_view_));
         pending_view_.reset();
     }

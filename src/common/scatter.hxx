@@ -155,6 +155,8 @@ private:
     std::vector<ScatterPoint> points_;
     std::mt19937_64 random_;
     std::vector<std::vector<double>> category_values_; // Y of each category, for the box plots
+    std::vector<size_t> category_seen_;                // values counted per category (a sample is kept past the cap)
+    static constexpr size_t MAX_CATEGORY_VALUES = size_t{1} << 20;
 
     std::optional<size_t> categoryOf(const CellValue &x) const;
 };

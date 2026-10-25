@@ -294,7 +294,14 @@ namespace
         const size_t style = cell.cellFormat();
         const DateKind kind = style < book.style_kinds.size() ? book.style_kinds[style] : DateKind::None;
         const double serial = value.get<double>();
-        switch (kind)
+        // A number outside what a date, time or duration can hold (an ID in a
+        // date-formatted column, say) stays a number: converting it would
+        // overflow. 2958465 is 9999-12-31.
+        constexpr double kMaxDateSerial = 2958466.0;
+        constexpr double kMaxDurationSerial = 1e9;
+        const bool date_kind = kind == DateKind::Date || kind == DateKind::DateTime;
+        const bool in_range = std::isfinite(serial) && std::fabs(serial) <= (date_kind ? kMaxDateSerial : kMaxDurationSerial);
+        switch (in_range ? kind : DateKind::None)
         {
         case DateKind::Date:
             return Date{static_cast<int32_t>(floorDiv(serialToUnixMillis(serial, book), kMillisPerDay))};

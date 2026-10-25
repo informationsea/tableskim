@@ -354,3 +354,8 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(spdlog)
+
+if(WIN32)
+    # Log file names are UTF-16 so that non-ASCII --log paths work.
+    target_compile_definitions(spdlog PUBLIC SPDLOG_WCHAR_FILENAMES)
+endif()

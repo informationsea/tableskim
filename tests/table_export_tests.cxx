@@ -149,6 +149,28 @@ TEST_CASE("exportTextFile: integers beyond BIGINT keep their digits")
     std::filesystem::remove(target);
 }
 
+TEST_CASE("exportTextFile: decimal text that would change as a number stays text", "[regression]")
+{
+    const auto source = tempFile("decimals.csv");
+    const auto target = tempFile("decimals.parquet");
+    {
+        std::ofstream out(source, std::ios::binary);
+        out << "price,exact,long\n"
+               "1.10,1.5,0.1234567890123456789\n"
+               "2.50,2,3.25\n";
+    }
+    OpenOptions options;
+    options.header = OpenOptions::Header::Yes;
+    REQUIRE(exportTextFile(source, target, ExportFormat::Parquet, options) == 2);
+    const auto schema = exportedSchema(target);
+    REQUIRE(schema.size() == 3);
+    CHECK(schema[0] == std::pair<std::string, std::string>{"price", "VARCHAR"});
+    CHECK(schema[1] == std::pair<std::string, std::string>{"exact", "DOUBLE"});
+    CHECK(schema[2] == std::pair<std::string, std::string>{"long", "VARCHAR"});
+    std::filesystem::remove(source);
+    std::filesystem::remove(target);
+}
+
 TEST_CASE("exportTextFile: mixed integer and real columns retain exact integers", "[regression]")
 {
     const ExportFormat format = GENERATE(ExportFormat::Parquet, ExportFormat::DuckDb);
@@ -470,6 +492,25 @@ TEST_CASE("exportView: CSV and TSV quote only where needed")
     model.reset();
     book.reset();
     for (const auto &path : {source, csv, tsv})
+        std::filesystem::remove(path);
+}
+
+TEST_CASE("exportView: an empty value in a single column is quoted", "[regression]")
+{
+    const auto source = tempFile("single.csv");
+    {
+        std::ofstream out(source, std::ios::binary);
+        out << "only\na\n\"\"\nb\n";
+    }
+    auto book = TableBook::open(source);
+    auto model = openedSheet(book);
+    const auto csv = tempFile("single-out.csv");
+    REQUIRE(exportView(model, csv, ViewExportFormat::Csv) == 3);
+    // A bare empty line would be skipped by readers.
+    CHECK(readFile(csv) == "only\na\n\"\"\nb\n");
+    model.reset();
+    book.reset();
+    for (const auto &path : {source, csv})
         std::filesystem::remove(path);
 }
 

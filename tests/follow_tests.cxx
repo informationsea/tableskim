@@ -131,6 +131,17 @@ TEST_CASE("readAppended: a last row without a line break is read again with the 
     CHECK(readAppended(*book) == AppendResult::Changed);
 }
 
+TEST_CASE("readAppended: an unfinished quoted field at the end is read again with the rest", "[regression]")
+{
+    TempFile file("tableskim-test-follow-open-quote.csv");
+    file.write("n,note\n1,a\n2,\"multi\n");
+    std::shared_ptr<TableBook> book;
+    auto model = openRead(book, file.path());
+    file.write("line\"\n3,b\n", true);
+    // The row read as "multi" is not complete: it must not become two rows.
+    CHECK(readAppended(*book) == AppendResult::Changed);
+}
+
 TEST_CASE("readAppended: VCF meta lines and Shift_JIS")
 {
     SECTION("## lines are skipped")

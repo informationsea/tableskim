@@ -7,6 +7,7 @@
 #include <spdlog/sinks/null_sink.h>
 #include <spdlog/spdlog.h>
 
+#include "file_util.hxx"
 #include "tableskim_version.hxx"
 
 namespace
@@ -97,7 +98,13 @@ bool configureLogging(const CommandLineOptions &options, bool to_console, std::s
     {
         if (!options.log_file.empty())
         {
-            spdlog::set_default_logger(spdlog::basic_logger_mt("tableskim", options.log_file));
+#ifdef _WIN32
+            // spdlog opens narrow names in the ANSI code page.
+            const auto log_path = utf8Path(options.log_file).wstring();
+#else
+            const auto &log_path = options.log_file;
+#endif
+            spdlog::set_default_logger(spdlog::basic_logger_mt("tableskim", log_path));
             // The log is read while the program is running (or after it was killed).
             spdlog::flush_on(spdlog::level::trace);
         }
