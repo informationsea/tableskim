@@ -86,6 +86,9 @@ ctest --preset debug -j 8            # test cases in parallel
   AddressSanitizer and UndefinedBehaviorSanitizer, dependencies included;
   run `cmake --preset asan`, `cmake --build --preset asan` and
   `ctest --preset asan` after changes to memory handling or threading.
+  `tests/lsan.supp` suppresses leaks of system libraries only (fontconfig);
+  fix leaks in our code or the bundled dependencies (OpenXLSX is patched by
+  `cmake/patches/openxlsx.cmake`) instead of adding them there.
 - Windows uses the `vs-debug` / `vs-release` presets (Visual Studio 2026, MSVC)
   or, from a Developer Command Prompt, `msvc-debug` / `msvc-release` (Ninja,
   MSVC). CI and the release workflow use `msvc-release` so that ccache works
