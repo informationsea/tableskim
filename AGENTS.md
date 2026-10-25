@@ -376,6 +376,22 @@ Match the existing code:
   sleeping for fixed periods.
 - Add or update tests for any change to `src/common/`. Run the full test
   binary before finishing.
+- The terminal UI has end-to-end tests in `tests/tui/` (Python `unittest`,
+  Linux only): `tui_harness.py` runs `tableskim -t` in a pseudo-terminal and
+  reads the screen with pyte; tests send keys and wait for text
+  (`wait_text()`, `wait_for()`), never for fixed periods, with `HOME` and
+  the XDG directories in a temporary directory. ctest runs them as
+  `tableskim-tui-tests` when the configured Python has pyte
+  (`TABLESKIM_TUI_TESTS`: `AUTO`; `ON` requires it, as CI does). Install
+  `python3-pyte`, or a venv with `tests/tui/requirements.txt` and
+  `-DPython3_EXECUTABLE=<venv>/bin/python`. By hand:
+
+  ```sh
+  python3 tests/tui/test_tui.py --tableskim build/debug/tableskim \
+      --demo-data demo/data -k histogram
+  ```
+
+  Add a test there for TUI changes that the Catch2 tests cannot reach.
 
 ## Git
 

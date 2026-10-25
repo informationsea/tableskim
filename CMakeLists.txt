@@ -434,4 +434,32 @@ target_compile_definitions(tableskim-tests PRIVATE
 )
 add_test(NAME tableskim-tests COMMAND tableskim-tests)
 
+# End-to-end tests of the terminal UI (tests/tui/), which run tableskim -t in a
+# pseudo-terminal: Linux only, with Python 3 and pyte. AUTO adds them when
+# pyte is found, ON requires it (CI); -DPython3_EXECUTABLE= picks a venv.
+set(TABLESKIM_TUI_TESTS AUTO CACHE STRING "End-to-end tests of the terminal UI (AUTO, ON or OFF; Linux only)")
+set_property(CACHE TABLESKIM_TUI_TESTS PROPERTY STRINGS AUTO ON OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_TUI_TESTS STREQUAL "OFF")
+    find_package(Python3 COMPONENTS Interpreter)
+    set(TABLESKIM_HAVE_PYTE FALSE)
+    if(Python3_Interpreter_FOUND)
+        execute_process(COMMAND ${Python3_EXECUTABLE} -I -c "import pyte"
+            RESULT_VARIABLE TABLESKIM_PYTE_RESULT OUTPUT_QUIET ERROR_QUIET)
+        if(TABLESKIM_PYTE_RESULT EQUAL 0)
+            set(TABLESKIM_HAVE_PYTE TRUE)
+        endif()
+    endif()
+    if(TABLESKIM_HAVE_PYTE)
+        add_test(NAME tableskim-tui-tests
+            COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/tui/test_tui.py
+                --tableskim $<TARGET_FILE:tableskim>
+                --demo-data ${CMAKE_CURRENT_SOURCE_DIR}/demo/data)
+        set_tests_properties(tableskim-tui-tests PROPERTIES TIMEOUT 600)
+    elseif(TABLESKIM_TUI_TESTS STREQUAL "ON")
+        message(FATAL_ERROR "TABLESKIM_TUI_TESTS=ON needs Python 3 with pyte (python3-pyte, or pip install -r tests/tui/requirements.txt)")
+    else()
+        message(STATUS "Terminal UI tests skipped: Python 3 with pyte not found")
+    endif()
+endif()
+
 include(cmake/Packaging.cmake)
