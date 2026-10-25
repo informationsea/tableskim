@@ -1,11 +1,11 @@
 name: CI
 
-# Builds and tests every push and pull request on each platform. The build
+# Builds and tests pushes to main and all pull requests on each platform. The build
 # without the GUI (-DTABLESKIM_BUILD_GUI=OFF) is only built for releases.
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
