@@ -438,6 +438,8 @@ TEST_CASE("Saving refuses what it cannot write")
         const auto path = writeFile("changed.csv", "a,b\n1,2\n");
         auto book = TableBook::open(path);
         auto model = openSheet(*book);
+        // Only cells that have been read can be edited.
+        REQUIRE(cellText(*model, 0, 0) == "1");
         book->setEditing(true);
         REQUIRE(setText(*model, 0, 0, "3"));
         {
@@ -453,6 +455,7 @@ TEST_CASE("Saving refuses what it cannot write")
         const auto path = writeFile("meta.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\nchr1\t1\n");
         auto book = TableBook::open(path);
         auto model = openSheet(*book);
+        REQUIRE(cellText(*model, 0, 0) == "chr1");
         book->setEditing(true);
         REQUIRE(setText(*model, 0, 0, "x\n##y"));
         const TableBook::SaveResult result = save(*book, path);
