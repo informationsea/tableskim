@@ -192,7 +192,8 @@ namespace
     }
 
     // The reverse of decodeEscapes(): control characters other than tab and
-    // line breaks, and "_" before an escape-like pattern, become _xHHHH_.
+    // line feed, and "_" before an escape-like pattern, become _xHHHH_. A
+    // raw CR would be read back as LF (XML end-of-line handling).
     std::string encodeEscapes(std::string_view text)
     {
         std::string result;
@@ -200,7 +201,7 @@ namespace
         for (size_t pos = 0; pos < text.size(); ++pos)
         {
             const auto c = static_cast<unsigned char>(text[pos]);
-            if ((c < 0x20 && c != '\t' && c != '\n' && c != '\r') || isEscapePattern(text, pos))
+            if ((c < 0x20 && c != '\t' && c != '\n') || isEscapePattern(text, pos))
             {
                 char buf[16];
                 std::snprintf(buf, sizeof(buf), "_x%04X_", c);

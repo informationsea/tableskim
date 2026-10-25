@@ -285,6 +285,7 @@ private:
     void save(std::function<void()> then = {});
     void saveFinished(std::shared_ptr<TableBook> book, const std::filesystem::path &target,
                       const TableBook::SaveResult &result, const std::function<void()> &then);
+    void dropViews();
     // Runs `action` now, or after asking about unsaved edits.
     void checkUnsaved(std::function<void()> action, bool reload = false);
     bool handleUnsavedPromptEvent(ftxui::Event event);

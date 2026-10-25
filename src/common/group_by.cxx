@@ -11,10 +11,12 @@
 namespace
 {
     // To the 15 significant digits a double holds, which drops the noise of
-    // binary arithmetic (918499.4500000001 is 918499.45).
+    // binary arithmetic (918499.4500000001 is 918499.45). Whole numbers carry
+    // no such noise and are exact up to 2^53, which has 16 digits
+    // (1234567890123456 stays).
     double roundSignificant(double value)
     {
-        if (!std::isfinite(value))
+        if (!std::isfinite(value) || (value == std::trunc(value) && std::fabs(value) <= 0x1p53))
             return value;
         char text[32];
         std::snprintf(text, sizeof(text), "%.15g", value);

@@ -137,6 +137,11 @@ std::vector<double> numberHistogramEdges(double min, double max, bool integers, 
                                 : niceStep(std::max(std::fabs(min), 1.0) / 10);
         if (integers)
             step = std::max(step, 1.0);
+        // The edges are multiples of the step. Past 2^50 steps from zero,
+        // their indexes are no longer exact and neighbouring edges can be
+        // equal, so that the edges no longer cover the range (1e15 + 0.125).
+        if (const double extent = std::max(std::fabs(min), std::fabs(max)); extent > 0 && std::isfinite(extent))
+            step = std::max(step, niceStep(extent / 0x1p50));
         if (!std::isfinite(step) || !std::isfinite(min / step) || !std::isfinite(max / step))
         {
             // Too wide for steps: one bin.

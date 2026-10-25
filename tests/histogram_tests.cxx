@@ -173,6 +173,34 @@ TEST_CASE("numberHistogramEdges: large integers terminate and remain countable",
     CHECK(std::accumulate(counter.result().counts.begin(), counter.result().counts.end(), size_t{0}) == 2);
 }
 
+TEST_CASE("numberHistogramEdges: a narrow range far from zero is covered", "[regression]")
+{
+    const std::vector<std::pair<double, double>> cases = {
+        {1e15 + 0.125, 1e15 + 0.25},
+        {9223372036854775807.0 - 5000, 9223372036854775807.0},
+        {-1e17 - 64, -1e17},
+        {0.1 + 0.2, 0.3},
+    };
+    for (const auto &[min, max] : cases)
+    {
+        INFO("min=" << min << " max=" << max);
+        HistogramRange range;
+        range.add(min);
+        range.add(max);
+        const Histogram layout = range.layout(30);
+        REQUIRE(layout.edges.size() >= 2);
+        CHECK(layout.edges.front() <= min);
+        CHECK(layout.edges.back() >= max);
+        for (size_t i = 1; i < layout.edges.size(); ++i)
+            CHECK(layout.edges[i] > layout.edges[i - 1]);
+        HistogramCounter counter(layout);
+        counter.add(min);
+        counter.add(max);
+        CHECK(counter.result().values == 2);
+        CHECK(counter.result().others == 0);
+    }
+}
+
 TEST_CASE("histogram bins keep exactly the large integers they count", "[regression]")
 {
     const std::vector<std::vector<int64_t>> cases = {
@@ -447,6 +475,40 @@ TEST_CASE("histogram texts")
     hours.edges = timeHistogramEdges(micros(2024, 1, 1, 8), micros(2024, 1, 1, 20), false, 30, &hours.unit);
     CHECK(histogramBinLabel(hours, 1) == "2024-01-01 08:30");
     CHECK(histogramBinConditions(hours, 0, 1)[1].value == "2024-01-01 08:30:00");
+}
+
+TEST_CASE("time bins ending past the year 9999 keep their rows", "[regression]")
+{
+    // 9999-12-31 as a "no end" date: the last edge is in the year 10000.
+    const std::vector<std::vector<CellValue>> cases = {
+        {Date{2932896}},
+        {Date{18262}, Date{2932896}},
+        {CellValue{std::string("9999-12-31")}, CellValue{std::string("2020-01-01")}},
+        {DateTime{micros(9999, 12, 31, 23)}, DateTime{micros(9999, 12, 30)}},
+    };
+    for (const auto &values : cases)
+    {
+        HistogramRange range;
+        for (const auto &value : values)
+            range.add(value);
+        HistogramCounter counter(range.layout(30));
+        for (const auto &value : values)
+            counter.add(value);
+        const auto &histogram = counter.result();
+        REQUIRE(histogram.binCount() > 0);
+        CHECK(histogram.values == values.size());
+        CHECK(histogramEdgeText(histogram, histogram.edges.back()).starts_with("10000"));
+        for (size_t bin = 0; bin < histogram.binCount(); ++bin)
+        {
+            INFO(histogramBinRange(histogram, bin));
+            const auto conditions = histogramBinConditions(histogram, 0, bin);
+            size_t kept = 0;
+            for (const auto &value : values)
+                kept += std::all_of(conditions.begin(), conditions.end(), [&](const FilterCondition &condition)
+                                    { return cellMatchesCondition(value, condition); });
+            CHECK(histogram.counts[bin] == kept);
+        }
+    }
 }
 
 TEST_CASE("a bin's filter keeps the rows counted in it")

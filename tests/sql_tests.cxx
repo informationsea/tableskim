@@ -349,6 +349,11 @@ TEST_CASE("SQL: external writes cannot replace source files or other files", "[r
             reject("PRAGMA writable_schema = ON");
             reject("PRAGMA temp_store_directory = " + sqlPath(directory));
             reject("SELECT load_extension('fileio')");
+            // An open transaction would lock the file; a rollback would drop
+            // the TEMP tables of sorted sheets and of the SQL result.
+            reject("BEGIN");
+            reject("SAVEPOINT user_savepoint");
+            reject("SELECT 1; BEGIN IMMEDIATE");
         }
         else
         {

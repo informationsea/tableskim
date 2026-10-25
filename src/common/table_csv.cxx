@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <deque>
 #include <fstream>
 #include <map>
@@ -196,7 +197,9 @@ namespace
     // The length of the whole records at the start of `text`: up to the last
     // line break outside a quoted field. As csv-parser reads them, a quote
     // starts a quoted field only at the start of a field; anywhere else
-    // (12" pizza) it is an ordinary character.
+    // (12" pizza) it is an ordinary character. In a quoted field, a quote
+    // ends it only before a delimiter or line break; else it is kept, and
+    // the field goes on ("12" pizza\n...").
     size_t wholeRecordsLength(std::string_view text, char delimiter)
     {
         enum class State
@@ -239,8 +242,12 @@ namespace
                     length = i + 1;
                     state = State::FieldStart;
                 }
+                else if (c == delimiter)
+                    state = State::FieldStart;
+                else if (c == '\r')
+                    state = State::Unquoted;
                 else
-                    state = c == delimiter ? State::FieldStart : State::Unquoted;
+                    state = State::Quoted; // a stray quote, which stays in the field
                 break;
             }
         }
@@ -254,15 +261,69 @@ namespace
         return std::string(name.begin(), name.end());
     }
 
+    // An uncompressed file, read with stdio: std::filebuf (MSVC, libc++)
+    // ends at a read error as at the end of the file, which would end the
+    // table early, or a saved file.
+    class PlainFileBuf : public std::streambuf
+    {
+    private:
+        static constexpr size_t CHUNK_SIZE = 256 * 1024;
+        std::FILE *file_ = nullptr;
+        std::vector<char> buffer_ = std::vector<char>(CHUNK_SIZE);
+        std::string name_;
+
+    protected:
+        int_type underflow() override
+        {
+            if (gptr() < egptr())
+                return traits_type::to_int_type(*gptr());
+            const size_t n = std::fread(buffer_.data(), 1, buffer_.size(), file_);
+            if (n == 0)
+            {
+                if (std::ferror(file_))
+                    throw std::runtime_error("Cannot read CSV file: " + name_);
+                return traits_type::eof();
+            }
+            setg(buffer_.data(), buffer_.data(), buffer_.data() + n);
+            return traits_type::to_int_type(*gptr());
+        }
+
+    public:
+        explicit PlainFileBuf(const std::filesystem::path &path) : name_(utf8FileName(path))
+        {
+#ifdef _WIN32
+            if (_wfopen_s(&file_, path.c_str(), L"rb") != 0)
+                file_ = nullptr;
+#else
+            file_ = std::fopen(path.c_str(), "rb");
+#endif
+            if (!file_)
+                throw std::runtime_error("Cannot open CSV file: " + name_);
+        }
+        ~PlainFileBuf() override { std::fclose(file_); }
+        PlainFileBuf(const PlainFileBuf &) = delete;
+        PlainFileBuf &operator=(const PlainFileBuf &) = delete;
+    };
+
+    class PlainFileStream : public std::istream
+    {
+    private:
+        PlainFileBuf buf_;
+
+    public:
+        explicit PlainFileStream(const std::filesystem::path &path) : std::istream(nullptr), buf_(path)
+        {
+            rdbuf(&buf_);
+            exceptions(std::ios::badbit);
+        }
+    };
+
     // The bytes of the file, decompressed if needed.
     std::unique_ptr<std::istream> openRawStream(const std::filesystem::path &path, Compression compression)
     {
         if (compression != Compression::None)
             return openDecompressingStream(path, compression);
-        auto file = std::make_unique<std::ifstream>(path, std::ios::binary);
-        if (!*file)
-            throw std::runtime_error("Cannot open CSV file: " + utf8FileName(path));
-        return file;
+        return std::make_unique<PlainFileStream>(path);
     }
 
     // How much of the (decompressed) file the encoding is guessed from.

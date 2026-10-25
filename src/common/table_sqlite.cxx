@@ -155,7 +155,8 @@ namespace
         sqlite3_result_text(context, text.data(), static_cast<int>(text.size()), SQLITE_TRANSIENT);
     }
 
-    int authorizeSql(void *, int action, const char *first, const char *second,
+    // `data`: a bool, whether transactions are allowed (only TableSkim's own).
+    int authorizeSql(void *data, int action, const char *first, const char *second,
                      const char *database, const char *)
     {
         const auto isTemp = [](const char *name)
@@ -165,8 +166,6 @@ namespace
         case SQLITE_SELECT:
         case SQLITE_READ:
         case SQLITE_RECURSIVE:
-        case SQLITE_TRANSACTION:
-        case SQLITE_SAVEPOINT:
         case SQLITE_CREATE_TEMP_TABLE:
         case SQLITE_CREATE_TEMP_VIEW:
         case SQLITE_CREATE_TEMP_INDEX:
@@ -185,6 +184,11 @@ namespace
             return isTemp(database) ? SQLITE_OK : SQLITE_DENY;
         case SQLITE_ALTER_TABLE:
             return isTemp(first) ? SQLITE_OK : SQLITE_DENY;
+        case SQLITE_TRANSACTION:
+        case SQLITE_SAVEPOINT:
+            // A query's BEGIN would keep the file locked, and its ROLLBACK
+            // would drop the TEMP tables the sheets read from.
+            return *static_cast<const bool *>(data) ? SQLITE_OK : SQLITE_DENY;
         case SQLITE_FUNCTION:
             // File I/O functions are not registered here, and must stay unavailable
             // even with a system SQLite build or a future additional extension.
@@ -210,6 +214,7 @@ namespace
     {
         sqlite3 *db = nullptr;
         size_t next_temp_id = 0;
+        bool transactions_allowed = false; // see authorizeSql()
 
         explicit Database(const std::filesystem::path &path)
         {
@@ -227,7 +232,7 @@ namespace
             sqlite3_create_function(db, "tableskim_text", 1, flags, nullptr, textFunction, nullptr, nullptr);
             // Keep this installed while stepping, including lazy result views and
             // statements SQLite recompiles after a schema change.
-            sqlite3_set_authorizer(db, authorizeSql, nullptr);
+            sqlite3_set_authorizer(db, authorizeSql, &transactions_allowed);
         }
 
         ~Database() { sqlite3_close_v2(db); }
@@ -243,6 +248,23 @@ namespace
         }
 
         // false when the statement was interrupted
+        // A transaction statement of TableSkim's own (see authorizeSql()).
+        bool execTransaction(const std::string &sql)
+        {
+            transactions_allowed = true;
+            try
+            {
+                const bool done = exec(sql);
+                transactions_allowed = false;
+                return done;
+            }
+            catch (...)
+            {
+                transactions_allowed = false;
+                throw;
+            }
+        }
+
         bool exec(const std::string &sql)
         {
             char *error = nullptr;
@@ -620,18 +642,18 @@ namespace
         void replaceResultView(const std::string &query)
         {
             const std::string view = "temp." + quoteIdentifier(kSqlResultView);
-            db_->exec("SAVEPOINT tableskim_sql");
+            db_->execTransaction("SAVEPOINT tableskim_sql");
             try
             {
                 db_->exec("DROP VIEW IF EXISTS " + view);
                 db_->exec("CREATE TEMP VIEW " + quoteIdentifier(kSqlResultView) + " AS " + query);
                 // Some errors (e.g. unknown functions) show only when the view is used.
                 db_->prepare("SELECT * FROM " + view);
-                db_->exec("RELEASE tableskim_sql");
+                db_->execTransaction("RELEASE tableskim_sql");
             }
             catch (...)
             {
-                db_->exec("ROLLBACK TO tableskim_sql; RELEASE tableskim_sql");
+                db_->execTransaction("ROLLBACK TO tableskim_sql; RELEASE tableskim_sql");
                 throw;
             }
         }

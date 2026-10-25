@@ -381,6 +381,14 @@ void TuiApp::sqlFinished(const std::shared_ptr<TableBook> &book, const std::stri
     const size_t index = static_cast<size_t>(std::find(names.begin(), names.end(), result.sheet) - names.begin());
     if (index >= names.size())
         return;
+    if (views_.size() + 1 == names.size() && index < views_.size())
+    {
+        // A new sheet before the result sheets (a Group By): the views, and
+        // the sheet shown, move with their names.
+        views_.insert(views_.begin() + static_cast<std::ptrdiff_t>(index), nullptr);
+        if (sheet_ >= index)
+            ++sheet_;
+    }
     views_.resize(names.size());
     if (!rerun && views_[index])
     {
@@ -727,6 +735,12 @@ void TuiApp::startConversion()
             }
             else if (!rows)
                 setStatus("Conversion canceled");
+            else if (saving_ || (book_ && book_->modified()))
+            {
+                // Opening the result would close the file with the edits.
+                setStatus("Converted " + std::to_string(*rows) + " rows to " + utf8String(target.filename()) +
+                          " (not opened: there are unsaved changes)");
+            }
             else if (open(utf8String(target)))
                 setStatus("Converted " + std::to_string(*rows) + " rows to " + utf8String(target.filename()));
         }); });
@@ -3380,7 +3394,8 @@ void TuiApp::pasteCells(const std::string &text)
 // so that the file can be replaced (Windows), and the file opened again.
 void TuiApp::save(std::function<void()> then)
 {
-    if (!book_ || saving_)
+    // The book is closed after saving, which would stop an export.
+    if (!book_ || refuseReopen())
         return;
     saving_ = true;
     setStatus("Saving...");
@@ -3415,16 +3430,28 @@ void TuiApp::saveFinished(std::shared_ptr<TableBook> book, const std::filesystem
     catch (const std::exception &e)
     {
         spdlog::error("Failed to replace {}: {}", utf8String(target), e.what());
-        open(path);
+        if (!open(path))
+            dropViews();
         showError("Failed to replace " + utf8String(target) + ":\n" + e.what() +
                   "\n\nThe file with the changes was saved as " + utf8String(result.written) + ".");
         return;
     }
     if (!open(path))
+    {
+        dropViews();
         return;
+    }
     setStatus("Saved " + utf8String(target.filename()));
     if (then)
         then();
+}
+
+// The file could not be opened again after it was closed: the views would
+// outlive their book, so nothing is shown (r tries again).
+void TuiApp::dropViews()
+{
+    table_holder_->DetachAllChildren();
+    views_.clear();
 }
 
 void TuiApp::checkUnsaved(std::function<void()> action, bool reload)

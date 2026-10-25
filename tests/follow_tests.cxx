@@ -192,6 +192,13 @@ TEST_CASE("readAppended: quotes only start a quoted field at its start")
     CHECK(readAppended(*book) == AppendResult::Appended);
     CHECK(exactRows(*model, 4) == 4);
     CHECK(cellText(*model, 3, 1) == "two\nlines");
+    // A stray quote in a quoted field does not end it.
+    file.write("5,\"12\" pizza\n", true);
+    CHECK(readAppended(*book) == AppendResult::None);
+    file.write("box\"\n", true);
+    CHECK(readAppended(*book) == AppendResult::Appended);
+    CHECK(exactRows(*model, 5) == 5);
+    CHECK(cellText(*model, 4, 1) == "12\" pizza\nbox");
 }
 
 TEST_CASE("readAppended: whether every byte has been read")

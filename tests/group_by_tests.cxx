@@ -251,6 +251,15 @@ TEST_CASE("GroupByAccumulator: sums and means without the noise of binary arithm
     CHECK(rowText(sheet.rows[0]) == std::vector<std::string>{"3", "2755498.35", "918499.45"});
 }
 
+TEST_CASE("GroupByAccumulator: whole numbers keep their 16th digit", "[regression]")
+{
+    GroupByAccumulator accumulator({.keys = {}, .values = {0}, .aggregates = {Aggregate::Sum, Aggregate::Mean}});
+    accumulator.add({int64_t{1234567890123456}});
+    const ResultSheet sheet = accumulator.result(letters);
+    REQUIRE(sheet.rows.size() == 1);
+    CHECK(rowText(sheet.rows[0]) == std::vector<std::string>{"1", "1234567890123456", "1234567890123456"});
+}
+
 TEST_CASE("ResultRows: blocks shared with the model, other reads copied")
 {
     ResultSheet sheet;

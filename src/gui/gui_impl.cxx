@@ -416,7 +416,9 @@ GuiTableView *TableWindow::result_sheet_view(const std::string &sheet)
     const auto names = table_book->sheetNames();
     const size_t index = static_cast<size_t>(std::find(names.begin(), names.end(), sheet) - names.begin());
     GuiTableView *table_view = nullptr;
-    if (index < gui_table_views.size())
+    // The views follow the book's sheets. A new sheet may come before
+    // others: executeSql() puts its result before a Group By's.
+    if (gui_table_views.size() == names.size() && index < gui_table_views.size())
     {
         // The same sheet with new rows.
         table_view = gui_table_views[index];
@@ -428,6 +430,12 @@ GuiTableView *TableWindow::result_sheet_view(const std::string &sheet)
         tab->begin();
         table_view = add_sheet_view(sheet);
         tab->end();
+        if (index + 1 < gui_table_views.size())
+        {
+            tab->insert(*table_view, static_cast<int>(index));
+            std::rotate(gui_table_views.begin() + static_cast<std::ptrdiff_t>(index), gui_table_views.end() - 1,
+                        gui_table_views.end());
+        }
         if (gui_table_views.size() == 1)
         {
             // See open(): the first view keeps the tab bar height fixed.
@@ -1206,6 +1214,10 @@ void TableWindow::appended_rows_read(const std::shared_ptr<TableBook> &book, App
             readFileStamp(utf8Path(current_path), file_mtime_, file_size_);
         return;
     }
+    // This may arrive while a menu or dialog runs its own loop, whose view
+    // the reopen would delete, or after an edit; the next poll asks again.
+    if (NestedLoopGuard::active() || Fl::grab() || table_book->modified())
+        return;
     spdlog::debug("Follow: {} was changed, reading it again", current_path);
     std::filesystem::file_time_type mtime;
     std::uintmax_t size;

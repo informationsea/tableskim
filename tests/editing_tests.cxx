@@ -510,6 +510,20 @@ TEST_CASE("Saving Excel cells keeps the rest of the workbook")
     CHECK(cellText(*openSheet(*reopened, names[1]), 0, 0) == untouched);
 }
 
+TEST_CASE("Saving Excel cells keeps carriage returns")
+{
+    const auto path = copyDemo("normal.xlsx");
+    std::shared_ptr<TableBook> book = TableBook::open(path);
+    auto model = openSheet(*book);
+    readAll(*model);
+    book->setEditing(true);
+    REQUIRE(setText(*model, 0, 0, "a\r\nb\rc"));
+    saveInPlace(book, path);
+
+    auto reopened = TableBook::open(path);
+    CHECK(*waitForCell(*openSheet(*reopened), 0, 0).value == CellValue{std::string("a\r\nb\rc")});
+}
+
 TEST_CASE("Excel: typed edits, locked cells and merged ranges")
 {
     const auto path = tempDirectory() / "typed.xlsx";

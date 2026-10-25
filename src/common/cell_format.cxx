@@ -540,6 +540,43 @@ std::string percentText(size_t count, size_t total)
     return text;
 }
 
+namespace
+{
+    // formatCell() of a time, cut after `unit`. The year may have more or
+    // fewer than four digits (10000, -221), so the parts are found from the
+    // end of the date.
+    std::string timeText(double micros, TimeUnit unit)
+    {
+        const std::string full = formatCell(DateTime{static_cast<int64_t>(std::llround(micros))});
+        const size_t date = std::min(full.find(' '), full.size()); // "2024-03-05"
+        switch (unit)
+        {
+        case TimeUnit::Year:
+            return full.substr(0, date - 6);
+        case TimeUnit::Month:
+            return full.substr(0, date - 3);
+        case TimeUnit::Day:
+            return full.substr(0, date);
+        case TimeUnit::Hour:
+        case TimeUnit::Minute:
+            return full.substr(0, date + 6);
+        case TimeUnit::Second:
+            break;
+        }
+        return full.substr(0, date + 9);
+    }
+
+    // A time bound of a filter: the start of the day for dates. A bound the
+    // filters cannot read (a year past 9999 or before 0) lies beyond every
+    // time they can, so it is left out.
+    void addTimeBound(std::vector<FilterCondition> &conditions, size_t column, FilterOp op, double micros, bool dates)
+    {
+        std::string text = timeText(micros, dates ? TimeUnit::Day : TimeUnit::Second);
+        if (parseTemporal(text))
+            conditions.push_back({column, op, std::move(text)});
+    }
+} // namespace
+
 std::string histogramEdgeText(const Histogram &histogram, double edge)
 {
     if (histogram.kind != HistogramKind::Time)
@@ -552,23 +589,7 @@ std::string histogramEdgeText(const Histogram &histogram, double edge)
         std::snprintf(text.data(), text.size() + 1, "%.*f", digits, edge);
         return text == "-0" ? "0" : text;
     }
-    const auto micros = static_cast<int64_t>(std::llround(edge));
-    const std::string text = formatCell(DateTime{micros}); // "2024-03-05 13:00:05"
-    switch (histogram.unit)
-    {
-    case TimeUnit::Year:
-        return text.substr(0, 4);
-    case TimeUnit::Month:
-        return text.substr(0, 7);
-    case TimeUnit::Day:
-        return text.substr(0, 10);
-    case TimeUnit::Hour:
-    case TimeUnit::Minute:
-        return text.substr(0, 16);
-    case TimeUnit::Second:
-        break;
-    }
-    return text.substr(0, 19);
+    return timeText(edge, histogram.unit);
 }
 
 std::string histogramBinLabel(const Histogram &histogram, size_t bin)
@@ -597,23 +618,24 @@ std::vector<FilterCondition> histogramBinConditions(const Histogram &histogram, 
 {
     if (bin + 1 >= histogram.edges.size())
         return {};
-    // Times as the filters read them: a date means the start of its day.
-    auto text = [&](double edge)
+    if (histogram.kind == HistogramKind::Time)
     {
-        if (histogram.kind != HistogramKind::Time)
-            return histogramEdgeText(histogram, edge);
-        const auto micros = static_cast<int64_t>(std::llround(edge));
-        const std::string full = formatCell(DateTime{micros});
-        return histogram.unit >= TimeUnit::Day ? full.substr(0, 10) : full.substr(0, 19);
-    };
-    // The last edge of times lies past every value; numbers can end on it.
-    const bool last = bin + 2 == histogram.edges.size() && histogram.kind == HistogramKind::Number;
+        // Times as the filters read them: a date means the start of its day.
+        // The last edge of times lies past every value.
+        std::vector<FilterCondition> conditions{{column, FilterOp::IsDate, {}}};
+        const bool dates = histogram.unit >= TimeUnit::Day;
+        addTimeBound(conditions, column, FilterOp::GreaterEqual, histogram.edges[bin], dates);
+        addTimeBound(conditions, column, FilterOp::Less, histogram.edges[bin + 1], dates);
+        return conditions;
+    }
+    // Numbers can end on the last edge.
+    const bool last = bin + 2 == histogram.edges.size();
     return {
         // Values of another kind (counted as others) can still pass the
         // comparisons: "15 kg" as text, a boolean or a date as a number.
-        {column, histogram.kind == HistogramKind::Time ? FilterOp::IsDate : FilterOp::IsNumber, {}},
-        {column, FilterOp::GreaterEqual, text(histogram.edges[bin])},
-        {column, last ? FilterOp::LessEqual : FilterOp::Less, text(histogram.edges[bin + 1])},
+        {column, FilterOp::IsNumber, {}},
+        {column, FilterOp::GreaterEqual, histogramEdgeText(histogram, histogram.edges[bin])},
+        {column, last ? FilterOp::LessEqual : FilterOp::Less, histogramEdgeText(histogram, histogram.edges[bin + 1])},
     };
 }
 
@@ -642,8 +664,9 @@ std::string scatterValueText(const Histogram &axis, double coordinate)
 {
     if (axis.kind == HistogramKind::Time)
     {
-        const std::string text = formatCell(DateTime{static_cast<int64_t>(std::llround(coordinate))});
-        return axis.dates ? text.substr(0, 10) : text;
+        if (axis.dates)
+            return timeText(coordinate, TimeUnit::Day);
+        return formatCell(DateTime{static_cast<int64_t>(std::llround(coordinate))});
     }
     // Whole numbers in full: the shortest form of 500000.0 is "5e+05".
     if ((axis.integers || coordinate == std::floor(coordinate)) && std::fabs(coordinate) < 9.007199254740992e15)
@@ -727,37 +750,28 @@ namespace
     {
         if (high < low)
             std::swap(low, high);
-        std::string low_text;
-        std::string high_text;
         if (bins.kind == HistogramKind::Time)
         {
             // Dates as the filters read them: the start of the day.
-            auto text = [&](double micros)
-            {
-                const std::string full = formatCell(DateTime{static_cast<int64_t>(std::llround(micros))});
-                return bins.dates ? full.substr(0, 10) : full.substr(0, 19);
-            };
             constexpr double MICROS_PER_DAY = 86400e6;
-            low_text = text(bins.dates ? std::ceil(low / MICROS_PER_DAY) * MICROS_PER_DAY : std::ceil(low / 1e6) * 1e6);
-            high_text = text(high);
+            conditions.push_back({column, FilterOp::IsDate, {}});
+            addTimeBound(conditions, column, FilterOp::GreaterEqual,
+                         bins.dates ? std::ceil(low / MICROS_PER_DAY) * MICROS_PER_DAY : std::ceil(low / 1e6) * 1e6, bins.dates);
+            addTimeBound(conditions, column, FilterOp::LessEqual, high, bins.dates);
+            return;
         }
-        else
+        // A digit finer than the bins; integers between the bounds.
+        const int digits = bins.integers ? 0 : bins.decimals + 1;
+        const double scale = std::pow(10.0, digits);
+        auto text = [&](double value)
         {
-            // A digit finer than the bins; integers between the bounds.
-            const int digits = bins.integers ? 0 : bins.decimals + 1;
-            const double scale = std::pow(10.0, digits);
-            auto text = [&](double value)
-            {
-                char buffer[64];
-                std::snprintf(buffer, sizeof(buffer), "%.*f", digits, value);
-                return std::string(std::string_view(buffer) == "-0" ? "0" : buffer);
-            };
-            low_text = text(std::ceil(low * scale) / scale);
-            high_text = text(std::floor(high * scale) / scale);
-        }
-        conditions.push_back({column, bins.kind == HistogramKind::Time ? FilterOp::IsDate : FilterOp::IsNumber, {}});
-        conditions.push_back({column, FilterOp::GreaterEqual, low_text});
-        conditions.push_back({column, FilterOp::LessEqual, high_text});
+            char buffer[64];
+            std::snprintf(buffer, sizeof(buffer), "%.*f", digits, value);
+            return std::string(std::string_view(buffer) == "-0" ? "0" : buffer);
+        };
+        conditions.push_back({column, FilterOp::IsNumber, {}});
+        conditions.push_back({column, FilterOp::GreaterEqual, text(std::ceil(low * scale) / scale)});
+        conditions.push_back({column, FilterOp::LessEqual, text(std::floor(high * scale) / scale)});
     }
 } // namespace
 
