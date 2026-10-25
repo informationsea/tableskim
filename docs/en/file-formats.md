@@ -2,7 +2,10 @@
 
 [← Contents](README.md)
 
-TableSkim picks the format from the file name and its first bytes. Every
+TableSkim picks the format from the file name and its first bytes. Parquet,
+DuckDB and SQLite files are recognized by their first bytes, so they open
+even with another extension, and text starting with `{` or `[` is read as
+JSON. The extensions below are the usual ones. Every
 format opens in the same kind of window; formats with several tables show
 each table as a **sheet** (a tab at the bottom of the GUI window, or at the
 top of the terminal UI).

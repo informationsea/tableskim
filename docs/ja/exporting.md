@@ -23,6 +23,8 @@ TableSkim は [編集モード](editing.md) の外では開いたファイルを
 | `.xlsx`          | Excel ブック                               |
 | `.parquet`       | Parquet                                    |
 
+これ以外の拡張子を指定すると、GUI ではファイルダイアログで選んだ種類の拡張子を付け、ターミナル UI では「Choose a name ending in .csv, .tsv, .xlsx or .parquet」と表示して受け付けません。
+
 ファイル名の候補は、元のファイル名に `-export` を付けたもの（例：
 `sales-export.csv`）です。複数のシートを持つファイルでは、
 `book-Sheet1-export.xlsx` のようにシート名も入ります。

@@ -25,6 +25,10 @@ Choose a file name; its extension selects the format:
 | `.xlsx`          | Excel workbook                                                          |
 | `.parquet`       | Parquet                                                                 |
 
+If the name has none of these extensions, the GUI adds the extension of the
+type chosen in the file dialog, and the terminal UI refuses it with the
+message "Choose a name ending in .csv, .tsv, .xlsx or .parquet".
+
 The suggested name is the source file name with `-export` added, for
 example `sales-export.csv`; for a file with several sheets the sheet name
 is included, as in `book-Sheet1-export.xlsx`.

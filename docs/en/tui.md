@@ -23,6 +23,7 @@ histograms; of the scatter plot, it shows the 2D density.
 - [Sheets](#sheets)
 - [Running SQL](#running-sql)
 - [Exporting and converting](#exporting-and-converting)
+- [Editing cells](#editing-cells)
 - [Following a growing file](#following-a-growing-file)
 - [Other settings](#other-settings)
 - [Key reference](#key-reference)

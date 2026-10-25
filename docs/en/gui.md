@@ -20,6 +20,7 @@
 - [Sheets](#sheets)
 - [Running SQL](#running-sql)
 - [Exporting and converting](#exporting-and-converting)
+- [Editing cells](#editing-cells)
 - [Reloading changed files](#reloading-changed-files)
 - [Display options](#display-options)
 - [Menu reference](#menu-reference)
