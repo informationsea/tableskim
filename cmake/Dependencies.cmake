@@ -373,13 +373,12 @@ FetchContent_Declare(
 )
 # GCC's UndefinedBehaviorSanitizer (the asan preset) makes Abseil's
 # comparisons of function pointers with null no constant expressions, which
-# fails its build; leave these checks out of Abseil itself.
+# fails the build of Abseil and RE2; leave these checks out of both.
 set(_tableskim_cxx_flags "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*undefined")
     string(APPEND CMAKE_CXX_FLAGS " -fno-sanitize=null,nonnull-attribute,returns-nonnull-attribute")
 endif()
 FetchContent_MakeAvailable(absl)
-set(CMAKE_CXX_FLAGS "${_tableskim_cxx_flags}")
 
 set(RE2_BUILD_TESTING OFF)
 # Its install rules would export the Abseil targets, which are not installed.
@@ -393,6 +392,7 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(re2)
+set(CMAKE_CXX_FLAGS "${_tableskim_cxx_flags}")
 
 FetchContent_Declare(
     spdlog
