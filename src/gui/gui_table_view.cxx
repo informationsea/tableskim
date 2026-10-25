@@ -74,7 +74,7 @@ namespace
         return escapeLabel(label, true);
     }
 
-    void gui_table_callback(Fl_Widget *w, void *userdata)
+    void gui_table_callback(Fl_Widget *w, void *)
     {
         auto *self = static_cast<GuiTableView *>(w);
         if (!self)

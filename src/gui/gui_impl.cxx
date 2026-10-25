@@ -1111,12 +1111,12 @@ namespace
     }
 } // namespace
 
-void open_callback2(Fl_Button *widget, void *userdata)
+void open_callback2(Fl_Button *, void *userdata)
 {
     open_callback(nullptr, userdata);
 }
 
-void open_callback(Fl_Menu_ *widget, void *userdata)
+void open_callback(Fl_Menu_ *, void *)
 {
     // An empty front window opens the file itself, replacing its contents.
     NestedLoopGuard::defer(chooseAndOpenFile);
@@ -1280,7 +1280,7 @@ void TableWindow::set_follow(bool enabled)
         revert_if_changed();
 }
 
-void callback_follow(Fl_Menu_ *w, void *)
+void callback_follow(Fl_Menu_ *, void *)
 {
     if (auto *self = frontTableWindow())
     {
@@ -1335,7 +1335,7 @@ void TableWindow::set_use_monospace_font(bool use)
     sidebar_text->redraw();
 }
 
-void callback_use_monospace_font(Fl_Menu_ *w, void *userdata)
+void callback_use_monospace_font(Fl_Menu_ *w, void *)
 {
 
     if (auto *self = frontTableWindow())
@@ -1376,7 +1376,7 @@ void TableWindow::set_first_row_as_header(bool use)
     }
 }
 
-void callback_use_first_row_as_header(Fl_Menu_ *w, void *userdata)
+void callback_use_first_row_as_header(Fl_Menu_ *w, void *)
 {
     if (auto *self = frontTableWindow())
     {
@@ -1583,7 +1583,7 @@ void callback_export_view(Fl_Menu_ *, void *)
         self->export_view();
 }
 
-void callback_skip_meta_lines(Fl_Menu_ *w, void *userdata)
+void callback_skip_meta_lines(Fl_Menu_ *w, void *)
 {
     if (auto *self = frontTableWindow())
     {
