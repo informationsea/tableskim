@@ -97,12 +97,14 @@ namespace
                 sql += ", bool_and(" + v + " IS NULL OR " + v + " = '' OR (regexp_full_match(" + v + ", " +
                        duckDbStringLiteral(candidate.pattern) + ") AND TRY_CAST(" + v + " AS " + candidate.type +
                        ") IS NOT NULL";
-                // Integer text must round-trip through DOUBLE without losing
-                // digits, even when another row makes BIGINT unsuitable.
+                // Text must round-trip through DOUBLE without losing digits:
+                // integers even when another row makes BIGINT unsuitable,
+                // decimals such as "1.10" only if they print back the same.
                 if (std::string_view(candidate.type) == "DOUBLE")
-                    sql += " AND (NOT regexp_full_match(" + v + ", " + duckDbStringLiteral(candidates[0].pattern) +
-                           ") OR coalesce(TRY_CAST(TRY_CAST(" + v + " AS DOUBLE) AS BIGINT) = TRY_CAST(" + v +
-                           " AS BIGINT), FALSE))";
+                    sql += " AND coalesce(CASE WHEN regexp_full_match(" + v + ", " +
+                           duckDbStringLiteral(candidates[0].pattern) + ") THEN TRY_CAST(TRY_CAST(" + v +
+                           " AS DOUBLE) AS BIGINT) = TRY_CAST(" + v + " AS BIGINT) ELSE TRY_CAST(TRY_CAST(" + v +
+                           " AS DOUBLE) AS VARCHAR) = " + v + " END, FALSE)";
                 sql += "))";
             }
         }
@@ -471,8 +473,12 @@ namespace
                 {
                     if (i > 0)
                         text += delimiter;
-                    if (columns[i] < row->size())
-                        appendField(text, formatCell((*row)[columns[i]]), delimiter);
+                    std::string field = columns[i] < row->size() ? formatCell((*row)[columns[i]]) : std::string();
+                    // A lone empty field must not become a blank line, which readers skip.
+                    if (columns.size() == 1 && field.empty())
+                        text += "\"\"";
+                    else
+                        appendField(text, field, delimiter);
                 }
                 text += '\n';
             }
