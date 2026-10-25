@@ -126,9 +126,15 @@ set(CPACK_RPM_PACKAGE_CONFLICTS "${_tableskim_other_package}")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_VENDOR "Yasunobu Okamura")
 set(CPACK_PACKAGE_CONTACT "Yasunobu Okamura <okamura@informationsea.info>")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A simple table viewer")
-set(CPACK_PACKAGE_DESCRIPTION
-    "TableSkim is a simple viewer for CSV and Excel tables, with GUI and TUI frontends.")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A lightweight viewer for tabular files")
+set(_tableskim_formats "CSV, TSV and VCF files (optionally gzip, bzip2, xz or zstd compressed), Excel workbooks, Parquet, JSON / NDJSON, DuckDB and SQLite databases")
+if(TABLESKIM_BUILD_GUI)
+    set(CPACK_PACKAGE_DESCRIPTION
+        "TableSkim is a lightweight viewer for ${_tableskim_formats}, with a graphical and a terminal user interface.")
+else()
+    set(CPACK_PACKAGE_DESCRIPTION
+        "TableSkim is a lightweight viewer for ${_tableskim_formats}. This package has the terminal user interface only.")
+endif()
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 
 # One package containing just the runtime component.
@@ -176,6 +182,9 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # RPM
 set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
 set(CPACK_RPM_PACKAGE_GROUP "Applications/Productivity")
+# CPackRPM does not fall back to CPACK_PACKAGE_DESCRIPTION, but to CMake's
+# generic CPACK_PACKAGE_DESCRIPTION_FILE.
+set(CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}")
 set(CPACK_RPM_PACKAGE_LICENSE "AGPL-3.0-only")
 set(CPACK_RPM_PACKAGE_AUTOREQ ON)
 set(CPACK_RPM_PACKAGE_RELEASE 1)

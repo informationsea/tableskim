@@ -678,6 +678,8 @@ ScatterWindow::~ScatterWindow()
     Fl::remove_timeout(deferredUpdate, this);
     if (model_)
         model_->cancelScatter();
+    // The choices read their menus (column_menu_) while the window hides.
+    window_.reset();
 }
 
 void ScatterWindow::show(std::shared_ptr<TableModel> model, const std::string &sheet_name, size_t x_column,

@@ -86,10 +86,13 @@ jobs:
         gui: ["ON", "OFF"]
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:10
+    # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
+    # the path on the host, not the one mounted in the container.
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
     steps:
+      - name: Point ccache at the workspace
+        run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: |
           dnf install -y dnf-plugins-core epel-release
@@ -140,10 +143,13 @@ jobs:
         gui: ["ON", "OFF"]
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:8
+    # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
+    # the path on the host, not the one mounted in the container.
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
     steps:
+      - name: Point ccache at the workspace
+        run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: |
           dnf install -y dnf-plugins-core epel-release

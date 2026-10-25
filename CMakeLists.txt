@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.26)
 
 project(table-skim VERSION 0.3.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
@@ -39,6 +39,18 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 include(cmake/Dependencies.cmake)
 include(cmake/Licenses.cmake)
+
+# Warnings for TableSkim's own targets only: the dependencies keep their own
+# flags, and their headers are system headers (SYSTEM in
+# cmake/Dependencies.cmake), so their warnings stay out.
+add_library(tableskim-warnings INTERFACE)
+if(MSVC)
+    target_compile_options(tableskim-warnings INTERFACE /W4)
+else()
+    # Designated initializers leave the members they skip at their defaults
+    # on purpose, which GCC reports as missing.
+    target_compile_options(tableskim-warnings INTERFACE -Wall -Wextra -Wno-missing-field-initializers)
+endif()
 
 add_library(tableskim-common
     STATIC
@@ -127,7 +139,7 @@ target_include_directories(tableskim-common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(tableskim-common PUBLIC duckdb-static sqlite3 spdlog::spdlog csv OpenXLSX::OpenXLSX)
-target_link_libraries(tableskim-common PRIVATE pugixml::pugixml tableskim-compression CLI11::CLI11 re2::re2)
+target_link_libraries(tableskim-common PRIVATE pugixml::pugixml tableskim-compression CLI11::CLI11 re2::re2 tableskim-warnings)
 target_compile_definitions(tableskim-common PRIVATE
     $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
 )
@@ -154,7 +166,7 @@ set(TABLESKIM_TUI_SOURCES
 # (or with --tui), the terminal UI.
 add_executable(tableskim ${TABLESKIM_TUI_SOURCES})
 target_include_directories(tableskim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
-target_link_libraries(tableskim PRIVATE tableskim-common ftxui::screen ftxui::dom ftxui::component)
+target_link_libraries(tableskim PRIVATE tableskim-common ftxui::screen ftxui::dom ftxui::component tableskim-warnings)
 target_compile_definitions(tableskim PRIVATE
     $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
 )
@@ -166,7 +178,7 @@ add_dependencies(tableskim tableskim-git-revision)
 if(WIN32 AND TABLESKIM_BUILD_GUI)
     add_executable(tableskim-tui ${TABLESKIM_TUI_SOURCES})
     target_include_directories(tableskim-tui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
-    target_link_libraries(tableskim-tui PRIVATE tableskim-common ftxui::screen ftxui::dom ftxui::component)
+    target_link_libraries(tableskim-tui PRIVATE tableskim-common ftxui::screen ftxui::dom ftxui::component tableskim-warnings)
     target_compile_definitions(tableskim-tui PRIVATE
         $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
     )
@@ -240,6 +252,7 @@ if(TABLESKIM_BUILD_GUI)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
     )
     target_link_libraries(tableskim-gui PUBLIC tableskim-common fltk::fltk fltk::images)
+    target_link_libraries(tableskim-gui PRIVATE tableskim-warnings)
     target_compile_definitions(tableskim-gui PRIVATE
         $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
     )
@@ -348,7 +361,7 @@ endif()
 if(UNIX AND NOT APPLE AND TABLESKIM_BUILD_GUI)
     # Generate hicolor theme icons, using pixel-fitted small artwork where available.
     add_executable(tableskim-icon-resize src/tools/icon_resize.cxx)
-    target_link_libraries(tableskim-icon-resize PRIVATE fltk::images)
+    target_link_libraries(tableskim-icon-resize PRIVATE fltk::images tableskim-warnings)
 
     set(TABLESKIM_ICON_PNG ${CMAKE_CURRENT_SOURCE_DIR}/src/images/icon.png)
     set(TABLESKIM_ICON_SIZES 16 24 32 48 64 128 256 512)
@@ -386,6 +399,7 @@ add_executable(tableskim-html-manual
     src/common/help_docs.cxx
 )
 target_include_directories(tableskim-html-manual PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
+target_link_libraries(tableskim-html-manual PRIVATE tableskim-warnings)
 file(GLOB_RECURSE TABLESKIM_MANUAL_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/docs/*.md
     ${CMAKE_CURRENT_SOURCE_DIR}/docs/*.png
@@ -403,6 +417,7 @@ add_custom_target(tableskim-manual ALL DEPENDS ${TABLESKIM_MANUAL_DIR}/README.ht
 enable_testing()
 
 add_executable(tableskim-tests
+    tests/test_main.cxx
     tests/table_tests.cxx
     tests/table_csv_tests.cxx
     tests/table_excel_tests.cxx
@@ -433,13 +448,20 @@ add_executable(tableskim-tests
     src/tui/tui_search.cxx
 )
 target_include_directories(tableskim-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
-target_link_libraries(tableskim-tests PRIVATE tableskim-common Catch2::Catch2WithMain pugixml::pugixml ftxui::screen)
+target_link_libraries(tableskim-tests PRIVATE tableskim-common Catch2::Catch2 pugixml::pugixml ftxui::screen tableskim-warnings)
 target_compile_definitions(tableskim-tests PRIVATE
     TABLESKIM_DEMO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/demo/data"
     TABLESKIM_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs"
     $<$<BOOL:${TABLESKIM_BUILD_GUI}>:TABLESKIM_TESTS_HAVE_GUI=1>
 )
-add_test(NAME tableskim-tests COMMAND tableskim-tests)
+# One ctest test per test case, so that `ctest -j` runs them in parallel and
+# a hung one times out alone. Listed when ctest runs (PRE_TEST), not after
+# every link. Hidden tests ([.super-large]) are not listed.
+include(${catch2_SOURCE_DIR}/extras/Catch.cmake)
+catch_discover_tests(tableskim-tests
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES TIMEOUT 300
+)
 
 # End-to-end tests of the terminal UI (tests/tui/), which run tableskim -t in a
 # pseudo-terminal: Linux only, with Python 3 and pyte. AUTO adds them when
@@ -482,7 +504,7 @@ if(TABLESKIM_BUILD_GUI AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_
             tests/gui/gui_test_helpers.cxx
             tests/gui/gui_window_tests.cxx
         )
-        target_link_libraries(tableskim-gui-tests PRIVATE tableskim-gui Catch2::Catch2)
+        target_link_libraries(tableskim-gui-tests PRIVATE tableskim-gui Catch2::Catch2 tableskim-warnings)
         target_compile_definitions(tableskim-gui-tests PRIVATE
             TABLESKIM_DEMO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/demo/data"
         )

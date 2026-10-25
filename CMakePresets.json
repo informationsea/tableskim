@@ -2,7 +2,7 @@
     "version": 3,
     "cmakeMinimumRequired": {
         "major": 3,
-        "minor": 22,
+        "minor": 26,
         "patch": 0
     },
     "configurePresets": [
@@ -40,6 +40,16 @@
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "asan",
+            "displayName": "Debug with AddressSanitizer and UndefinedBehaviorSanitizer (Ninja)",
+            "inherits": "debug",
+            "cacheVariables": {
+                "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
             }
         },
         {
@@ -137,6 +147,10 @@
             "configurePreset": "release"
         },
         {
+            "name": "asan",
+            "configurePreset": "asan"
+        },
+        {
             "name": "make-debug",
             "configurePreset": "make-debug"
         },
@@ -182,6 +196,15 @@
             "name": "release",
             "inherits": "test-base",
             "configurePreset": "release"
+        },
+        {
+            "name": "asan",
+            "inherits": "test-base",
+            "configurePreset": "asan",
+            "environment": {
+                "UBSAN_OPTIONS": "print_stacktrace=1",
+                "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/lsan.supp"
+            }
         },
         {
             "name": "make-debug",

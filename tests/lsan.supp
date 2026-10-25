@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions for the asan test preset (CMakePresets.json).
+# System libraries that keep caches until the process exits.
+
+# Fonts registered with FcConfigAppFontAddFile() (gui_fonts.cxx), and the
+# configuration that fontconfig parses with expat.
+leak:libfontconfig.so
+leak:libexpat.so

@@ -151,7 +151,7 @@ must allow it (inside tmux, enable `set-clipboard`).
 Requirements:
 
 - A C++20 compiler (GCC, Clang, AppleClang or MSVC 2026)
-- CMake 3.22 or newer (Ninja recommended)
+- CMake 3.26 or newer (Ninja recommended)
 - On Linux: fontconfig development files
 
 All other dependencies (FLTK, DuckDB, SQLite, OpenXLSX, csv-parser, CLI11,
@@ -174,6 +174,10 @@ cmake --preset release
 cmake --build --preset release
 ctest --preset release
 ```
+
+The `asan` preset builds and tests a Debug build with AddressSanitizer and
+UndefinedBehaviorSanitizer (`cmake --preset asan`, `cmake --build --preset
+asan`, `ctest --preset asan`).
 
 To build only the terminal UI (no FLTK, X11 or fontconfig needed, e.g. for
 a headless server), configure with `-DTABLESKIM_BUILD_GUI=OFF`; `tableskim`

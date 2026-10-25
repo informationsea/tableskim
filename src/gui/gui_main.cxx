@@ -117,12 +117,12 @@ int runGui(const CommandLineOptions &options)
     return Fl::run();
 }
 
-void setFltkScheme(Fl_Menu_ *widget, void *data)
+void setFltkScheme(Fl_Menu_ *, void *data)
 {
     setTheme(static_cast<const char *>(data));
 }
 
-void quit(Fl_Menu_ *widget, void *data)
+void quit(Fl_Menu_ *, void *)
 {
     // Saving reopens files, which must wait until no menu or alert is up.
     NestedLoopGuard::defer([]
