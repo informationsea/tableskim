@@ -11,9 +11,11 @@ frontends sharing one core library, linked into a single executable:
 | Target             | Sources                            | Notes                                                    |
 | ------------------ | ---------------------------------- | -------------------------------------------------------- |
 | `tableskim-common` | `src/common/`                      | Static library: data model, backends, threading          |
-| `tableskim`        | `src/main.cxx`, `src/gui/`, `src/tui/` | FLTK GUI and FTXUI TUI (`tableskim`; `TableSkim` app bundle / `.exe` on macOS and Windows) |
+| `tableskim-gui`    | `src/gui/`                         | Static library: the FLTK GUI (`runGui()`), with the GUI only |
+| `tableskim`        | `src/main.cxx`, `src/tui/`         | FLTK GUI (links `tableskim-gui`) and FTXUI TUI (`tableskim`; `TableSkim` app bundle / `.exe` on macOS and Windows) |
 | `tableskim-tui`    | `src/main.cxx`, `src/tui/`         | Windows with the GUI only: TUI-only console executable (`tableskim-tui.exe`) |
 | `tableskim-tests`  | `tests/`                           | Catch2 v3 unit tests                                     |
+| `tableskim-gui-tests` | `tests/gui/`                    | Linux with the GUI only: Catch2 tests driving the GUI under Xvfb |
 
 `main()` parses the shared options (`cli_options.{hxx,cxx}` in
 `src/common/`) and calls `runGui()` or `runTui()`: the TUI with `-t/--tui`
@@ -392,6 +394,23 @@ Match the existing code:
   ```
 
   Add a test there for TUI changes that the Catch2 tests cannot reach.
+- The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
+  Linux only), which links `tableskim-gui` and runs under Xvfb: ctest
+  starts it with `xvfb-run -a` (`TABLESKIM_GUI_TESTS`: `AUTO` when
+  `xvfb-run` is found; `ON` requires it, as CI does). Its `main()` sets
+  FLTK up as `runGui()` does and points `XDG_STATE_HOME` at a temporary
+  directory. Tests create a `gui_test::Window` (`gui_test_helpers.hxx`),
+  call the `TableWindow` methods the menus call, and read the state of
+  the widgets and models; they wait with `gui_test::waitFor()`, which
+  turns the FLTK loop. Answer a dialog or alert with a `ModalAnswer` set
+  up before the call that shows it (`pressButton()`); one left unanswered
+  is closed after 10 seconds and the test fails. Views made by a reopen
+  may reuse the old ones' addresses: tell a reopen by what the view
+  shows. Never run it on the user's display; by hand:
+
+  ```sh
+  xvfb-run -a -s "-screen 0 1600x1200x24" ./build/debug/tableskim-gui-tests
+  ```
 
 ## Git
 

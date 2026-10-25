@@ -174,7 +174,9 @@ if(WIN32 AND TABLESKIM_BUILD_GUI)
 endif()
 
 if(TABLESKIM_BUILD_GUI)
-    target_sources(tableskim PRIVATE
+    # The GUI is a library of its own, so that tableskim-gui-tests can drive
+    # it too (tests/gui/).
+    add_library(tableskim-gui STATIC
         src/gui/gui_main.hxx
         src/gui/gui_main.cxx
         src/gui/gui_callbacks.hxx
@@ -209,7 +211,7 @@ if(TABLESKIM_BUILD_GUI)
         src/gui/gui_window_menu.hxx
         src/gui/gui_window_menu.cxx
     )
-    fltk_wrap_ui(tableskim
+    fltk_wrap_ui(tableskim-gui
         src/gui/gui.fl
     )
     # The user manual, built into the program for Help > User Manual.
@@ -231,23 +233,28 @@ if(TABLESKIM_BUILD_GUI)
         COMMENT "Embedding the user manual"
         VERBATIM
     )
-    target_sources(tableskim PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/help_files.cxx)
-    target_sources(tableskim PRIVATE ${tableskim_FLTK_UI_SRCS})
-    target_include_directories(tableskim PRIVATE
+    target_sources(tableskim-gui PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/help_files.cxx)
+    target_sources(tableskim-gui PRIVATE ${tableskim-gui_FLTK_UI_SRCS})
+    target_include_directories(tableskim-gui PUBLIC
         ${CMAKE_CURRENT_BINARY_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
     )
-    target_link_libraries(tableskim PRIVATE fltk::fltk fltk::images)
-    target_compile_definitions(tableskim PRIVATE TABLESKIM_HAS_GUI=1)
-    set_target_properties(tableskim PROPERTIES MACOSX_BUNDLE ON)
+    target_link_libraries(tableskim-gui PUBLIC tableskim-common fltk::fltk fltk::images)
+    target_compile_definitions(tableskim-gui PRIVATE
+        $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
+    )
     if(UNIX AND NOT APPLE)
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
-        target_link_libraries(tableskim PRIVATE PkgConfig::FONTCONFIG)
+        target_link_libraries(tableskim-gui PUBLIC PkgConfig::FONTCONFIG)
     endif()
     if(WIN32)
-        target_link_libraries(tableskim PRIVATE shell32 ole32)
+        target_link_libraries(tableskim-gui PUBLIC shell32 ole32)
     endif()
+
+    target_link_libraries(tableskim PRIVATE tableskim-gui)
+    target_compile_definitions(tableskim PRIVATE TABLESKIM_HAS_GUI=1)
+    set_target_properties(tableskim PROPERTIES MACOSX_BUNDLE ON)
 endif()
 
 if(APPLE AND TABLESKIM_BUILD_GUI)
@@ -459,6 +466,33 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_TUI_TESTS STREQUAL "OFF"
         message(FATAL_ERROR "TABLESKIM_TUI_TESTS=ON needs Python 3 with pyte (python3-pyte, or pip install -r tests/tui/requirements.txt)")
     else()
         message(STATUS "Terminal UI tests skipped: Python 3 with pyte not found")
+    endif()
+endif()
+
+# Tests that drive the GUI in-process (tests/gui/): Linux only, under Xvfb
+# (xvfb-run). AUTO adds them when xvfb-run is found, ON requires it (CI).
+set(TABLESKIM_GUI_TESTS AUTO CACHE STRING "Tests of the GUI under Xvfb (AUTO, ON or OFF; Linux only)")
+set_property(CACHE TABLESKIM_GUI_TESTS PROPERTY STRINGS AUTO ON OFF)
+if(TABLESKIM_BUILD_GUI AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_GUI_TESTS STREQUAL "OFF")
+    find_program(TABLESKIM_XVFB_RUN xvfb-run)
+    if(TABLESKIM_XVFB_RUN)
+        add_executable(tableskim-gui-tests
+            tests/gui/gui_test_main.cxx
+            tests/gui/gui_test_helpers.hxx
+            tests/gui/gui_test_helpers.cxx
+            tests/gui/gui_window_tests.cxx
+        )
+        target_link_libraries(tableskim-gui-tests PRIVATE tableskim-gui Catch2::Catch2)
+        target_compile_definitions(tableskim-gui-tests PRIVATE
+            TABLESKIM_DEMO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/demo/data"
+        )
+        add_test(NAME tableskim-gui-tests
+            COMMAND ${TABLESKIM_XVFB_RUN} -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:tableskim-gui-tests>)
+        set_tests_properties(tableskim-gui-tests PROPERTIES TIMEOUT 600)
+    elseif(TABLESKIM_GUI_TESTS STREQUAL "ON")
+        message(FATAL_ERROR "TABLESKIM_GUI_TESTS=ON needs xvfb-run (the xvfb package)")
+    else()
+        message(STATUS "GUI tests skipped: xvfb-run not found")
     endif()
 endif()
 
