@@ -3,10 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
-#include <cstdint>
 #include <deque>
 #include <fstream>
-#include <fcntl.h>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -15,6 +13,8 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <cstdint>
+#include <fcntl.h>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -302,12 +302,13 @@ namespace
         explicit PlainFileBuf(const std::filesystem::path &path) : name_(utf8FileName(path))
         {
 #ifdef _WIN32
+            // Keep an open CSV writable and replaceable while it is being followed.
             HANDLE handle = CreateFileW(path.c_str(), GENERIC_READ,
                                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                         nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (handle == INVALID_HANDLE_VALUE)
                 throw std::runtime_error("Cannot open CSV file: " + name_);
-            const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+            const int fd = _open_osfhandle(reinterpret_cast<std::intptr_t>(handle), _O_RDONLY | _O_BINARY);
             if (fd == -1)
             {
                 CloseHandle(handle);
