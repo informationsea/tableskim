@@ -10,10 +10,23 @@
 # - An inline string (t="inlineStr") is read from <is><t> only, so rich text
 #   (<is><r><t>...) comes back empty. Its runs are joined, as OpenXLSX does
 #   for shared strings.
+# - XLStyles() leaves m_suppressWarnings uninitialized, which
+#   XLDocument::close() then copies (undefined behaviour, reported by the
+#   asan preset).
+# - ZipArchive::Open() leaks the file's data when miniz rejects it (a broken
+#   .xlsx file).
 
-set(file OpenXLSX/sources/XLCellValue.cpp)
-file(READ ${file} content)
-set(original "${content}")
+macro(tableskim_begin path)
+    set(file ${path})
+    file(READ ${file} content)
+    set(original "${content}")
+endmacro()
+
+macro(tableskim_end)
+    if(NOT content STREQUAL original)
+        file(WRITE ${file} "${content}")
+    endif()
+endmacro()
 
 function(tableskim_patch marker from to)
     string(FIND "${content}" "${marker}" found)
@@ -27,6 +40,8 @@ function(tableskim_patch marker from to)
     string(REPLACE "${from}" "${to}" content "${content}")
     set(content "${content}" PARENT_SCOPE)
 endfunction()
+
+tableskim_begin(OpenXLSX/sources/XLCellValue.cpp)
 
 set(anchor [[#include "XLXmlParser.hpp"              // pugixml wrapper
 ]])
@@ -66,6 +81,20 @@ tableskim_patch("tableskimInlineText(m_cellNode"
     [[return XLCellValue { m_cellNode->child("is").child("t").text().get() };]]
     [[return XLCellValue { tableskimInlineText(m_cellNode->child("is")) };]])
 
-if(NOT content STREQUAL original)
-    file(WRITE ${file} "${content}")
-endif()
+tableskim_end()
+
+tableskim_begin(OpenXLSX/sources/XLStyles.cpp)
+tableskim_patch("XLStyles::XLStyles() : m_suppressWarnings(false)"
+    [[XLStyles::XLStyles() {}]]
+    [[XLStyles::XLStyles() : m_suppressWarnings(false) {}]])
+tableskim_end()
+
+tableskim_begin(OpenXLSX/headers/detail/Zippy.hpp)
+tableskim_patch("TableSkim: not opened"
+    [[            if (!mz_zip_reader_init_mem(&m_Archive, m_zipData, m_zipSize, 0)) {
+]]
+    [[            if (!mz_zip_reader_init_mem(&m_Archive, m_zipData, m_zipSize, 0)) {
+                free(m_zipData); // TableSkim: not opened, so Close() would not free it
+                m_zipData = nullptr;
+]])
+tableskim_end()

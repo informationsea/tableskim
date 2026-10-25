@@ -219,9 +219,10 @@ FetchContent_Declare(
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 FetchContent_MakeAvailable(openxlsx)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
-# Fixes for reading numbers and inline strings (see the script). Run at every
-# configure rather than as a PATCH_COMMAND, which an existing checkout would
-# not run again when the script gains a fix; it leaves patched files alone.
+# Fixes for reading numbers and inline strings, and two memory errors (see the
+# script). Run at every configure rather than as a PATCH_COMMAND, which an
+# existing checkout would not run again when the script gains a fix; it leaves
+# patched files alone.
 execute_process(
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_LIST_DIR}/patches/openxlsx.cmake
     WORKING_DIRECTORY ${openxlsx_SOURCE_DIR}
