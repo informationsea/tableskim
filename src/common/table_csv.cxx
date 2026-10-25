@@ -12,6 +12,16 @@
 #include <streambuf>
 #include <vector>
 
+#ifdef _WIN32
+#include <cstdint>
+#include <fcntl.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <io.h>
+#include <windows.h>
+#endif
+
 #include <csv.hpp>
 
 #include "compress.hxx"
@@ -292,8 +302,21 @@ namespace
         explicit PlainFileBuf(const std::filesystem::path &path) : name_(utf8FileName(path))
         {
 #ifdef _WIN32
-            if (_wfopen_s(&file_, path.c_str(), L"rb") != 0)
-                file_ = nullptr;
+            // Keep an open CSV writable and replaceable while it is being followed.
+            HANDLE handle = CreateFileW(path.c_str(), GENERIC_READ,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (handle == INVALID_HANDLE_VALUE)
+                throw std::runtime_error("Cannot open CSV file: " + name_);
+            const int fd = _open_osfhandle(reinterpret_cast<std::intptr_t>(handle), _O_RDONLY | _O_BINARY);
+            if (fd == -1)
+            {
+                CloseHandle(handle);
+                throw std::runtime_error("Cannot open CSV file: " + name_);
+            }
+            file_ = _fdopen(fd, "rb");
+            if (!file_)
+                _close(fd);
 #else
             file_ = std::fopen(path.c_str(), "rb");
 #endif
