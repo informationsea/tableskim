@@ -688,23 +688,18 @@ namespace
     class ResultSheetSource : public SheetSource
     {
     public:
-        explicit ResultSheetSource(std::shared_ptr<const ResultSheet> sheet) : sheet_(std::move(sheet)) {}
+        explicit ResultSheetSource(std::shared_ptr<const ResultRows> rows) : rows_(std::move(rows)) {}
 
         SourceCapabilities capabilities() const override { return {}; }
-        std::vector<ColumnInfo> columns() override { return sheet_->columns; }
-        RowCount rowCount() override { return {sheet_->rows.size(), RowCount::Kind::Exact}; }
+        std::vector<ColumnInfo> columns() override { return rows_->columns(); }
+        RowCount rowCount() override { return {rows_->rowCount(), RowCount::Kind::Exact}; }
         RowBlockPtr read(size_t first_row, size_t max_rows, std::stop_token) override
         {
-            auto block = std::make_shared<RowBlock>();
-            block->first_row = first_row;
-            const size_t end = std::min(sheet_->rows.size(), first_row + std::min(max_rows, sheet_->rows.size()));
-            for (size_t row = first_row; row < end; ++row)
-                block->rows.push_back(sheet_->rows[row]);
-            return block;
+            return rows_->read(first_row, max_rows);
         }
 
     private:
-        std::shared_ptr<const ResultSheet> sheet_;
+        std::shared_ptr<const ResultRows> rows_;
     };
 } // namespace
 
@@ -1673,80 +1668,144 @@ void TableModel::retire()
     failScanLocked(error_message_);
 }
 
-AppendResult TableModel::readAppendedRows(std::stop_token stop)
+AppendResult TableModel::readAppendedRows(std::stop_token stop, bool &caught_up)
 {
+    caught_up = false;
+    size_t first_new = 0;
     {
         std::lock_guard lock(mutex_);
         // Rows still being read may include the new ones; a table cut short
-        // (stopReading()) stays so.
-        if (!source_ || state_ != ModelState::Ready || !eof_ || reading_stopped_)
+        // (stopReading()) stays so. A file known to be empty is never read.
+        const bool read_all = eof_ || (source_row_count_.isExact() && sequential_rows_ >= source_row_count_.value);
+        if (!source_ || state_ != ModelState::Ready || !read_all || reading_stopped_)
             return AppendResult::None;
         if (capabilities_.random_access)
             return AppendResult::Changed;
+        // Only the worker changes it.
+        first_new = sequential_rows_;
     }
-    const AppendResult result = source_->readAppended(stop);
+    const AppendResult result = source_->readAppended(stop, caught_up);
     if (result != AppendResult::Appended)
         return result;
 
-    std::vector<TableEvent> events;
+    // Read without the lock, merged into the cache with it below.
     const size_t B = options_.block_rows;
-    std::unique_lock lock(mutex_);
-    const size_t first_new = sequential_rows_;
-    const size_t old_column_count = std::max(column_count_, columns_.size());
+    std::vector<TableRow> rows;
     while (!stop.stop_requested())
     {
-        // The last block may be partly filled: the new rows go on in a copy
-        // of it, since readers share it.
-        const size_t start = sequential_rows_;
-        const size_t block_index = start / B;
-        const auto it = blocks_.find(block_index);
-        const RowBlockPtr old = it != blocks_.end() ? it->second.block : nullptr;
-        const size_t want = (block_index + 1) * B - start;
-        lock.unlock();
-        RowBlockPtr more = source_->read(start, want, stop);
-        lock.lock();
+        const RowBlockPtr more = source_->read(first_new + rows.size(), B, stop);
         if (!more || more->rows.empty())
             break;
+        rows.insert(rows.end(), more->rows.begin(), more->rows.end());
+        if (more->rows.size() < B)
+            break;
+    }
+    auto columns = source_->columns(); // a header may have been appended
+
+    std::vector<TableEvent> events;
+    std::unique_lock lock(mutex_);
+    const size_t old_column_count = std::max(column_count_, columns_.size());
+    const bool renamed = columns.size() != columns_.size() ||
+                         !std::equal(columns.begin(), columns.end(), columns_.begin(),
+                                     [](const ColumnInfo &a, const ColumnInfo &b) { return a.name == b.name; });
+    columns_ = std::move(columns);
+    for (size_t i = 0; i < rows.size();)
+    {
+        // The last block may be partly filled: the new rows go on in a copy
+        // of it as it is now (an edit may have replaced it meanwhile), since
+        // readers share it.
+        const size_t block_index = sequential_rows_ / B;
         auto merged = std::make_shared<RowBlock>();
         merged->first_row = block_index * B;
-        if (old)
+        if (const auto it = blocks_.find(block_index); it != blocks_.end())
         {
-            merged->rows = old->rows;
-            merged->locked_cells = old->locked_cells;
-            cache_bytes_ -= old->approxBytes();
+            merged->rows = it->second.block->rows;
+            merged->locked_cells = it->second.block->locked_cells;
+            cache_bytes_ -= it->second.block->approxBytes();
         }
-        for (const TableRow &row : more->rows)
+        while (i < rows.size() && merged->rows.size() < B)
         {
-            column_count_ = std::max(column_count_, row.size());
-            merged->rows.push_back(row);
+            column_count_ = std::max(column_count_, rows[i].size());
+            merged->rows.push_back(std::move(rows[i++]));
+            ++sequential_rows_;
         }
         cache_bytes_ += merged->approxBytes();
         blocks_[block_index] = {std::move(merged), ++use_clock_};
-        sequential_rows_ += more->rows.size();
-        if (more->rows.size() < want)
-            break;
     }
+    if (renamed || std::max(column_count_, columns_.size()) != old_column_count)
+        events.push_back({TableEvent::Kind::ColumnsChanged});
     if (sequential_rows_ > first_new)
     {
         source_row_count_ = {sequential_rows_, RowCount::Kind::Exact};
         events.push_back({TableEvent::Kind::RowCountChanged});
         events.push_back({TableEvent::Kind::RowsLoaded, first_new, sequential_rows_});
-        if (std::max(column_count_, columns_.size()) != old_column_count)
-            events.push_back({TableEvent::Kind::ColumnsChanged});
-        // A sort or filter takes the new rows in when applied again.
-        if (!view_.empty() && !pending_view_)
-            pending_view_ = view_;
-        restartSearchLocked();
-        if (stats_accumulator_)
-            restartStatsLocked();
-        if (histogram_.active)
-            restartHistogramLocked();
-        if (scatter_.active)
-            restartScatterLocked();
+        continueAfterAppendLocked(first_new);
     }
     lock.unlock();
     emit(events);
     return AppendResult::Appended;
+}
+
+// Rows appended to the file join the end of an unsorted view, so the work
+// done so far stands: a search and the statistics go on with the new rows,
+// and so do a histogram and a scatter plot whose bins hold them (else they
+// start over). Starting everything over on each append would never finish
+// on a large file that keeps growing. A sort puts the new rows anywhere: the
+// view is applied again, which starts the work over.
+void TableModel::continueAfterAppendLocked(size_t first_new)
+{
+    if (!view_.sort.empty())
+    {
+        if (!pending_view_)
+            pending_view_ = view_;
+        return;
+    }
+    std::vector<const TableRow *> added; // in the view
+    for (size_t row = first_new; row < sequential_rows_; ++row)
+    {
+        const TableRow *source_row = sourceRowLocked(row);
+        if (source_row && (!view_rows_ || matchesFilter(*source_row, view_.filter)))
+            added.push_back(source_row);
+    }
+    if (view_rows_ && !added.empty())
+    {
+        auto rows = std::make_shared<std::vector<size_t>>(*view_rows_);
+        for (size_t row = first_new; row < sequential_rows_; ++row)
+        {
+            if (const TableRow *source_row = sourceRowLocked(row); source_row && matchesFilter(*source_row, view_.filter))
+                rows->push_back(row);
+        }
+        view_rows_ = std::move(rows);
+    }
+    if (added.empty())
+        return;
+    if (search_spec_ && search_.done && !search_.truncated && search_.error.empty())
+        search_.done = false;
+    if (stats_accumulator_ && stats_.done)
+        stats_.done = false;
+    const auto all = [&](const auto &fits)
+    { return std::all_of(added.begin(), added.end(), [&](const TableRow *row) { return fits(*row); }); };
+    if (histogram_.active && histogram_.counting)
+    {
+        const std::shared_ptr<HistogramCounter> counter = histogram_job_ ? histogram_job_->counter : nullptr;
+        if (counter && all([&](const TableRow &row) { return counter->fits(cellAt(row, histogram_.column)); }))
+            histogram_.done = false;
+        else
+            restartHistogramLocked();
+    }
+    else if (histogram_.active && histogram_.done)
+        restartHistogramLocked(); // values of text: which are the most frequent may change
+    if (scatter_.active && scatter_.counting)
+    {
+        const std::shared_ptr<ScatterCounter> counter = scatter_job_ ? scatter_job_->counter : nullptr;
+        if (counter && all([&](const TableRow &row)
+                           { return counter->fits(cellAt(row, scatter_.x_column), cellAt(row, scatter_.y_column)); }))
+            scatter_.done = false;
+        else
+            restartScatterLocked();
+    }
+    else if (scatter_.active && scatter_.done)
+        restartScatterLocked();
 }
 
 bool TableModel::step(DataSource &data_source, std::stop_token stop)
@@ -1795,9 +1854,9 @@ bool TableModel::step(DataSource &data_source, std::stop_token stop)
                     worked = stepSearch(lock, stop, events);
                 else if (stats_accumulator_ && !stats_.done)
                     worked = stepStats(lock, stop, events);
-                else if (histogram_job_)
+                else if (histogram_job_ && !histogram_.done)
                     worked = stepHistogram(lock, stop, events);
-                else if (scatter_job_)
+                else if (scatter_job_ && !scatter_.done)
                     worked = stepScatter(lock, stop, events);
                 else
                     worked = stepCount(lock, stop, events);
@@ -1813,9 +1872,9 @@ bool TableModel::step(DataSource &data_source, std::stop_token stop)
             worked = stepSearch(lock, stop, events);
         else if (stats_accumulator_ && !stats_.done)
             worked = stepStats(lock, stop, events);
-        else if (histogram_job_)
+        else if (histogram_job_ && !histogram_.done)
             worked = stepHistogram(lock, stop, events);
-        else if (scatter_job_)
+        else if (scatter_job_ && !scatter_.done)
             worked = stepScatter(lock, stop, events);
         else
             worked = stepCount(lock, stop, events);
@@ -2468,7 +2527,7 @@ void TableModel::finishHistogramPassLocked(std::vector<TableEvent> &events)
     {
         histogram_.histogram = job.counter->result();
         histogram_.done = true;
-        histogram_job_.reset();
+        // Kept for rows appended later (continueAfterAppendLocked()).
     }
     else
     {
@@ -2628,7 +2687,7 @@ void TableModel::finishScatterPassLocked(std::vector<TableEvent> &events)
     {
         scatter_.plot = job.counter->result();
         scatter_.done = true;
-        scatter_job_.reset();
+        // Kept for rows appended later (continueAfterAppendLocked()).
     }
     else
     {
@@ -2847,7 +2906,43 @@ void TableBook::loadSqlSchema(std::function<void(std::vector<SqlTable>)> done)
         done(std::move(schema)); });
 }
 
-std::string TableBook::addResultSheet(const std::string &name, std::shared_ptr<const ResultSheet> rows)
+std::shared_ptr<const ResultRows> ResultRows::make(ResultSheet sheet, size_t block_rows)
+{
+    auto rows = std::make_shared<ResultRows>();
+    rows->columns_ = std::move(sheet.columns);
+    rows->row_count_ = sheet.rows.size();
+    rows->block_rows_ = std::max<size_t>(block_rows, 1);
+    for (size_t first = 0; first < sheet.rows.size(); first += rows->block_rows_)
+    {
+        auto block = std::make_shared<RowBlock>();
+        block->first_row = first;
+        const size_t end = std::min(sheet.rows.size(), first + rows->block_rows_);
+        block->rows.assign(std::make_move_iterator(sheet.rows.begin() + static_cast<std::ptrdiff_t>(first)),
+                           std::make_move_iterator(sheet.rows.begin() + static_cast<std::ptrdiff_t>(end)));
+        rows->blocks_.push_back(std::move(block));
+    }
+    return rows;
+}
+
+RowBlockPtr ResultRows::read(size_t first_row, size_t max_rows) const
+{
+    // The model reads blocks of the size these were made with. A shorter
+    // block than asked for ends the table, so only the last may be one.
+    if (first_row % block_rows_ == 0 && first_row / block_rows_ < blocks_.size())
+    {
+        const RowBlockPtr &block = blocks_[first_row / block_rows_];
+        const bool last = first_row / block_rows_ + 1 == blocks_.size();
+        if (max_rows == block_rows_ || (last && max_rows >= block->rows.size()))
+            return block;
+    }
+    auto block = std::make_shared<RowBlock>();
+    block->first_row = first_row;
+    for (size_t row = first_row; row < row_count_ && row - first_row < max_rows; ++row)
+        block->rows.push_back(blocks_[row / block_rows_]->rows[row % block_rows_]);
+    return block;
+}
+
+std::string TableBook::addResultSheet(const std::string &name, std::shared_ptr<const ResultRows> rows)
 {
     std::shared_ptr<TableModel> replaced;
     std::string sheet = name;
@@ -2873,7 +2968,7 @@ std::string TableBook::addResultSheet(const std::string &name, std::shared_ptr<c
     return sheet;
 }
 
-void TableBook::readAppended(std::function<void(AppendResult)> done)
+void TableBook::readAppended(std::function<void(AppendResult, bool caught_up)> done)
 {
     scheduler_->post([this, done = std::move(done)](DataSource &, std::stop_token stop)
                      {
@@ -2887,17 +2982,20 @@ void TableBook::readAppended(std::function<void(AppendResult)> done)
             }
         }
         AppendResult result = AppendResult::None;
+        bool caught_up = !models.empty();
         for (const auto &model : models)
         {
             AppendResult sheet = AppendResult::Changed;
+            bool sheet_caught_up = false;
             try
             {
-                sheet = model->readAppendedRows(stop);
+                sheet = model->readAppendedRows(stop, sheet_caught_up);
             }
             catch (const std::exception &)
             {
                 // E.g. a half-written row in an encoding: reading the file again tells.
             }
+            caught_up = caught_up && sheet_caught_up;
             if (sheet == AppendResult::Changed)
                 result = AppendResult::Changed;
             else if (sheet == AppendResult::Appended && result == AppendResult::None)
@@ -2907,7 +3005,7 @@ void TableBook::readAppended(std::function<void(AppendResult)> done)
         if (result == AppendResult::Appended && has_file_stamp_)
             has_file_stamp_ = readFileStamp(path_, file_mtime_, file_size_);
         if (done)
-            done(result); });
+            done(result, caught_up && result != AppendResult::Changed); });
 }
 
 void TableBook::setEditing(bool editing)

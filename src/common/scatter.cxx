@@ -189,6 +189,15 @@ void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row
         points_[slot] = point;
 }
 
+bool ScatterCounter::fits(const CellValue &x, const CellValue &y) const
+{
+    if (!plot_.plottable() || !y_.fits(y))
+        return false;
+    if (!plot_.categorical())
+        return x_.fits(x);
+    return isEmptyCell(x) || categoryOf(x).has_value();
+}
+
 ScatterPlot ScatterCounter::result() const
 {
     ScatterPlot plot = plot_;

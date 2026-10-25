@@ -142,6 +142,10 @@ public:
     void add(const CellValue &x, const CellValue &y, size_t view_row);
     // A copy, with the points so far.
     ScatterPlot result() const;
+    // False if the row has a value outside the grid that a layout taken
+    // with it would have covered: a number or time beyond an axis, or a
+    // new value of a categorical X without "(other)" (rows added later).
+    bool fits(const CellValue &x, const CellValue &y) const;
 
 private:
     ScatterPlot plot_;

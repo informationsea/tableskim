@@ -69,8 +69,8 @@ std::optional<GroupBySpec> askGroupBySpec(const TableModel &model, const HiddenC
     Fl_Check_Browser values(2 * MARGIN + list_width, list_top, list_width, list_height);
     for (const size_t column : columns)
     {
-        // '@' would start a symbol.
-        const std::string name = escapeLabel(model.columnName(column));
+        // Drawn as plain text (no '@' symbols), unlike widget labels.
+        const std::string name = model.columnName(column);
         keys.add(name.c_str(), chosen(initial.keys, column) ? 1 : 0);
         values.add(name.c_str(), chosen(initial.values, column) ? 1 : 0);
     }

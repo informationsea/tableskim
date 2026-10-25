@@ -102,7 +102,14 @@ public:
     // read() has reached the end, looks for whole rows appended to the file
     // since, which read() then returns after the last row. None while the
     // rows are still being read (they may include the new ones).
-    virtual AppendResult readAppended(std::stop_token) { return AppendResult::Changed; }
+    // `caught_up` tells whether every byte of the file has been read now
+    // (not, say, a row still being written). A file without rows yet takes
+    // its header from the rows appended, as when it is read.
+    virtual AppendResult readAppended(std::stop_token, bool &caught_up)
+    {
+        caught_up = false;
+        return AppendResult::Changed;
+    }
 };
 
 struct SqlOutcome

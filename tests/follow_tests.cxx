@@ -28,13 +28,16 @@ namespace
         std::filesystem::path path_;
     };
 
-    AppendResult readAppended(TableBook &book)
+    AppendResult readAppended(TableBook &book, bool *caught_up = nullptr)
     {
-        std::promise<AppendResult> promise;
+        std::promise<std::pair<AppendResult, bool>> promise;
         auto future = promise.get_future();
-        book.readAppended([&promise](AppendResult result)
-                          { promise.set_value(result); });
-        return future.get();
+        book.readAppended([&promise](AppendResult result, bool up_to_date)
+                          { promise.set_value({result, up_to_date}); });
+        const auto [result, up_to_date] = future.get();
+        if (caught_up)
+            *caught_up = up_to_date;
+        return result;
     }
 
     std::shared_ptr<TableModel> openRead(std::shared_ptr<TableBook> &book, const std::filesystem::path &path,
@@ -168,4 +171,108 @@ TEST_CASE("readsAppendedRows: plain text files only")
     CHECK_FALSE(TableBook::open(kDemoData / "normal-utf16le-bom.tsv")->readsAppendedRows());
     CHECK_FALSE(TableBook::open(kDemoData / "normal.xlsx")->readsAppendedRows());
     CHECK_FALSE(TableBook::open(kDemoData / "normal.parquet")->readsAppendedRows());
+}
+
+TEST_CASE("readAppended: quotes only start a quoted field at its start")
+{
+    TempFile file("tableskim-test-follow-quotes.csv");
+    file.write("n,name\n1,a\n");
+    std::shared_ptr<TableBook> book;
+    auto model = openRead(book, file.path());
+    // A stray quote would otherwise hide every line break after it.
+    file.write("2,12\" pizza\n3,b\n", true);
+    CHECK(readAppended(*book) == AppendResult::Appended);
+    CHECK(exactRows(*model, 3) == 3);
+    CHECK(cellText(*model, 1, 1) == "12\" pizza");
+    CHECK(cellText(*model, 2, 1) == "b");
+    // A quoted field with a line break waits until it ends.
+    file.write("4,\"two\n", true);
+    CHECK(readAppended(*book) == AppendResult::None);
+    file.write("lines\"\n", true);
+    CHECK(readAppended(*book) == AppendResult::Appended);
+    CHECK(exactRows(*model, 4) == 4);
+    CHECK(cellText(*model, 3, 1) == "two\nlines");
+}
+
+TEST_CASE("readAppended: whether every byte has been read")
+{
+    TempFile file("tableskim-test-follow-caught-up.csv");
+    file.write("n\n1\n");
+    std::shared_ptr<TableBook> book;
+    auto model = openRead(book, file.path());
+    bool caught_up = false;
+    CHECK(readAppended(*book, &caught_up) == AppendResult::None);
+    CHECK(caught_up);
+    file.write("2\n3", true);
+    CHECK(readAppended(*book, &caught_up) == AppendResult::Appended);
+    CHECK_FALSE(caught_up); // "3" has no line break yet
+    file.write("\n", true);
+    CHECK(readAppended(*book, &caught_up) == AppendResult::Appended);
+    CHECK(caught_up);
+    CHECK(exactRows(*model, 3) == 3);
+}
+
+TEST_CASE("readAppended: a file without rows takes its header from them")
+{
+    TempFile file("tableskim-test-follow-empty.csv");
+    file.write("");
+    std::shared_ptr<TableBook> book;
+    auto model = openRead(book, file.path());
+    CHECK(model->rowCount().value == 0);
+    file.write("time,level\n12:00,INFO\n", true);
+    CHECK(readAppended(*book) == AppendResult::Appended);
+    CHECK(exactRows(*model, 1) == 1);
+    REQUIRE(waitFor([&]
+                    { return model->columnName(1) == "level"; }));
+    CHECK(model->columnName(0) == "time");
+    CHECK(cellText(*model, 0, 1) == "INFO");
+}
+
+TEST_CASE("readAppended: statistics, histograms and filters go on with the new rows")
+{
+    TempFile file("tableskim-test-follow-jobs.csv");
+    std::string text = "n,kind\n";
+    for (int i = 1; i <= 100; ++i)
+        text += std::to_string(i) + "," + (i % 2 ? "odd" : "even") + "\n";
+    file.write(text);
+    std::shared_ptr<TableBook> book;
+    auto model = openRead(book, file.path(), 8);
+
+    SECTION("statistics and a histogram whose bins hold the new values")
+    {
+        model->startColumnStats(0);
+        model->startHistogram(0, 10);
+        REQUIRE(waitFor([&]
+                        { return model->columnStatsState().done && model->histogramState().done; }));
+        const uint64_t generation = model->histogramState().generation;
+        file.write("50\n60,odd\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->columnStatsState().done && model->columnStatsState().stats.rows == 102; }));
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done && model->histogramState().histogram.values == 102; }));
+        CHECK(model->histogramState().generation == generation);
+
+        // A value beyond the bins starts the histogram over.
+        file.write("1000\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done && model->histogramState().histogram.values == 103; }));
+        CHECK(model->histogramState().generation != generation);
+        CHECK(model->histogramState().histogram.edges.back() >= 1000);
+    }
+    SECTION("an unsorted filter takes the matching rows at its end")
+    {
+        const ViewSpec odd{.filter = Filter{Filter::Combine::And, {{1, FilterOp::Equals, "odd"}}}};
+        model->setView(odd);
+        REQUIRE(waitFor([&]
+                        { return model->view() == odd; }));
+        CHECK(model->rowCount().value == 50);
+        file.write("101,odd\n102,even\n103,odd\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->rowCount().value == 52; }));
+        CHECK(cellText(*model, 51, 0) == "103");
+        CHECK(model->view() == odd);
+    }
 }

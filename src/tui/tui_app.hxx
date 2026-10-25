@@ -199,7 +199,7 @@ private:
     std::vector<size_t> group_columns_; // the column of each line
     size_t group_line_ = 0;
     size_t group_aggregate_ = 0; // the aggregate selected on its line
-    std::shared_ptr<const ResultSheet> group_result_;
+    std::shared_ptr<const ResultRows> group_result_;
     std::string group_sheet_;
 
     // Format dialog (%): edits the format of the cursor's column, applied

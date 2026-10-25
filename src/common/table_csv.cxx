@@ -194,17 +194,55 @@ namespace
     }
 
     // The length of the whole records at the start of `text`: up to the last
-    // line break outside double quotes.
-    size_t wholeRecordsLength(std::string_view text)
+    // line break outside a quoted field. As csv-parser reads them, a quote
+    // starts a quoted field only at the start of a field; anywhere else
+    // (12" pizza) it is an ordinary character.
+    size_t wholeRecordsLength(std::string_view text, char delimiter)
     {
+        enum class State
+        {
+            FieldStart,
+            Unquoted,
+            Quoted,
+            QuoteInQuoted, // a quote in a quoted field: its end, or the first of two
+        };
+        State state = State::FieldStart;
         size_t length = 0;
-        bool quoted = false;
         for (size_t i = 0; i < text.size(); ++i)
         {
-            if (text[i] == '"')
-                quoted = !quoted; // a doubled quote toggles twice
-            else if (text[i] == '\n' && !quoted)
-                length = i + 1;
+            const char c = text[i];
+            switch (state)
+            {
+            case State::FieldStart:
+            case State::Unquoted:
+                if (c == '\n')
+                {
+                    length = i + 1;
+                    state = State::FieldStart;
+                }
+                else if (c == delimiter)
+                    state = State::FieldStart;
+                else if (c == '"' && state == State::FieldStart)
+                    state = State::Quoted;
+                else
+                    state = State::Unquoted;
+                break;
+            case State::Quoted:
+                if (c == '"')
+                    state = State::QuoteInQuoted;
+                break;
+            case State::QuoteInQuoted:
+                if (c == '"')
+                    state = State::Quoted; // a doubled quote
+                else if (c == '\n')
+                {
+                    length = i + 1;
+                    state = State::FieldStart;
+                }
+                else
+                    state = c == delimiter ? State::FieldStart : State::Unquoted;
+                break;
+            }
         }
         return length;
     }
@@ -597,6 +635,28 @@ namespace
         const CountingBuf *counter_ = nullptr; // the file's bytes, if it can be followed
         uint64_t offset_ = 0;
         std::string tail_;
+        // A file without rows yet takes its header from the first rows
+        // appended, as it would have when read.
+        OpenOptions::Header header_option_;
+        CsvLayout *layout_;
+        bool header_decided_ = false;
+
+        // Takes the first pending row as the header if the option says so.
+        void decideHeader()
+        {
+            if (pending_.empty())
+                return;
+            header_decided_ = true;
+            const TableRow *second = pending_.size() > 1 ? &pending_[1] : nullptr;
+            const bool header = header_option_ == OpenOptions::Header::Yes ||
+                                (header_option_ == OpenOptions::Header::Auto && looksLikeHeaderRow(pending_.front(), second));
+            if (!header)
+                return;
+            layout_->header = true;
+            for (auto &cell : pending_.front())
+                columns_.push_back({std::move(std::get<std::string>(cell))});
+            pending_.pop_front();
+        }
 
         bool readRow(TableRow &out)
         {
@@ -614,7 +674,8 @@ namespace
     public:
         CsvSheetSource(const std::filesystem::path &path, const OpenOptions &options, bool skip_meta_lines, TextEncoding encoding,
                        CsvLayout &layout)
-            : path_(path), encoding_(encoding), skip_meta_lines_(skip_meta_lines)
+            : path_(path), encoding_(encoding), skip_meta_lines_(skip_meta_lines), header_option_(options.header),
+              layout_(&layout)
         {
             csv::CSVFormat format;
             if (const auto delimiter = delimiterFor(path, options))
@@ -651,18 +712,7 @@ namespace
                 if (readRow(row))
                     pending_.push_back(std::move(row));
             }
-            if (pending_.empty())
-                return;
-            const TableRow *second = pending_.size() > 1 ? &pending_[1] : nullptr;
-            const bool header = options.header == OpenOptions::Header::Yes ||
-                                (options.header == OpenOptions::Header::Auto && looksLikeHeaderRow(pending_.front(), second));
-            if (header)
-            {
-                layout.header = true;
-                for (auto &cell : pending_.front())
-                    columns_.push_back({std::move(std::get<std::string>(cell))});
-                pending_.pop_front();
-            }
+            decideHeader();
         }
 
         SourceCapabilities capabilities() const override
@@ -701,8 +751,9 @@ namespace
             return block;
         }
 
-        AppendResult readAppended(std::stop_token) override
+        AppendResult readAppended(std::stop_token, bool &caught_up) override
         {
+            caught_up = false;
             if (!counter_)
                 return AppendResult::Changed;
             if (!eof_ || !pending_.empty())
@@ -713,7 +764,8 @@ namespace
                 return AppendResult::None; // being replaced, say
             if (size < offset_)
                 return AppendResult::Changed;
-            if (size == offset_)
+            caught_up = size == offset_;
+            if (caught_up)
                 return AppendResult::None;
             // A file written anew is read again, not followed: the bytes
             // before the offset must be the ones read, and the last row
@@ -732,7 +784,7 @@ namespace
             in.read(appended.data(), static_cast<std::streamsize>(appended.size()));
             appended.resize(static_cast<size_t>(std::max<std::streamsize>(in.gcount(), 0)));
             // A row being written waits for its line break.
-            appended.resize(wholeRecordsLength(appended));
+            appended.resize(wholeRecordsLength(appended, delimiter_));
             if (appended.empty())
                 return AppendResult::None;
 
@@ -748,9 +800,12 @@ namespace
             while (readCsvRow(reader, row))
                 pending_.push_back(std::move(row));
             offset_ += appended.size();
+            caught_up = offset_ == size;
             tail_ += appended.substr(appended.size() - std::min(appended.size(), CountingBuf::TAIL_BYTES));
             if (tail_.size() > CountingBuf::TAIL_BYTES)
                 tail_.erase(0, tail_.size() - CountingBuf::TAIL_BYTES);
+            if (!header_decided_ && next_row_ == 0)
+                decideHeader();
             return pending_.empty() ? AppendResult::None : AppendResult::Appended;
         }
     };

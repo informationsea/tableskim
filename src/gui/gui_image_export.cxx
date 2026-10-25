@@ -96,6 +96,15 @@ void saveWidgetImage(Fl_Widget *widget, const std::string &file_name)
         const int filter = chooser.filter_value();
         last_filter = filter == 1 ? 1 : 0;
         target += extensions[last_filter];
+        // Not checked by SAVEAS_CONFIRM, which saw the name without it.
+        std::error_code exists_error;
+        if (std::filesystem::exists(target, exists_error))
+        {
+            NestedLoopGuard guard;
+            const std::string name = escapeLabel(utf8String(target.filename()));
+            if (fl_choice("%s already exists. Replace it?", "Cancel", "Replace", nullptr, name.c_str()) != 1)
+                return;
+        }
     }
     lastDirectory() = utf8String(target.parent_path());
     if (const std::string error = writeWidgetImage(widget, target); !error.empty())

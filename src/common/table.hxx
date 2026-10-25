@@ -411,8 +411,9 @@ private:
     // result). The model drops its source and is never stepped again.
     void retire();
     // Worker thread only (TableBook::readAppended()): adds the rows appended
-    // to the file once every row has been read.
-    AppendResult readAppendedRows(std::stop_token stop);
+    // to the file once every row has been read; see SheetSource::readAppended().
+    AppendResult readAppendedRows(std::stop_token stop, bool &caught_up);
+    void continueAfterAppendLocked(size_t first_new);
 
     // Editing, for TableBook.
     struct CellChange
@@ -555,6 +556,28 @@ private:
     std::vector<std::shared_ptr<ListenerEntry>> listeners_;
 };
 
+// The rows of a result sheet (TableBook::addResultSheet()), in shared
+// blocks that the sheet's model caches as they are, so that they are held
+// once however many books show them. Immutable.
+class ResultRows
+{
+public:
+    static std::shared_ptr<const ResultRows> make(ResultSheet sheet,
+                                                  size_t block_rows = TableModel::Options{}.block_rows);
+
+    const std::vector<ColumnInfo> &columns() const { return columns_; }
+    size_t rowCount() const { return row_count_; }
+    // The rows [first_row, first_row + max_rows): a stored block when that is
+    // one of them, else a copy.
+    RowBlockPtr read(size_t first_row, size_t max_rows) const;
+
+private:
+    std::vector<ColumnInfo> columns_;
+    size_t row_count_ = 0;
+    size_t block_rows_ = 1;
+    std::vector<RowBlockPtr> blocks_;
+};
+
 class TableBook
 {
 public:
@@ -605,16 +628,18 @@ public:
     // model is retired, as for executeSql(), and sheet() returns a new one.
     // Returns the sheet's name. The sheet cannot be edited, and is gone
     // with the book.
-    std::string addResultSheet(const std::string &name, std::shared_ptr<const ResultSheet> rows);
+    std::string addResultSheet(const std::string &name, std::shared_ptr<const ResultRows> rows);
 
     // --- following a growing file (tail -f) ---
     // See DataSource::readsAppendedRows().
     bool readsAppendedRows() const { return reads_appended_rows_; }
     // Reads the rows appended to the file into every sheet opened, on the
-    // worker after the step in progress; a sorted or filtered sheet applies
-    // its view again. `done` (on the worker) gets Appended if rows were
-    // added, Changed if the file was changed otherwise (reopen it then).
-    void readAppended(std::function<void(AppendResult)> done);
+    // worker after the step in progress; a sorted sheet applies its view
+    // again. `done` (on the worker) gets Appended if rows were added,
+    // Changed if the file was changed otherwise (reopen it then), and
+    // whether every byte of the file has been read now (not, say, a row
+    // still being written), after which the file's stamp may be taken as read.
+    void readAppended(std::function<void(AppendResult, bool caught_up)> done);
 
     // --- editing ---
     // See DataSource::supportsEditing().
@@ -661,7 +686,7 @@ private:
     std::shared_ptr<detail::Scheduler> scheduler_;
     mutable std::mutex models_mutex_;
     std::map<std::string, std::shared_ptr<TableModel>> models_;
-    std::map<std::string, std::shared_ptr<const ResultSheet>> result_sheets_; // guarded by models_mutex_
+    std::map<std::string, std::shared_ptr<const ResultRows>> result_sheets_; // guarded by models_mutex_
     std::jthread worker_; // declared last: started after, and stopped before, everything above
 };
 

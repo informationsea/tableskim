@@ -87,6 +87,9 @@ public:
     // The bin that add() counts `value` in; nullopt for empty values and
     // values of another kind.
     std::optional<size_t> binOf(const CellValue &value) const;
+    // False for a value of the layout's kind outside its bins, which a
+    // layout taken with it would have covered (rows added later, say).
+    bool fits(const CellValue &value) const;
 
 private:
     Histogram histogram_;

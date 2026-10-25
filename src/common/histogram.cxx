@@ -366,6 +366,11 @@ std::optional<size_t> HistogramCounter::binOf(const CellValue &value) const
     return std::nullopt;
 }
 
+bool HistogramCounter::fits(const CellValue &value) const
+{
+    return !histogramCoordinate(histogram_.kind, value) || binOf(value).has_value();
+}
+
 std::optional<double> histogramCoordinate(HistogramKind kind, const CellValue &value)
 {
     const Classified c = classify(value);

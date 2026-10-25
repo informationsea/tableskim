@@ -557,7 +557,7 @@ requestWindowMenuUpdate();} {}
   }
   decl {void set_follow(bool enabled)} {public local
   }
-  decl {void appended_rows_read(const std::shared_ptr<TableBook> &book, AppendResult result)} {public local
+  decl {void appended_rows_read(const std::shared_ptr<TableBook> &book, AppendResult result, bool caught_up)} {public local
   }
   decl {bool follow_ = false} {private local
   }
@@ -682,7 +682,7 @@ return !table_book || table_book->usesHeaderOption();} {}
   }
   decl {GuiTableView *result_sheet_view(const std::string &sheet)} {private local
   }
-  decl {std::shared_ptr<const ResultSheet> group_result_} {private local
+  decl {std::shared_ptr<const ResultRows> group_result_} {private local
   }
   decl {std::string group_sheet_} {private local
   }

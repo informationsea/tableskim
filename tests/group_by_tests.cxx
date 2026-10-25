@@ -178,9 +178,10 @@ TEST_CASE("TableBook::addResultSheet: a sheet of its own, replaced by the next r
 {
     auto book = TableBook::open(kDemoData / "multisheet.xlsx");
     const auto file_sheets = book->sheetNames();
-    auto first = std::make_shared<ResultSheet>();
-    first->columns = {{"key"}, {"count"}};
-    first->rows = {{std::string("a"), int64_t{2}}, {std::string("b"), int64_t{1}}};
+    ResultSheet first_sheet;
+    first_sheet.columns = {{"key"}, {"count"}};
+    first_sheet.rows = {{std::string("a"), int64_t{2}}, {std::string("b"), int64_t{1}}};
+    const auto first = ResultRows::make(std::move(first_sheet));
     const std::string name = book->addResultSheet("Group By", first);
     CHECK(name == "Group By");
     auto expected = file_sheets;
@@ -206,9 +207,10 @@ TEST_CASE("TableBook::addResultSheet: a sheet of its own, replaced by the next r
     }
     SECTION("the next result replaces the rows")
     {
-        auto second = std::make_shared<ResultSheet>();
-        second->columns = {{"total"}};
-        second->rows = {{int64_t{3}}};
+        ResultSheet second_sheet;
+        second_sheet.columns = {{"total"}};
+        second_sheet.rows = {{int64_t{3}}};
+        const auto second = ResultRows::make(std::move(second_sheet));
         CHECK(book->addResultSheet("Group By", second) == "Group By");
         CHECK(book->sheetNames() == expected);
         REQUIRE(waitFor([&]
@@ -227,9 +229,7 @@ TEST_CASE("TableBook::addResultSheet: a sheet of its own, replaced by the next r
 TEST_CASE("TableBook::addResultSheet: kept after an SQL query")
 {
     auto book = TableBook::open(kDemoData / "normal.parquet");
-    auto rows = std::make_shared<ResultSheet>();
-    rows->columns = {{"x"}};
-    book->addResultSheet("Group By", rows);
+    book->addResultSheet("Group By", ResultRows::make({.columns = {{"x"}}}));
     std::optional<TableBook::SqlResult> result;
     book->executeSql("SELECT 1 AS one", [&](const TableBook::SqlResult &r)
                      { result = r; });
@@ -249,4 +249,44 @@ TEST_CASE("GroupByAccumulator: sums and means without the noise of binary arithm
     const ResultSheet sheet = accumulator.result(letters);
     REQUIRE(sheet.rows.size() == 1);
     CHECK(rowText(sheet.rows[0]) == std::vector<std::string>{"3", "2755498.35", "918499.45"});
+}
+
+TEST_CASE("ResultRows: blocks shared with the model, other reads copied")
+{
+    ResultSheet sheet;
+    sheet.columns = {{"n"}};
+    for (int64_t i = 0; i < 1100; ++i)
+        sheet.rows.push_back({i});
+    const auto rows = ResultRows::make(std::move(sheet), 512);
+    CHECK(rows->rowCount() == 1100);
+
+    // The model's blocks are the stored ones.
+    const RowBlockPtr a = rows->read(512, 512);
+    CHECK(a == rows->read(512, 512));
+    CHECK(a->rows.size() == 512);
+    // The last one is shorter, which ends the table.
+    CHECK(rows->read(1024, 512)->rows.size() == 76);
+    // Other sizes are copies of the rows asked for, never fewer before the end.
+    const RowBlockPtr wide = rows->read(0, 1024);
+    CHECK(wide->rows.size() == 1024);
+    CHECK(wide->rows[1023][0] == CellValue{int64_t{1023}});
+    const RowBlockPtr odd = rows->read(500, 30);
+    CHECK(odd->first_row == 500);
+    CHECK(odd->rows.size() == 30);
+    CHECK(odd->rows[29][0] == CellValue{int64_t{529}});
+    CHECK(rows->read(1100, 512)->rows.empty());
+
+    // A book of another block size reads them too.
+    TableModel::Options options;
+    options.block_rows = 100;
+    auto book = TableBook::open(kDemoData / "normal.csv", {}, BackendRegistry::builtin(), options);
+    auto model = book->sheet(book->addResultSheet("Group By", rows));
+    REQUIRE(waitFor([&]
+                    { return model->state() == ModelState::Ready; }));
+    model->requestRange(1090, 1099);
+    REQUIRE(waitFor([&]
+                    { return model->rowCount().isExact(); }));
+    CHECK(model->rowCount().value == 1100);
+    CHECK(cellText(*model, 1099, 0) == "1099");
+    CHECK(cellText(*model, 513, 0) == "513");
 }

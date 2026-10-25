@@ -15,6 +15,9 @@
 
 class TableModel;
 
+// The sheet both UIs show a Group By in (TableBook::addResultSheet()).
+inline constexpr const char *GROUP_BY_SHEET = "Group By";
+
 // What is computed for each value column of a group, with the semantics of
 // the column statistics (ColumnStats): empty cells are left out, and numeric
 // text counts as a number.

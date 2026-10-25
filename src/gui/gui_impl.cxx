@@ -28,13 +28,14 @@ const double AUTO_REVERT_UNFOCUSED_INTERVAL = 5.0;
 const double FOLLOW_INTERVAL = 0.5;
 const int SIDEBAR_MIN_WIDTH = 80;
 const int TABLE_MIN_WIDTH = 200;
-// Opens the file in the front window if it is empty, else in a new window
-// (closed again if the file cannot be opened). Errors are shown. False if
-// the file could not be opened.
-bool openFileInWindow(const std::string &path);
+namespace
+{
+    // Opens the file in the front window if it is empty, else in a new
+    // window (closed again if the file cannot be opened). Errors are shown.
+    // False if the file could not be opened.
+    bool openFileInWindow(const std::string &path);
+} // namespace
 
-// The sheet a Group By adds (TableBook::addResultSheet()).
-const char *const GROUP_BY_SHEET = "Group By";
 
 namespace
 {
@@ -474,7 +475,7 @@ void TableWindow::show_group_by(std::optional<size_t> column)
     // window does not).
     if (!sheet || !table_book || !main_window->shown())
         return;
-    group_result_ = std::make_shared<const ResultSheet>(std::move(*sheet));
+    group_result_ = ResultRows::make(std::move(*sheet));
     group_sheet_ = table_book->addResultSheet(GROUP_BY_SHEET, group_result_);
     tab->value(result_sheet_view(group_sheet_));
     current_sheet_changed();
@@ -554,9 +555,13 @@ void callback_open_recent(Fl_Menu_ *menu, void *)
         // Opening shows alerts and may open a window: not from inside the menu.
         NestedLoopGuard::defer([path = entries[i]]
                                {
-            if (!openFileInWindow(path))
+            if (openFileInWindow(path))
+                return;
+            // Moved or deleted: off the list. A drive that cannot be
+            // reached now, or a file that is locked, stays on it.
+            std::error_code ec;
+            if (!std::filesystem::exists(utf8Path(path), ec) && !ec)
             {
-                // Moved or deleted: off the list.
                 recentFiles().remove(path);
                 if (auto *self = frontTableWindow())
                     self->sync_menu_items();
@@ -1052,30 +1057,30 @@ namespace
             break;
         }
     }
-} // namespace
 
-bool openFileInWindow(const std::string &path)
-{
-    auto *self = frontTableWindow();
-    if (!self)
+    bool openFileInWindow(const std::string &path)
     {
-        spdlog::error("No TableWindow to apply the menu item to");
+        auto *self = frontTableWindow();
+        if (!self)
+        {
+            spdlog::error("No TableWindow to apply the menu item to");
+            return false;
+        }
+        if (self->current_path.empty())
+            return self->open(path);
+        // If a file is already open, open the new file in a new window.
+        // Register it first: on macOS show() sends FL_FOCUS right away,
+        // and my_dispatch() only syncs the menu for known windows.
+        table_windows.push_back(std::make_unique<TableWindow>());
+        TableWindow *new_window = table_windows.back().get();
+        new_window->show();
+        if (new_window->open(path))
+            return true;
+        // Nothing to show in it.
+        new_window->close_window();
         return false;
     }
-    if (self->current_path.empty())
-        return self->open(path);
-    // If a file is already open, open the new file in a new window.
-    // Register it first: on macOS show() sends FL_FOCUS right away,
-    // and my_dispatch() only syncs the menu for known windows.
-    table_windows.push_back(std::make_unique<TableWindow>());
-    TableWindow *new_window = table_windows.back().get();
-    new_window->show();
-    if (new_window->open(path))
-        return true;
-    // Nothing to show in it.
-    new_window->close_window();
-    return false;
-}
+} // namespace
 
 void open_callback2(Fl_Button *widget, void *userdata)
 {
@@ -1127,6 +1132,7 @@ namespace
         std::weak_ptr<TableWindow *> window;
         std::weak_ptr<TableBook> book;
         AppendResult result;
+        bool caught_up = false;
     };
 
     void appendDoneHandler(void *data)
@@ -1135,7 +1141,7 @@ namespace
         const auto window = done->window.lock();
         const auto book = done->book.lock();
         if (window && book)
-            (*window)->appended_rows_read(book, done->result);
+            (*window)->appended_rows_read(book, done->result, done->caught_up);
     }
 } // namespace
 
@@ -1154,8 +1160,8 @@ void TableWindow::revert_if_changed()
         {
             append_pending_ = true;
             table_book->readAppended([window = std::weak_ptr<TableWindow *>(alive_token_),
-                                      book = std::weak_ptr<TableBook>(table_book)](AppendResult result)
-                                     { Fl::awake(appendDoneHandler, new AppendDone{window, book, result}); });
+                                      book = std::weak_ptr<TableBook>(table_book)](AppendResult result, bool caught_up)
+                                     { Fl::awake(appendDoneHandler, new AppendDone{window, book, result, caught_up}); });
         }
         return;
     }
@@ -1186,18 +1192,18 @@ void TableWindow::revert_if_changed()
     open(path, false);
 }
 
-void TableWindow::appended_rows_read(const std::shared_ptr<TableBook> &book, AppendResult result)
+void TableWindow::appended_rows_read(const std::shared_ptr<TableBook> &book, AppendResult result, bool caught_up)
 {
     // A reopen meanwhile: the new book has read the file anew.
     if (book != table_book)
         return;
     append_pending_ = false;
-    if (result == AppendResult::None)
-        return;
-    if (result == AppendResult::Appended)
+    if (result != AppendResult::Changed)
     {
-        // Read up to here: no reopen when Follow is turned off.
-        readFileStamp(utf8Path(current_path), file_mtime_, file_size_);
+        // All read: no reopen when Follow is turned off. With bytes left
+        // (a row being written), the old stamp makes Auto Revert read them.
+        if (caught_up)
+            readFileStamp(utf8Path(current_path), file_mtime_, file_size_);
         return;
     }
     spdlog::debug("Follow: {} was changed, reading it again", current_path);

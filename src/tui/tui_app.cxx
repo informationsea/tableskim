@@ -39,8 +39,6 @@ namespace
     // Match the GUI's limit on memory used by a single clear and its undo.
     const size_t MAX_CLEARED_CELLS = 5000000;
     const int FILTER_OP_WIDTH = 12;
-    // The sheet a Group By adds (TableBook::addResultSheet()).
-    const char *const GROUP_BY_SHEET = "Group By";
 
     // Adds the column to the list in column order, or takes it out.
     void toggleColumn(std::vector<size_t> &columns, size_t column)
@@ -526,15 +524,18 @@ void TuiApp::revertIfChanged()
         if (append_pending_)
             return;
         append_pending_ = true;
-        book_->readAppended([this, post = poster(), book = std::weak_ptr<TableBook>(book_)](AppendResult result)
-                            { post([this, book, result]
+        book_->readAppended([this, post = poster(), book = std::weak_ptr<TableBook>(book_)](AppendResult result, bool caught_up)
+                            { post([this, book, result, caught_up]
                                    {
             // A reopen meanwhile: the new book has read the file anew.
             if (book.lock() != book_)
                 return;
             append_pending_ = false;
-            if (result == AppendResult::Appended)
-                readFileStamp(utf8Path(path_), file_mtime_, file_size_); // read up to here
+            // All read: no reopen when Follow is turned off. With bytes
+            // left (a row being written), the old stamp makes Auto Revert
+            // read them.
+            if (result != AppendResult::Changed && caught_up)
+                readFileStamp(utf8Path(path_), file_mtime_, file_size_);
             else if (result == AppendResult::Changed)
             {
                 std::filesystem::file_time_type mtime;
@@ -3084,7 +3085,7 @@ void TuiApp::startGroupBy()
             if (!book_ || book.lock() != book_)
                 return;
             const size_t groups = (*sheet)->rows.size();
-            group_result_ = std::make_shared<const ResultSheet>(std::move(**sheet));
+            group_result_ = ResultRows::make(std::move(**sheet));
             group_sheet_ = book_->addResultSheet(GROUP_BY_SHEET, group_result_);
             showResultSheet(group_sheet_);
             setStatus(std::to_string(groups) + " groups in the sheet \"" + group_sheet_ + "\"");
