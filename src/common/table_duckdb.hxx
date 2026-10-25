@@ -35,9 +35,21 @@ struct DuckDbRelation
 // Throws std::runtime_error.
 std::unique_ptr<DataSource> openDuckDbRelations(std::vector<DuckDbRelation> relations);
 
-// A new, not yet created directory for DuckDB to spill to (its temp_directory
-// setting). In-memory databases otherwise use ".tmp" in the current directory.
+namespace duckdb
+{
+    struct DBConfig;
+}
+
+// A new directory, readable and writable only by the current user, for DuckDB
+// to spill to (its temp_directory setting). In-memory databases otherwise use
+// ".tmp" in the current directory. Throws std::runtime_error if it cannot be
+// created that way: a shared temporary directory must not hold opened data.
 std::filesystem::path duckDbTempDirectory();
+
+// Makes DuckDB keep files it creates in `directory` private to the current
+// user. When `confine_writes` is true, SQL cannot write anywhere else.
+void configureDuckDbSpillFileSystem(duckdb::DBConfig &config, const std::filesystem::path &directory,
+                                    bool confine_writes);
 
 // A path for the read_*() functions, which take a glob pattern without an
 // escape: brackets make "*", "?" and "[" in it match only themselves.

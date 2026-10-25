@@ -8,6 +8,17 @@
 #include <iterator>
 #include <map>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <aclapi.h>
+#include <sddl.h>
+#else
+#include <sys/stat.h>
+#endif
+
 #include <duckdb.hpp>
 
 #include "cell_format.hxx"
@@ -914,4 +925,106 @@ TEST_CASE("column statistics computed by DuckDB match a scan of the rows", "[sta
         applyView(*model, spec);
     compareAll();
     CHECK(columnStatsOf(*parquet, 3).rows < 54);
+}
+
+namespace
+{
+    std::string utf8Path(const std::filesystem::path &path)
+    {
+        const std::u8string u8 = path.u8string();
+        return std::string(u8.begin(), u8.end());
+    }
+
+#ifdef _WIN32
+    bool daclAllowsSid(const std::filesystem::path &path, const wchar_t *sid_text)
+    {
+        PSID sid = nullptr;
+        if (!ConvertStringSidToSidW(sid_text, &sid))
+            return true;
+        PSECURITY_DESCRIPTOR descriptor = nullptr;
+        PACL dacl = nullptr;
+        std::wstring wide = path.wstring();
+        const DWORD status = GetNamedSecurityInfoW(wide.data(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr,
+                                                    nullptr, &dacl, nullptr, &descriptor);
+        bool allowed = status != ERROR_SUCCESS || dacl == nullptr;
+        if (!allowed)
+        {
+            ACL_SIZE_INFORMATION info{};
+            if (!GetAclInformation(dacl, &info, sizeof(info), AclSizeInformation))
+                allowed = true;
+            for (DWORD i = 0; !allowed && i < info.AceCount; ++i)
+            {
+                void *ace = nullptr;
+                if (!GetAce(dacl, i, &ace))
+                    continue;
+                const auto *header = static_cast<ACE_HEADER *>(ace);
+                if (header->AceType != ACCESS_ALLOWED_ACE_TYPE)
+                    continue;
+                if (EqualSid(reinterpret_cast<PSID>(&static_cast<ACCESS_ALLOWED_ACE *>(ace)->SidStart), sid))
+                    allowed = true;
+            }
+        }
+        if (descriptor != nullptr)
+            LocalFree(descriptor);
+        LocalFree(sid);
+        return allowed;
+    }
+#endif
+}
+
+// umask 022 used to leave this directory searchable by every user on the
+// machine, and the spill files hold opened table data.
+TEST_CASE("DuckDB spill directories are private to the current user", "[duckdb]")
+{
+#ifndef _WIN32
+    struct Umask
+    {
+        mode_t previous = ::umask(0);
+        ~Umask() { ::umask(previous); }
+    } umask_guard;
+    (void)umask_guard;
+#endif
+    const auto path = duckDbTempDirectory();
+    struct Remove
+    {
+        std::filesystem::path path;
+        ~Remove()
+        {
+            std::error_code ignored;
+            std::filesystem::remove_all(path, ignored);
+        }
+    } remove{path};
+
+    REQUIRE(std::filesystem::is_directory(path));
+#ifndef _WIN32
+    struct stat st{};
+    REQUIRE(::stat(path.c_str(), &st) == 0);
+    CHECK((st.st_mode & 0777) == 0700);
+#else
+    // Bypass-traverse checking means a directory ACL is not enough: a child
+    // file must not grant well-known groups either.
+    CHECK_FALSE(daclAllowsSid(path, L"S-1-1-0"));
+    CHECK_FALSE(daclAllowsSid(path, L"S-1-5-11"));
+    CHECK_FALSE(daclAllowsSid(path, L"S-1-5-32-545"));
+#endif
+
+    duckdb::DBConfig config;
+    config.SetOptionByName("temp_directory", duckdb::Value(utf8Path(path)));
+    configureDuckDbSpillFileSystem(config, path, false);
+    duckdb::DuckDB db(nullptr, &config);
+    duckdb::Connection connection(db);
+    const auto file = path / "spill.csv";
+    auto written = connection.Query("COPY (SELECT 1) TO " + duckDbStringLiteral(utf8Path(file)) + " (FORMAT csv)");
+    REQUIRE(written);
+    REQUIRE_FALSE(written->HasError());
+    REQUIRE(std::filesystem::is_regular_file(file));
+#ifndef _WIN32
+    struct stat file_st{};
+    REQUIRE(::stat(file.c_str(), &file_st) == 0);
+    CHECK((file_st.st_mode & 0777) == 0600);
+#else
+    CHECK_FALSE(daclAllowsSid(file, L"S-1-1-0"));
+    CHECK_FALSE(daclAllowsSid(file, L"S-1-5-11"));
+    CHECK_FALSE(daclAllowsSid(file, L"S-1-5-32-545"));
+#endif
 }

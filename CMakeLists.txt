@@ -132,8 +132,8 @@ target_compile_definitions(tableskim-common PRIVATE
     $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
 )
 if(WIN32)
-    # openWithFileBrowser()
-    target_link_libraries(tableskim-common PRIVATE shell32 ole32)
+    # openWithFileBrowser(); spill-directory ACLs (SetEntriesInAclW)
+    target_link_libraries(tableskim-common PRIVATE shell32 ole32 advapi32)
 endif()
 
 set(TABLESKIM_TUI_SOURCES

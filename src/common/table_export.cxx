@@ -202,7 +202,8 @@ namespace
 
     // A private in-memory DuckDB in which rows are staged as text (c0, c1,
     // ...), since the column types are known only once every row has been
-    // seen. It spills to a temporary directory, removed afterwards.
+    // seen. It spills to a temporary directory only the current user can
+    // read, removed afterwards.
     class Staging
     {
     private:
@@ -233,6 +234,9 @@ namespace
             duckdb::DBConfig config;
             config.SetOptionByName("autoinstall_known_extensions", duckdb::Value::BOOLEAN(false));
             config.SetOptionByName("temp_directory", duckdb::Value(utf8String(cleanup_.directory)));
+            // COPY must still write the output file, so writes are not confined
+            // to the spill directory; files created there are made private.
+            configureDuckDbSpillFileSystem(config, cleanup_.directory, false);
             db_ = std::make_unique<duckdb::DuckDB>(nullptr, &config);
             conn_ = std::make_unique<duckdb::Connection>(*db_);
             // Cancels a running query; the next one fails as well.

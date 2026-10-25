@@ -7,6 +7,7 @@
 #include <limits>
 #include <optional>
 #include <random>
+#include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
@@ -20,22 +21,17 @@
 
 #include "sql_text.hxx"
 
-// In-memory databases spill to ".tmp" in the current directory by default,
-// which may be unwritable (e.g. "/" for a macOS app) or the user's files.
-// Each instance gets its own directory, so instances never share files.
-std::filesystem::path duckDbTempDirectory()
-{
-    static std::atomic<uint64_t> counter{0};
-    static const uint64_t process_tag = []
-    {
-        std::random_device device;
-        return (static_cast<uint64_t>(device()) << 32) ^ device();
-    }();
-    char name[64];
-    std::snprintf(name, sizeof(name), "tableskim-duckdb-%016llx-%llu",
-                  static_cast<unsigned long long>(process_tag), static_cast<unsigned long long>(counter++));
-    return std::filesystem::temp_directory_path() / name;
-}
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <aclapi.h>
+#include <windows.h>
+#else
+#include <cerrno>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -61,87 +57,282 @@ namespace
         return std::string(u8.begin(), u8.end());
     }
 
-    std::filesystem::path reserveTempDirectory()
+#ifdef _WIN32
+    // An ACL granting only the current user access. Directories propagate it
+    // to files and subdirectories, and do not inherit a wider ACL from the
+    // parent (Everyone can otherwise bypass traverse checking and read a
+    // spill file whose own ACL allows them).
+    struct OwnerAcl
     {
-        for (;;)
+        HANDLE token = nullptr;
+        PACL acl = nullptr;
+        PSECURITY_DESCRIPTOR descriptor = nullptr;
+        std::unique_ptr<unsigned char[]> token_user;
+
+        explicit OwnerAcl(bool inheritable)
         {
-            auto path = duckDbTempDirectory();
-            if (std::filesystem::create_directory(path))
-                return path;
+            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+                fail("cannot read the process token");
+            DWORD needed = 0;
+            GetTokenInformation(token, TokenUser, nullptr, 0, &needed);
+            token_user = std::make_unique<unsigned char[]>(needed == 0 ? 1 : needed);
+            if (!GetTokenInformation(token, TokenUser, token_user.get(), needed, &needed))
+                fail("cannot read the process user");
+
+            EXPLICIT_ACCESS_W access{};
+            access.grfAccessPermissions = FILE_ALL_ACCESS;
+            access.grfAccessMode = SET_ACCESS;
+            access.grfInheritance = inheritable ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+            access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+            access.Trustee.TrusteeType = TRUSTEE_IS_USER;
+            access.Trustee.ptstrName = reinterpret_cast<LPWSTR>(
+                reinterpret_cast<TOKEN_USER *>(token_user.get())->User.Sid);
+            if (SetEntriesInAclW(1, &access, nullptr, &acl) != ERROR_SUCCESS || acl == nullptr)
+                fail("cannot build a private ACL");
+
+            descriptor = LocalAlloc(LPTR, SECURITY_DESCRIPTOR_MIN_LENGTH);
+            if (descriptor == nullptr || !InitializeSecurityDescriptor(descriptor, SECURITY_DESCRIPTOR_REVISION) ||
+                !SetSecurityDescriptorDacl(descriptor, TRUE, acl, FALSE) ||
+                !SetSecurityDescriptorControl(descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED))
+                fail("cannot build a private security descriptor");
         }
+
+        ~OwnerAcl()
+        {
+            if (acl != nullptr)
+                LocalFree(acl);
+            if (descriptor != nullptr)
+                LocalFree(descriptor);
+            if (token != nullptr)
+                CloseHandle(token);
+        }
+
+        OwnerAcl(const OwnerAcl &) = delete;
+        OwnerAcl &operator=(const OwnerAcl &) = delete;
+
+        static void fail(const char *message)
+        {
+            throw std::runtime_error(message);
+        }
+    };
+#endif
+
+    // Refuses a path other users can read. A directory is the access boundary
+    // on POSIX (search permission); on Windows each file needs its own ACL
+    // because bypass-traverse checking is granted to Everyone by default.
+    void restrictToCurrentUser(const std::filesystem::path &path)
+    {
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(path, error);
+        if (error || std::filesystem::is_symlink(status))
+            throw std::runtime_error("cannot restrict a spill path");
+#ifdef _WIN32
+        OwnerAcl acl(std::filesystem::is_directory(status));
+        std::wstring wide = path.wstring();
+        if (SetNamedSecurityInfoW(wide.data(), SE_FILE_OBJECT,
+                                  DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr,
+                                  acl.acl, nullptr) != ERROR_SUCCESS)
+            throw std::runtime_error("cannot restrict a spill path to the current user");
+#else
+        const bool directory = std::filesystem::is_directory(status);
+        const auto desired = directory ? std::filesystem::perms::owner_all
+                                       : (std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
+        std::filesystem::permissions(path, desired, std::filesystem::perm_options::replace, error);
+        const auto after = std::filesystem::status(path, error).permissions();
+        const auto shared = std::filesystem::perms::group_all | std::filesystem::perms::others_all;
+        if (error || (after & shared) != std::filesystem::perms::none)
+            throw std::runtime_error("cannot restrict a spill path to the current user");
+#endif
     }
 
-    // External readers remain usable, but only DuckDB's private spill area is writable.
-    class ProtectedFileSystem final : public duckdb::LocalFileSystem
+    // True when this call created the directory. False if the name is taken,
+    // so the caller can try another; any other failure throws.
+    bool tryCreatePrivateDirectory(const std::filesystem::path &path)
+    {
+#ifdef _WIN32
+        OwnerAcl acl(true);
+        SECURITY_ATTRIBUTES attributes{};
+        attributes.nLength = sizeof(attributes);
+        attributes.lpSecurityDescriptor = acl.descriptor;
+        if (CreateDirectoryW(path.c_str(), &attributes))
+        {
+            try
+            {
+                // CreateDirectory may still merge inheritable ACEs from the
+                // parent. Replace the DACL so only the current user remains.
+                restrictToCurrentUser(path);
+            }
+            catch (...)
+            {
+                RemoveDirectoryW(path.c_str());
+                throw;
+            }
+            return true;
+        }
+        if (GetLastError() == ERROR_ALREADY_EXISTS)
+            return false;
+        throw std::filesystem::filesystem_error(
+            "cannot create a private spill directory", path,
+            std::error_code(static_cast<int>(GetLastError()), std::system_category()));
+#else
+        // mkdir applies the mode itself, so umask cannot widen it (0777 from
+        // std::filesystem::create_directory can). A parent default ACL can
+        // still be wider; chmod and refuse that.
+        if (::mkdir(path.c_str(), 0700) != 0)
+        {
+            if (errno == EEXIST)
+                return false;
+            throw std::filesystem::filesystem_error("cannot create a private spill directory", path,
+                                                    std::error_code(errno, std::generic_category()));
+        }
+        if (::chmod(path.c_str(), 0700) != 0)
+        {
+            const int saved = errno;
+            ::rmdir(path.c_str());
+            throw std::filesystem::filesystem_error("cannot restrict a spill directory", path,
+                                                    std::error_code(saved, std::generic_category()));
+        }
+        struct stat st{};
+        if (::stat(path.c_str(), &st) != 0 || (st.st_mode & 0777) != 0700)
+        {
+            ::rmdir(path.c_str());
+            throw std::runtime_error("the spill directory is not private to the current user");
+        }
+        return true;
+#endif
+    }
+
+    // External readers remain usable. Writes outside the spill directory are
+    // rejected when confine_writes_ is set; files created inside it are made
+    // private either way (export must still write its output file).
+    class SpillFileSystem final : public duckdb::LocalFileSystem
     {
         std::filesystem::path writable_directory_;
+        bool confine_writes_;
+
+        static std::filesystem::path fsPath(const std::string &path)
+        {
+            return std::filesystem::path(std::u8string(path.begin(), path.end()));
+        }
+
+        bool underSpill(const std::string &path) const
+        {
+            std::error_code error;
+            const auto resolved = std::filesystem::weakly_canonical(fsPath(path), error);
+            if (error)
+                return false;
+            const auto mismatch = std::mismatch(writable_directory_.begin(), writable_directory_.end(),
+                                                resolved.begin(), resolved.end());
+            return mismatch.first == writable_directory_.end();
+        }
 
         void checkWrite(const std::string &path) const
         {
             std::error_code error;
-            const auto resolved = std::filesystem::weakly_canonical(
-                std::filesystem::path(std::u8string(path.begin(), path.end())), error);
+            const auto resolved = std::filesystem::weakly_canonical(fsPath(path), error);
             const auto mismatch = std::mismatch(writable_directory_.begin(), writable_directory_.end(),
                                                 resolved.begin(), resolved.end());
             if (error || mismatch.first != writable_directory_.end() ||
                 (std::filesystem::exists(resolved, error) && std::filesystem::is_regular_file(resolved, error) &&
-                 std::filesystem::hard_link_count(resolved, error) > 1) || error)
+                 std::filesystem::hard_link_count(resolved, error) > 1) ||
+                error)
                 throw duckdb::PermissionException("SQL cannot write external files; use Export View instead");
         }
 
+        void restrictIfSpill(const std::string &path, bool created)
+        {
+            if (!underSpill(path))
+                return;
+            const auto fs_path = fsPath(path);
+            try
+            {
+                restrictToCurrentUser(fs_path);
+            }
+            catch (const std::exception &error)
+            {
+                if (created)
+                {
+                    std::error_code ignored;
+                    std::filesystem::remove(fs_path, ignored);
+                }
+                throw duckdb::IOException(error.what());
+            }
+        }
+
     public:
+        explicit SpillFileSystem(const std::filesystem::path &directory, bool confine_writes)
+            : writable_directory_(std::filesystem::canonical(directory)), confine_writes_(confine_writes)
+        {
+        }
+
         duckdb::unique_ptr<duckdb::FileHandle> OpenFile(
             const std::string &path, duckdb::FileOpenFlags flags,
             duckdb::optional_ptr<duckdb::FileOpener> opener = nullptr) override
         {
-            if (flags.OpenForWriting() || flags.CreateFileIfNotExists() || flags.OverwriteExistingFile() ||
-                flags.OpenForAppending())
+            const bool writing = flags.OpenForWriting() || flags.CreateFileIfNotExists() ||
+                                 flags.OverwriteExistingFile() || flags.OpenForAppending();
+            if (writing && confine_writes_)
                 checkWrite(path);
-            return LocalFileSystem::OpenFile(path, flags, opener);
-        }
-
-        explicit ProtectedFileSystem(const std::filesystem::path &directory)
-            : writable_directory_(std::filesystem::canonical(directory))
-        {
+            std::error_code error;
+            const bool existed = std::filesystem::exists(fsPath(path), error);
+            auto handle = LocalFileSystem::OpenFile(path, flags, opener);
+            if (writing)
+                restrictIfSpill(path, !existed && !error);
+            return handle;
         }
 
         void CreateDirectory(const std::string &path, duckdb::optional_ptr<duckdb::FileOpener> opener) override
         {
-            checkWrite(path);
+            if (confine_writes_)
+                checkWrite(path);
+            std::error_code error;
+            const bool existed = std::filesystem::exists(fsPath(path), error);
             LocalFileSystem::CreateDirectory(path, opener);
+            restrictIfSpill(path, !existed && !error);
         }
 
         void RemoveDirectory(const std::string &path, duckdb::optional_ptr<duckdb::FileOpener> opener) override
         {
-            checkWrite(path);
+            if (confine_writes_)
+                checkWrite(path);
             LocalFileSystem::RemoveDirectory(path, opener);
         }
 
         void MoveFile(const std::string &source, const std::string &target,
                       duckdb::optional_ptr<duckdb::FileOpener> opener) override
         {
-            checkWrite(source);
-            checkWrite(target);
+            if (confine_writes_)
+            {
+                checkWrite(source);
+                checkWrite(target);
+            }
             LocalFileSystem::MoveFile(source, target, opener);
+            // A moved spill file keeps the source mode unless it is restricted again.
+            restrictIfSpill(target, false);
         }
 
         void RemoveFile(const std::string &path, duckdb::optional_ptr<duckdb::FileOpener> opener) override
         {
-            checkWrite(path);
+            if (confine_writes_)
+                checkWrite(path);
             LocalFileSystem::RemoveFile(path, opener);
         }
 
         bool TryRemoveFile(const std::string &path, duckdb::optional_ptr<duckdb::FileOpener> opener) override
         {
-            checkWrite(path);
+            if (confine_writes_)
+                checkWrite(path);
             return LocalFileSystem::TryRemoveFile(path, opener);
         }
 
         void RemoveFiles(const duckdb::vector<duckdb::string> &paths,
                          duckdb::optional_ptr<duckdb::FileOpener> opener) override
         {
-            for (const auto &path : paths)
-                checkWrite(path);
+            if (confine_writes_)
+            {
+                for (const auto &path : paths)
+                    checkWrite(path);
+            }
             LocalFileSystem::RemoveFiles(paths, opener);
         }
     };
@@ -171,7 +362,7 @@ namespace
         std::unique_ptr<duckdb::Connection> conn;
         size_t next_snapshot_id = 0;
 
-        Database() : temp_directory(reserveTempDirectory())
+        Database() : temp_directory(duckDbTempDirectory())
         {
             try
             {
@@ -179,8 +370,7 @@ namespace
                 // Only the statically linked extensions are used; never download any.
                 config.SetOptionByName("autoinstall_known_extensions", duckdb::Value::BOOLEAN(false));
                 config.SetOptionByName("autoload_known_extensions", duckdb::Value::BOOLEAN(false));
-                config.file_system = duckdb::make_uniq<duckdb::VirtualFileSystem>(
-                    duckdb::make_uniq<ProtectedFileSystem>(temp_directory));
+                configureDuckDbSpillFileSystem(config, temp_directory, true);
                 config.SetOptionByName("temp_directory", duckdb::Value(utf8Path(temp_directory)));
                 config.SetOptionByName("allow_persistent_secrets", duckdb::Value::BOOLEAN(false));
                 config.SetOptionByName("allow_community_extensions", duckdb::Value::BOOLEAN(false));
@@ -204,7 +394,8 @@ namespace
         {
             conn.reset();
             db.reset();
-            // DuckDB removes the directory it created; this catches leftovers.
+            // The directory already existed, so DuckDB deletes only its own spill
+            // files. Remove the directory itself.
             std::error_code ignored;
             std::filesystem::remove_all(temp_directory, ignored);
         }
@@ -1160,6 +1351,38 @@ namespace
         return true;
     }
 } // namespace
+
+// In-memory databases spill to ".tmp" in the current directory by default,
+// which may be unwritable (e.g. "/" for a macOS app) or the user's files.
+// Each instance gets its own directory, so instances never share files, and
+// the directory is created private so other users cannot read the spill.
+std::filesystem::path duckDbTempDirectory()
+{
+    static std::atomic<uint64_t> counter{0};
+    static const uint64_t process_tag = []
+    {
+        std::random_device device;
+        return (static_cast<uint64_t>(device()) << 32) ^ device();
+    }();
+    for (int attempt = 0; attempt < 100; ++attempt)
+    {
+        char name[64];
+        std::snprintf(name, sizeof(name), "tableskim-duckdb-%016llx-%llu",
+                      static_cast<unsigned long long>(process_tag),
+                      static_cast<unsigned long long>(counter++));
+        auto path = std::filesystem::temp_directory_path() / name;
+        if (tryCreatePrivateDirectory(path))
+            return path;
+    }
+    throw std::runtime_error("cannot create a private spill directory");
+}
+
+void configureDuckDbSpillFileSystem(duckdb::DBConfig &config, const std::filesystem::path &directory,
+                                    bool confine_writes)
+{
+    config.file_system = duckdb::make_uniq<duckdb::VirtualFileSystem>(
+        duckdb::make_uniq<SpillFileSystem>(directory, confine_writes));
+}
 
 std::string escapeDuckDbGlob(const std::string &path)
 {
