@@ -204,14 +204,14 @@ namespace
         return compression == Compression::None && (encoding == TextEncoding::Utf8 || encoding == TextEncoding::Cp932);
     }
 
-    // The length of the whole records at the start of `text`: up to the last
-    // line break outside a quoted field. As csv-parser reads them, a quote
-    // starts a quoted field only at the start of a field; anywhere else
-    // (12" pizza) it is an ordinary character. In a quoted field, a quote
-    // ends it only before a delimiter or line break; else it is kept, and
-    // the field goes on ("12" pizza\n...").
-    size_t wholeRecordsLength(std::string_view text, char delimiter)
+    // Splits text into records as csv-parser reads them: a quote starts a
+    // quoted field only at the start of a field; anywhere else (12" pizza)
+    // it is an ordinary character. In a quoted field, a quote ends it only
+    // before a delimiter or line break; else it is kept, and the field goes
+    // on ("12" pizza\n..."). Text can be fed in pieces.
+    class RecordScanner
     {
+    private:
         enum class State
         {
             FieldStart,
@@ -219,49 +219,94 @@ namespace
             Quoted,
             QuoteInQuoted, // a quote in a quoted field: its end, or the first of two
         };
-        State state = State::FieldStart;
-        size_t length = 0;
-        for (size_t i = 0; i < text.size(); ++i)
+        char delimiter_;
+        State state_ = State::FieldStart;
+
+    public:
+        explicit RecordScanner(char delimiter) : delimiter_(delimiter) {}
+
+        // The length of the whole records at the start of `text`: up to the
+        // last line break outside a quoted field (0 if there is none).
+        size_t feed(std::string_view text)
         {
-            const char c = text[i];
-            switch (state)
+            size_t length = 0;
+            for (size_t i = 0; i < text.size(); ++i)
             {
-            case State::FieldStart:
-            case State::Unquoted:
-                if (c == '\n')
+                const char c = text[i];
+                switch (state_)
                 {
-                    length = i + 1;
-                    state = State::FieldStart;
+                case State::FieldStart:
+                case State::Unquoted:
+                    if (c == '\n')
+                    {
+                        length = i + 1;
+                        state_ = State::FieldStart;
+                    }
+                    else if (c == delimiter_)
+                        state_ = State::FieldStart;
+                    else if (c == '"' && state_ == State::FieldStart)
+                        state_ = State::Quoted;
+                    else
+                        state_ = State::Unquoted;
+                    break;
+                case State::Quoted:
+                    if (c == '"')
+                        state_ = State::QuoteInQuoted;
+                    break;
+                case State::QuoteInQuoted:
+                    if (c == '"')
+                        state_ = State::Quoted; // a doubled quote
+                    else if (c == '\n')
+                    {
+                        length = i + 1;
+                        state_ = State::FieldStart;
+                    }
+                    else if (c == delimiter_)
+                        state_ = State::FieldStart;
+                    else if (c == '\r')
+                        state_ = State::Unquoted;
+                    else
+                        state_ = State::Quoted; // a stray quote, which stays in the field
+                    break;
                 }
-                else if (c == delimiter)
-                    state = State::FieldStart;
-                else if (c == '"' && state == State::FieldStart)
-                    state = State::Quoted;
-                else
-                    state = State::Unquoted;
-                break;
-            case State::Quoted:
-                if (c == '"')
-                    state = State::QuoteInQuoted;
-                break;
-            case State::QuoteInQuoted:
-                if (c == '"')
-                    state = State::Quoted; // a doubled quote
-                else if (c == '\n')
-                {
-                    length = i + 1;
-                    state = State::FieldStart;
-                }
-                else if (c == delimiter)
-                    state = State::FieldStart;
-                else if (c == '\r')
-                    state = State::Unquoted;
-                else
-                    state = State::Quoted; // a stray quote, which stays in the field
-                break;
             }
+            return length;
         }
-        return length;
+
+        // Whether the text so far ends inside a quoted field, i.e. the last
+        // record is not complete even if a line break ends the text.
+        bool inQuotedField() const { return state_ == State::Quoted; }
+    };
+
+    size_t wholeRecordsLength(std::string_view text, char delimiter)
+    {
+        return RecordScanner(delimiter).feed(text);
+    }
+
+    // Whether the first `size` bytes of the file end inside a quoted field.
+    bool endsInQuotedField(const std::filesystem::path &path, uint64_t size, char delimiter)
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (!in)
+            return false;
+        RecordScanner scanner(delimiter);
+        std::string chunk(64 * 1024, '\0');
+        bool first = true;
+        for (uint64_t done = 0; done < size && in;)
+        {
+            in.read(chunk.data(), static_cast<std::streamsize>(std::min<uint64_t>(chunk.size(), size - done)));
+            const auto n = static_cast<size_t>(std::max<std::streamsize>(in.gcount(), 0));
+            if (n == 0)
+                break;
+            std::string_view text(chunk.data(), n);
+            // csv-parser drops a UTF-8 BOM, so a quote after it starts a field.
+            if (first && text.starts_with("\xEF\xBB\xBF"))
+                text.remove_prefix(3);
+            first = false;
+            scanner.feed(text);
+            done += n;
+        }
+        return scanner.inQuotedField();
     }
 
     // path::string() uses the ANSI code page on Windows; sheet names must be UTF-8.
@@ -719,6 +764,7 @@ namespace
         const CountingBuf *counter_ = nullptr; // the file's bytes, if it can be followed
         uint64_t offset_ = 0;
         std::string tail_;
+        bool quotes_checked_ = false; // that the rows read end outside a quoted field
         // A file without rows yet takes its header from the first rows
         // appended, as it would have when read.
         OpenOptions::Header header_option_;
@@ -856,6 +902,14 @@ namespace
             // must have ended (more of it would be taken for a new row).
             if (offset_ > 0 && (tail_.empty() || tail_.back() != '\n'))
                 return AppendResult::Changed;
+            // An unterminated quoted field at the end of the file was read as
+            // a row, but more of it may follow: read the file again.
+            if (offset_ > 0 && !quotes_checked_)
+            {
+                if (endsInQuotedField(path_, offset_, delimiter_))
+                    return AppendResult::Changed;
+                quotes_checked_ = true;
+            }
             std::ifstream in(path_, std::ios::binary);
             if (!in)
                 return AppendResult::None;

@@ -1525,8 +1525,6 @@ bool TuiApp::typingText() const
         return filter_line_ >= 1 && filter_line_ <= conditions.size() &&
                filterOpTakesValue(conditions[filter_line_ - 1].op);
     }
-    if (memory_prompt_model_)
-        return false;
     return search_prompt_ || goto_prompt_ || export_prompt_ || sql_prompt_ || edit_prompt_;
 }
 
@@ -1543,7 +1541,11 @@ bool TuiApp::handleEvent(Event event)
     }
     if (edit_prompt_ && !event.is_mouse())
         return handleEditPromptEvent(event);
-    if (memory_prompt_model_ && !event.is_mouse())
+    // The question can appear while a prompt is open: the keys stay with the
+    // prompt (an "n" typed into a search must not stop the reading), and the
+    // question is asked once the prompt is closed.
+    const bool text_prompt_open = search_prompt_ || goto_prompt_ || export_prompt_ || sql_prompt_;
+    if (memory_prompt_model_ && !text_prompt_open && !event.is_mouse())
         return handleMemoryPromptEvent(event);
     if (histogram_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_)
         return handleHistogramEvent(event);
@@ -1956,11 +1958,11 @@ Element TuiApp::renderMain()
     parts.push_back(body | flex);
     parts.push_back(unsaved_action_ ? renderUnsavedPrompt()
                     : edit_prompt_ ? renderEditPrompt()
-                    : memory_prompt_model_ ? renderMemoryPrompt()
                     : search_prompt_ ? renderSearchPrompt()
                     : sql_prompt_  ? renderSqlPrompt()
                     : goto_prompt_ ? renderGoToPrompt()
                     : export_prompt_ ? renderExportPrompt()
+                    : memory_prompt_model_ ? renderMemoryPrompt()
                                    : renderStatusBar());
     return vbox(std::move(parts));
 }

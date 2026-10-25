@@ -163,6 +163,26 @@ TEST_CASE("GUI: Auto Revert waits while a cell is being edited", "[regression]")
     CHECK(waitFor([&] { return currentRows(window, 4); }));
 }
 
+TEST_CASE("GUI: a pending sort does not move the cell being edited", "[regression]")
+{
+    TempDir dir;
+    const auto path = dir.write("t.csv", "a,b\n1,x\n2,y\n");
+    Window window(path);
+    GuiTableView *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 3));
+    window->set_editing(true);
+    view->editCell(1, 0, std::string("typed"));
+    REQUIRE(view->editingCell());
+
+    // The sort a reopen restores can arrive while the user is typing.
+    view->restoreView({.sort = {{.column = 1, .ascending = false}}});
+    CHECK_FALSE(view->editingCell());
+    REQUIRE(waitFor([&] { return !view->model()->view().sort.empty(); }));
+    // "y" sorts first now; the text went to its row, not to the row at index 1.
+    CHECK(waitFor([&] { return currentCell(window, 0, 1) == "y" && currentCell(window, 0, 0) == "typed"; }));
+    CHECK(currentCell(window, 1, 0) == "1");
+}
+
 TEST_CASE("GUI: Follow does not reopen the file while a menu or dialog runs its loop", "[regression]")
 {
     TempDir dir;

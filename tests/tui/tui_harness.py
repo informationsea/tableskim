@@ -71,6 +71,7 @@ class Tui:
         env = dict(os.environ)
         # Keeps the SQL history and recent files out of the user's own.
         env["HOME"] = self.home
+        env["XDG_STATE_HOME"] = os.path.join(self.home, ".local", "state")
         env["XDG_DATA_HOME"] = os.path.join(self.home, ".local", "share")
         env["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
         env["TERM"] = "xterm-256color"

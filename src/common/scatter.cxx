@@ -130,6 +130,7 @@ ScatterCounter::ScatterCounter(ScatterPlot layout, size_t max_points)
     plot_.points.reset();
     plot_.boxes.clear();
     category_values_.assign(plot_.categorical() ? plot_.xBinCount() : 0, {});
+    category_seen_.assign(category_values_.size(), 0);
 }
 
 std::optional<size_t> ScatterCounter::categoryOf(const CellValue &x) const
@@ -164,7 +165,14 @@ void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row
     {
         // A correlation with category indices would mean nothing.
         x_coordinate = static_cast<double>(*x_bin);
-        category_values_[*x_bin].push_back(y_coordinate);
+        // Reservoir sampling beyond the cap: the box plot is exact up to
+        // MAX_CATEGORY_VALUES values per category, and keeps memory bounded.
+        auto &values = category_values_[*x_bin];
+        const size_t seen = ++category_seen_[*x_bin];
+        if (values.size() < MAX_CATEGORY_VALUES)
+            values.push_back(y_coordinate);
+        else if (const size_t slot = static_cast<size_t>(random_() % seen); slot < MAX_CATEGORY_VALUES)
+            values[slot] = y_coordinate;
     }
     else
     {

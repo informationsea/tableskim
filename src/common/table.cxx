@@ -2378,8 +2378,15 @@ bool TableModel::stepStats(std::unique_lock<std::mutex> &lock, std::stop_token s
     // values, so partial results are published only now and then.
     const auto now = std::chrono::steady_clock::now();
     std::optional<ColumnStats> result;
+    auto stamp = now;
     if (chunk.last || now - published >= STATS_PUBLISH_INTERVAL)
+    {
         result = accumulator->result();
+        // The next one waits three times as long as this took, so that the
+        // ranking does not become most of the scan.
+        const auto taken = std::chrono::steady_clock::now() - now;
+        stamp = now + 4 * taken;
+    }
 
     lock.lock();
     if (generation != stats_generation_)
@@ -2389,7 +2396,7 @@ bool TableModel::stepStats(std::unique_lock<std::mutex> &lock, std::stop_token s
     if (result)
     {
         stats_.stats = std::move(*result);
-        stats_published_ = now;
+        stats_published_ = stamp;
     }
     if (chunk.last)
         stats_.done = true;
@@ -2680,8 +2687,15 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
     const auto now = std::chrono::steady_clock::now();
     // Copied outside the lock: the points take a while.
     std::optional<ScatterPlot> partial;
+    auto stamp = now;
     if (counting && !chunk.last && now - published >= STATS_PUBLISH_INTERVAL)
+    {
         partial = counter->result();
+        // Box plots sort every value counted so far: the next copy waits
+        // three times as long as this one took, or the scan turns quadratic.
+        const auto taken = std::chrono::steady_clock::now() - now;
+        stamp = now + 4 * taken;
+    }
 
     lock.lock();
     if (generation != scatter_generation_)
@@ -2698,7 +2712,7 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
         if (partial)
         {
             scatter_.plot = std::move(*partial);
-            scatter_published_ = now;
+            scatter_published_ = stamp;
         }
         events.push_back({TableEvent::Kind::ScatterProgress, start, chunk.end});
     }
