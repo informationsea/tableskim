@@ -114,6 +114,13 @@ Engineering has the highest median, 人事部 the widest spread; departments
 with one person (`研究開発部`) show only a line. Up to 30 groups are shown,
 the largest first; the rest are drawn together as **(other)**.
 
+For a group with more than 1,048,576 values, the box statistics are estimated
+from a uniform sample of that many values. The displayed row count still
+includes the whole group; the sample size and an estimate label appear with
+the box's numbers. Minimum, maximum and outlier counts also describe the
+sample. Density counts use all rows. The sample is the same whether points
+are retained or only the density is calculated.
+
 When groups do not differ, the boxes look alike, as for the five
 categories of `large.parquet`, which were generated the same way:
 

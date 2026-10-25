@@ -10,6 +10,7 @@ namespace
     // Any fixed seed: the same rows give the same sample on every platform
     // (std::mt19937_64 is fully specified, unlike the distributions).
     constexpr uint64_t SAMPLE_SEED = 20261024;
+    constexpr uint64_t CATEGORY_SAMPLE_SEED = SAMPLE_SEED + 1;
 } // namespace
 
 void ScatterStats::add(double x, double y)
@@ -71,6 +72,7 @@ BoxStats boxStats(std::vector<double> values)
         return values[low] + (h - static_cast<double>(low)) * (values[high] - values[low]);
     };
     box.count = n;
+    box.sample_count = n;
     box.min = values.front();
     box.max = values.back();
     box.q1 = quantile(0.25);
@@ -120,7 +122,8 @@ ScatterPlot ScatterRange::layout(const ScatterOptions &options) const
 }
 
 ScatterCounter::ScatterCounter(ScatterPlot layout, size_t max_points)
-    : plot_(std::move(layout)), x_(plot_.x_bins), y_(plot_.y_bins), max_points_(max_points), random_(SAMPLE_SEED)
+    : plot_(std::move(layout)), x_(plot_.x_bins), y_(plot_.y_bins), max_points_(max_points),
+      point_random_(SAMPLE_SEED), category_random_(CATEGORY_SAMPLE_SEED)
 {
     std::fill(plot_.counts.begin(), plot_.counts.end(), 0);
     plot_.pairs = 0;
@@ -171,7 +174,7 @@ void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row
         const size_t seen = ++category_seen_[*x_bin];
         if (values.size() < MAX_CATEGORY_VALUES)
             values.push_back(y_coordinate);
-        else if (const size_t slot = static_cast<size_t>(random_() % seen); slot < MAX_CATEGORY_VALUES)
+        else if (const size_t slot = static_cast<size_t>(category_random_() % seen); slot < MAX_CATEGORY_VALUES)
             values[slot] = y_coordinate;
     }
     else
@@ -186,7 +189,7 @@ void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row
     size_t slot = points_.size();
     if (points_.size() >= max_points_)
     {
-        slot = static_cast<size_t>(random_() % plot_.pairs);
+        slot = static_cast<size_t>(point_random_() % plot_.pairs);
         if (slot >= max_points_)
             return;
     }
@@ -211,7 +214,11 @@ ScatterPlot ScatterCounter::result() const
     ScatterPlot plot = plot_;
     if (max_points_ > 0)
         plot.points = std::make_shared<const std::vector<ScatterPoint>>(points_);
-    for (const std::vector<double> &values : category_values_)
-        plot.boxes.push_back(boxStats(values));
+    for (size_t i = 0; i < category_values_.size(); ++i)
+    {
+        auto box = boxStats(category_values_[i]);
+        box.count = category_seen_[i];
+        plot.boxes.push_back(std::move(box));
+    }
     return plot;
 }

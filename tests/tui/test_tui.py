@@ -194,6 +194,103 @@ class FollowTest(TuiTestCase):
         self.assertIn("ERROR", tui.text())
 
 
+class MemoryCheckpointTest(TuiTestCase):
+    def large_csv(self):
+        # A real 128 MiB file, not a sparse file. Long fields keep the test's
+        # row/cell overhead small. Initial viewport prefetch stays below 100 MiB.
+        path = os.path.join(self.temp, "checkpoint.csv")
+        row = b"1,needle" + b"x" * 8183 + b"\n"
+        with open(path, "wb") as out:
+            for _ in range(128):
+                out.write(row * 128)
+        self.assertGreater(os.path.getsize(path), 100 * 1024 * 1024)
+        return path
+
+    def checkpoint_with_prompt(self, prompt_key, prompt_name, prompt_label):
+        path = self.large_csv()
+        log = os.path.join(self.temp, "checkpoint.log")
+        tui = self.run_tui(path, "--verbose", "--log", log)
+        tui.wait_text("checkpoint.csv")
+        tui.send("/")
+        tui.wait_text("Enter: search")
+        # One write: start a background scan, immediately open another prompt.
+        # The log handshake proves overlap; a slow runner cannot silently pass
+        # without reaching the intended state.
+        tui.type("absent-token\r" + prompt_key)
+        tui.wait_text(prompt_label)
+
+        def deferred(_):
+            if not os.path.exists(log):
+                return False
+            with open(log, encoding="utf-8") as source:
+                return "Memory checkpoint: prompt=" + prompt_name in source.read()
+
+        tui.wait_for(deferred, timeout=90, what="checkpoint during " + prompt_name)
+        self.assertIn(prompt_label, tui.text())
+        self.assertNotIn("Continue reading?", status(tui))
+        return tui
+
+    def test_search_keeps_n_y_and_enter_then_continues(self):
+        tui = self.checkpoint_with_prompt("/", "search", "Enter: search")
+        tui.type("ny")
+        tui.wait_text("/ny")
+        tui.send("backspace")
+        tui.wait_for(lambda _: status(tui).startswith("/n "), what="backspace in search")
+        tui.send("ctrl+u")
+        tui.type("needle")
+        tui.send("enter")
+        tui.wait_text("Continue reading? (y/n)")
+        tui.send("y")
+        tui.wait_gone("Continue reading?")
+        tui.wait_text("16384 rows × 2 cols", timeout=90)
+        self.assertNotIn("Reading stopped", tui.text())
+        tui.send("q")
+        self.assertEqual(tui.wait_exit(), 0)
+
+    def test_export_keeps_n_y_and_escape_then_stops(self):
+        tui = self.checkpoint_with_prompt("w", "export", "Export to:")
+        target = os.path.join(self.temp, "ny.csv")
+        tui.send("ctrl+u")
+        tui.type(target)
+        tui.wait_text("ny.csv")
+        self.assertIn("Export to:", status(tui))
+        tui.send("esc")
+        tui.wait_text("Continue reading? (y/n)")
+        tui.send("n")
+        tui.wait_text("Reading stopped")
+        tui.wait_text("(partly read)")
+        self.assertNotIn("16384 rows", status(tui))
+        self.assertFalse(os.path.exists(target))
+        tui.send("q")
+        self.assertEqual(tui.wait_exit(), 0)
+
+    def test_goto_keeps_numeric_input_and_escape(self):
+        tui = self.checkpoint_with_prompt("\x07", "goto", "Go to:")
+        tui.type("123")
+        tui.wait_text("Go to: 123")
+        tui.send("esc")
+        tui.wait_text("Continue reading? (y/n)")
+        tui.send("y")
+        tui.wait_gone("Continue reading?")
+        tui.wait_text("16384 rows × 2 cols", timeout=90)
+        tui.send("q")
+        self.assertEqual(tui.wait_exit(), 0)
+
+    def test_search_keeps_bracketed_paste_while_checkpoint_waits(self):
+        tui = self.checkpoint_with_prompt("/", "search", "Enter: search")
+        # n/y stay text, and a pasted newline must not submit the prompt.
+        tui.paste("ny\nneedle")
+        tui.wait_text("/ny needle")
+        self.assertIn("Enter: search", status(tui))
+        self.assertNotIn("Continue reading?", status(tui))
+        tui.send("esc")
+        tui.wait_text("Continue reading? (y/n)")
+        tui.send("y")
+        tui.wait_text("16384 rows × 2 cols", timeout=90)
+        tui.send("q")
+        self.assertEqual(tui.wait_exit(), 0)
+
+
 def main():
     global TABLESKIM, DEMO_DATA
     parser = argparse.ArgumentParser(add_help=False)

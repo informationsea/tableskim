@@ -1402,7 +1402,12 @@ bool TuiApp::handleGoToPromptEvent(Event event)
 void TuiApp::checkMemoryCheckpoint(const std::shared_ptr<TableModel> &model)
 {
     if (!memory_prompt_model_ && model && model->memoryCheckpoint())
+    {
         memory_prompt_model_ = model;
+        const char *prompt = search_prompt_ ? "search" : goto_prompt_ ? "goto" : export_prompt_ ? "export"
+                                                   : sql_prompt_ ? "sql" : "none";
+        spdlog::debug("Memory checkpoint: prompt={}", prompt);
+    }
 }
 
 bool TuiApp::handleMemoryPromptEvent(Event event)

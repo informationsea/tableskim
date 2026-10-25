@@ -49,7 +49,8 @@ struct BoxStats
 {
     static constexpr size_t MAX_OUTLIERS = 100; // kept on each side, the most extreme
 
-    size_t count = 0;
+    size_t count = 0;        // all values represented by the box
+    size_t sample_count = 0; // values used for the statistics (count until sampled)
     double min = 0;
     double q1 = 0;
     double median = 0;
@@ -60,6 +61,7 @@ struct BoxStats
     double mean = 0;
     size_t outlier_count = 0;
     std::vector<double> outliers; // at most MAX_OUTLIERS below and above
+    bool sampled() const { return sample_count < count; }
     bool operator==(const BoxStats &) const = default;
 };
 BoxStats boxStats(std::vector<double> values);
@@ -153,7 +155,8 @@ private:
     HistogramCounter y_;
     size_t max_points_;
     std::vector<ScatterPoint> points_;
-    std::mt19937_64 random_;
+    std::mt19937_64 point_random_;
+    std::mt19937_64 category_random_; // box samples do not depend on max_points_
     std::vector<std::vector<double>> category_values_; // Y of each category, for the box plots
     std::vector<size_t> category_seen_;                // values counted per category (a sample is kept past the cap)
     static constexpr size_t MAX_CATEGORY_VALUES = size_t{1} << 20;
