@@ -6,4 +6,5 @@ out/
 CMakeUserPresets.json
 .cache/
 demo/.venv/
-.vscode/cache
+.vscode/cache__pycache__/
+*.py[co]
