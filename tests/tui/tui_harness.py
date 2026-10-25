@@ -149,6 +149,10 @@ class Tui:
         os.write(self.fd, text.encode())
         self.pump(0.05)
 
+    def paste(self, text):
+        """Pastes text with the terminal's bracketed-paste delimiters."""
+        self.type("\x1b[200~" + text + "\x1b[201~")
+
     def wait_for(self, predicate, timeout=TIMEOUT, what="the condition"):
         """Waits until predicate(text) holds; returns the screen text."""
         end = time.monotonic() + timeout

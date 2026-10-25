@@ -714,6 +714,8 @@ std::string boxPlotText(const ScatterPlot &plot, size_t category)
                        (box.count == 1 ? " row" : " rows");
     if (box.count == 0)
         return text;
+    if (box.sampled())
+        text += "; statistics estimated from a sample of " + std::to_string(box.sample_count) + " rows";
     const auto value = [&plot](double coordinate)
     { return scatterValueText(plot.y_axis, coordinate); };
     // The mean of numbers with two decimals more than the axis shows.
@@ -955,6 +957,8 @@ std::string scatterSummary(const ScatterPlot &plot, bool points)
         text += plot.other_category ? " in the " + std::to_string(categories) + " most frequent values of X and (other)"
                                     : " in " + std::to_string(categories) + (categories == 1 ? " value" : " values") + " of X";
     }
+    if (std::any_of(plot.boxes.begin(), plot.boxes.end(), [](const BoxStats &box) { return box.sampled(); }))
+        text += ", box statistics estimated from samples";
     if (plot.others > 0)
         text += ", " + std::to_string(plot.others) + " skipped (empty or not numbers or dates)";
     if (points && plot.sampled())

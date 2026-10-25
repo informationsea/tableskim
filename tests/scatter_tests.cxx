@@ -111,8 +111,12 @@ TEST_CASE("ScatterRange and ScatterCounter", "[scatter]")
 TEST_CASE("boxStats: quartiles, whiskers and outliers", "[scatter]")
 {
     CHECK(boxStats({}).count == 0);
+    CHECK(boxStats({}).sample_count == 0);
+    CHECK_FALSE(boxStats({}).sampled());
     const BoxStats one = boxStats({7});
     CHECK(one.count == 1);
+    CHECK(one.sample_count == 1);
+    CHECK_FALSE(one.sampled());
     CHECK(one.q1 == 7);
     CHECK(one.median == 7);
     CHECK(one.low_whisker == 7);
@@ -121,6 +125,8 @@ TEST_CASE("boxStats: quartiles, whiskers and outliers", "[scatter]")
     // As QUARTILE.INC: 1 2 3 4 5 6 7 8 gives 2.75, 4.5, 6.25.
     const BoxStats box = boxStats({8, 3, 1, 2, 7, 4, 6, 5});
     CHECK(box.count == 8);
+    CHECK(box.sample_count == 8);
+    CHECK_FALSE(box.sampled());
     CHECK(box.min == 1);
     CHECK(box.max == 8);
     CHECK(box.q1 == Catch::Approx(2.75));
@@ -485,4 +491,72 @@ TEST_CASE("scatterValueText: whole numbers in full", "[scatter]")
     CHECK(scatterValueText(axis, 500000.0) == "500000");
     CHECK(scatterValueText(axis, 1279101.65) == "1279101.65");
     CHECK(scatterValueText(axis, -3.0) == "-3");
+}
+
+TEST_CASE("Categorical box counts and sampling do not depend on point sampling", "[scatter][regression]")
+{
+    constexpr size_t cap = size_t{1} << 20;
+    ScatterRange range;
+    range.add(std::string("a"), 0.0);
+    range.add(std::string("a"), 1.0);
+    range.add(std::string("b"), 0.0);
+    const auto layout = range.layout({.max_categories = 1}); // b goes into (other)
+    REQUIRE(layout.categories == std::vector<CellValue>{std::string("a")});
+    REQUIRE(layout.other_category);
+    ScatterCounter density(layout, 0);
+    ScatterCounter points(layout, ScatterOptions{}.max_points);
+    ScatterCounter fewer_points(layout, 32);
+    for (size_t i = 0; i < 2 * cap; ++i)
+    {
+        const double y = i < cap ? 0.0 : 1.0;
+        for (const auto &category : {std::string("a"), std::string("b")})
+        {
+            density.add(category, y, i);
+            points.add(category, y, i);
+            fewer_points.add(category, y, i);
+        }
+        if (i == cap - 2 || i == cap - 1 || i == cap)
+        {
+            const auto partial = density.result();
+            REQUIRE(partial.boxes.size() == 2);
+            for (const auto &box : partial.boxes)
+            {
+                CHECK(box.count == i + 1);
+                CHECK(box.sample_count == std::min(i + 1, cap));
+                CHECK(box.sampled() == (i + 1 > cap));
+            }
+            CHECK((boxPlotText(partial, 0).find("statistics estimated") != std::string::npos) == (i + 1 > cap));
+        }
+    }
+    const auto result = density.result();
+    REQUIRE(result.boxes.size() == 2);
+    CHECK(result.rows == 4 * cap);
+    CHECK(result.pairs == result.rows);
+    CHECK(result.others == 0);
+    CHECK(std::accumulate(result.counts.begin(), result.counts.end(), size_t{0}) == result.rows);
+    for (const auto &box : result.boxes)
+    {
+        CHECK(box.count == 2 * cap);
+        CHECK(box.sample_count == cap);
+        CHECK(box.sampled());
+        // Neither a frozen prefix nor just the tail represents the population.
+        CHECK(box.mean == Catch::Approx(0.5).margin(0.01));
+        CHECK(box.q1 == 0);
+        CHECK(box.q3 == 1);
+    }
+    CHECK(result.boxes == density.result().boxes); // publishing does not alter the sample
+    const auto with_points = points.result();
+    const auto with_fewer_points = fewer_points.result();
+    CHECK(result.boxes == with_points.boxes);
+    CHECK(result.boxes == with_fewer_points.boxes);
+    CHECK(result.counts == with_points.counts);
+    REQUIRE(with_points.points);
+    CHECK(with_points.points->size() == ScatterOptions{}.max_points);
+    REQUIRE(with_fewer_points.points);
+    CHECK(with_fewer_points.points->size() == 32);
+    CHECK_FALSE(result.points);
+    CHECK(boxPlotText(result, 0).starts_with("a: 2097152 rows; statistics estimated from a sample of 1048576 rows; min "));
+    CHECK(boxPlotText(result, 1).starts_with("(other): 2097152 rows; statistics estimated from a sample of 1048576 rows; min "));
+    CHECK(scatterSummary(result, false).find("box statistics estimated from samples") != std::string::npos);
+    CHECK(scatterSummary(with_points, true).find("a sample of 200000 points") != std::string::npos);
 }
