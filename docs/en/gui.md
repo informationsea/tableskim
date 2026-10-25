@@ -79,9 +79,10 @@ responsive.
 
 **Edit → Copy** (`Ctrl+C`) copies the selected cells as tab-separated text
 (TSV), which can be pasted into a spreadsheet. Hidden columns are left out.
-Tabs and line breaks inside a cell are replaced with spaces. If some
-selected rows are not loaded yet, they are skipped and a message says how
-many rows were copied.
+Tabs and line breaks inside a cell are replaced with spaces, and a cell
+that starts with a double quote is quoted so that it pastes back as it
+was. If some selected rows are not loaded yet, they are skipped and a
+message says how many rows were copied.
 
 ## Going to a row, cell or column
 

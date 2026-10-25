@@ -117,7 +117,8 @@ struct TsvCopyResult
 };
 
 // A single cell is copied verbatim, with no added newline. For multiple cells,
-// replace tabs/CR/LF inside each cell with spaces and separate cells/rows as TSV.
+// replace tabs/CR/LF inside each cell with spaces, quote cells that start with a
+// double quote (doubling the quotes in them) and separate cells/rows as TSV.
 // Skip whole rows with unavailable cells; loaded NULL and ragged cells stay empty.
 // Hidden columns are left out.
 TsvCopyResult rangeToTsv(TableModel &model, size_t row_top, size_t col_left, size_t row_bottom, size_t col_right,

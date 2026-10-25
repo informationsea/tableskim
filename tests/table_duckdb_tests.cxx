@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 
 #include <duckdb.hpp>
 
@@ -350,6 +351,42 @@ TEST_CASE("DuckDB: ENUM values sort by displayed text", "[regression]")
         for (const char *value : {"a", "9", ""})
             checkFilterMatches(*sheet, *original, 1, op, value);
     }
+}
+
+TEST_CASE("DuckDB: a column's collation does not change sorts, filters or value counts", "[regression]")
+{
+    auto data = openDuckDbRelations({{
+        .sheet_name = "nocase",
+        .from_sql = "(SELECT id, x COLLATE NOCASE AS x "
+                    "FROM (VALUES (0, 'b'), (1, 'A'), (2, 'a'), (3, 'B'), (4, ''), (5, NULL)) AS v(id, x))",
+    }});
+    auto sheet = data->openSheet("nocase");
+    const auto original = sheet->read(0, 100, {});
+    REQUIRE(original->rows.size() == 6);
+    for (const bool ascending : {true, false})
+    {
+        auto expected = original->rows;
+        std::stable_sort(expected.begin(), expected.end(), [ascending](const TableRow &a, const TableRow &b)
+                         {
+            if (isEmptyCell(a[1]) || isEmptyCell(b[1]))
+                return !isEmptyCell(a[1]) && isEmptyCell(b[1]);
+            const int cmp = compareCells(a[1], b[1]);
+            return ascending ? cmp < 0 : cmp > 0; });
+        sheet->applyView({.sort = {{.column = 1, .ascending = ascending}}});
+        CHECK(sheet->read(0, 100, {})->rows == expected);
+    }
+    for (const auto op : {FilterOp::Equals, FilterOp::NotEquals, FilterOp::Less, FilterOp::Contains})
+    {
+        for (const char *value : {"a", "B"})
+            checkFilterMatches(*sheet, *original, 1, op, value);
+    }
+    sheet->applyView({});
+    std::map<std::string, size_t> counts;
+    const auto distinct = sheet->columnValueCounts(1, [&](const CellValue &value, size_t count)
+                                                   { counts[formatCell(value)] += count; }, {});
+    REQUIRE(distinct);
+    CHECK(*distinct == 4);
+    CHECK(counts == std::map<std::string, size_t>{{"", 2}, {"A", 1}, {"B", 1}, {"a", 1}, {"b", 1}});
 }
 
 TEST_CASE("DuckDB: probing and errors")

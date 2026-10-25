@@ -187,6 +187,27 @@ TEST_CASE("rangeToTsv preserves one cell and flattens multiple cells", "[regress
     std::filesystem::remove(path);
 }
 
+TEST_CASE("rangeToTsv quotes cells that start with a quote, so that they paste back", "[regression]")
+{
+    const auto path = tempFile("copy-quotes.csv");
+    {
+        std::ofstream out(path, std::ios::binary);
+        out << "a,b\n\"\"\"q\"\" x\",a\"b\n";
+    }
+    std::shared_ptr<TableBook> book;
+    auto model = openCsv(path, book);
+    REQUIRE(cellText(*model, 0, 0) == "\"q\" x");
+    REQUIRE(cellText(*model, 0, 1) == "a\"b");
+    const TsvCopyResult copied = rangeToTsv(*model, 0, 0, 0, 1);
+    CHECK(copied.text == "\"\"\"q\"\" x\"\ta\"b\n");
+    CHECK(parseTsv(copied.text) == std::vector<std::vector<std::string>>{{"\"q\" x", "a\"b"}});
+    // One cell is still copied verbatim.
+    CHECK(rangeToTsv(*model, 0, 0, 0, 0).text == "\"q\" x");
+
+    book.reset();
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("rangeToTsv skips unavailable rows and preserves loaded empty cells", "[regression]")
 {
     auto data = std::make_unique<CopyData>();

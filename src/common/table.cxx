@@ -1677,7 +1677,8 @@ AppendResult TableModel::readAppendedRows(std::stop_token stop, bool &caught_up)
         // Rows still being read may include the new ones; a table cut short
         // (stopReading()) stays so. A file known to be empty is never read.
         const bool read_all = eof_ || (source_row_count_.isExact() && sequential_rows_ >= source_row_count_.value);
-        if (!source_ || state_ != ModelState::Ready || !read_all || reading_stopped_)
+        // Paused at a memory checkpoint: the UI asks whether to go on.
+        if (!source_ || state_ != ModelState::Ready || !read_all || reading_stopped_ || memory_paused_)
             return AppendResult::None;
         if (capabilities_.random_access)
             return AppendResult::Changed;
@@ -1701,9 +1702,27 @@ AppendResult TableModel::readAppendedRows(std::stop_token stop, bool &caught_up)
             break;
     }
     auto columns = source_->columns(); // a header may have been appended
+    // A file that had only a header gets its types from the rows appended.
+    std::vector<ColumnTypeCounter> type_counters;
+    const size_t typed_rows = std::min(rows.size(), options_.type_sample_rows - std::min(typed_rows_, options_.type_sample_rows));
+    for (size_t r = 0; r < typed_rows; ++r)
+    {
+        if (type_counters.size() < rows[r].size())
+            type_counters.resize(rows[r].size());
+        for (size_t c = 0; c < rows[r].size(); ++c)
+            type_counters[c].add(rows[r][c]);
+    }
 
     std::vector<TableEvent> events;
     std::unique_lock lock(mutex_);
+    if (typed_rows > 0)
+    {
+        typed_rows_ += typed_rows;
+        if (type_counters_.size() < type_counters.size())
+            type_counters_.resize(type_counters.size());
+        for (size_t c = 0; c < type_counters.size(); ++c)
+            type_counters_[c].merge(type_counters[c]);
+    }
     const size_t old_column_count = std::max(column_count_, columns_.size());
     const bool renamed = columns.size() != columns_.size() ||
                          !std::equal(columns.begin(), columns.end(), columns_.begin(),
@@ -1740,6 +1759,12 @@ AppendResult TableModel::readAppendedRows(std::stop_token stop, bool &caught_up)
         events.push_back({TableEvent::Kind::RowCountChanged});
         events.push_back({TableEvent::Kind::RowsLoaded, first_new, sequential_rows_});
         continueAfterAppendLocked(first_new);
+    }
+    // A file that keeps growing is held in memory too.
+    if (next_memory_checkpoint_ > 0 && cache_bytes_ >= next_memory_checkpoint_)
+    {
+        memory_paused_ = true;
+        events.push_back({TableEvent::Kind::MemoryCheckpoint, 0, sequential_rows_});
     }
     lock.unlock();
     emit(events);
@@ -2845,9 +2870,18 @@ std::shared_ptr<TableModel> TableBook::sheet(const std::string &sheet_name)
     auto &model = models_[sheet_name];
     if (!model)
     {
-        model = std::shared_ptr<TableModel>(new TableModel(sheet_name, model_options_, scheduler_));
-        if (const auto it = result_sheets_.find(sheet_name); it != result_sheets_.end())
-            model->preset_source_ = std::make_unique<ResultSheetSource>(it->second);
+        const auto result = result_sheets_.find(sheet_name);
+        TableModel::Options options = model_options_;
+        // A result's rows are in memory already (ResultRows): pausing would
+        // only cut the result short.
+        if (result != result_sheets_.end())
+        {
+            options.memory_checkpoints.clear();
+            options.memory_checkpoint_interval = 0;
+        }
+        model = std::shared_ptr<TableModel>(new TableModel(sheet_name, options, scheduler_));
+        if (result != result_sheets_.end())
+            model->preset_source_ = std::make_unique<ResultSheetSource>(result->second);
         model->setEditing(editing_);
         scheduler_->add(model);
     }

@@ -140,6 +140,22 @@ namespace
     {
         return "R" + std::to_string(row + 1) + "C" + std::to_string(col + 1);
     }
+
+    // The next column of `count` after `column` (before it if !forward) that
+    // is not hidden, going round if `wrap`; none if there is no other.
+    std::optional<size_t> nextVisibleColumn(const HiddenColumns &hidden, size_t column, bool forward, size_t count,
+                                            bool wrap)
+    {
+        for (size_t step = 1; step < count; ++step)
+        {
+            if (!wrap && (forward ? column + step >= count : step > column))
+                break;
+            const size_t c = forward ? (column + step) % count : (column + count - step % count) % count;
+            if (!hidden.contains(c))
+                return c;
+        }
+        return std::nullopt;
+    }
 } // namespace
 
 TuiApp::TuiApp(App &app) : app_(app)
@@ -223,6 +239,17 @@ TuiTableView::Poster TuiApp::poster()
 TuiTableView *TuiApp::currentView() const
 {
     return sheet_ < views_.size() ? views_[sheet_].get() : nullptr;
+}
+
+const HiddenColumns &TuiApp::hiddenColumnsOf(const std::shared_ptr<TableModel> &model) const
+{
+    static const HiddenColumns none;
+    for (const auto &view : views_)
+    {
+        if (view && model && view->model() == model)
+            return view->hiddenColumns();
+    }
+    return none;
 }
 
 bool TuiApp::open(const std::string &path, std::string *error)
@@ -390,9 +417,10 @@ void TuiApp::sqlFinished(const std::shared_ptr<TableBook> &book, const std::stri
             ++sheet_;
     }
     views_.resize(names.size());
-    if (!rerun && views_[index])
+    if (!rerun)
     {
-        // New rows: a fresh view, not the old position, sort or filter.
+        // New rows: a fresh view, not the old position, sort or filter
+        // (kept for the old result's view, or by a reopen before it was shown).
         views_[index].reset();
         restore_positions_.erase(result.sheet);
         restore_views_.erase(result.sheet);
@@ -2008,10 +2036,13 @@ bool TuiApp::handleHistogramEvent(Event event)
         --histogram_selected_;
     else if ((event == Event::ArrowDown || event == Event::j) && histogram_selected_ + 1 < bars)
         ++histogram_selected_;
-    else if ((event == Event::ArrowLeft || event == Event::h) && state.column > 0)
-        showHistogram(state.column - 1);
-    else if ((event == Event::ArrowRight || event == Event::l) && state.column + 1 < columns)
-        showHistogram(state.column + 1);
+    else if (event == Event::ArrowLeft || event == Event::h || event == Event::ArrowRight || event == Event::l)
+    {
+        const bool forward = event == Event::ArrowRight || event == Event::l;
+        const HiddenColumns &hidden = hiddenColumnsOf(histogram_model_);
+        if (const auto column = nextVisibleColumn(hidden, state.column, forward, columns, false))
+            showHistogram(*column);
+    }
     else if (event == Event::F)
         clearFilter();
     else if (event == Event::Return && state.done && histogram_selected_ < bars)
@@ -2161,6 +2192,9 @@ bool TuiApp::handleDensityEvent(Event event)
     const size_t y_bins = plot.y_bins.binCount();
     const size_t columns = density_model_->columnCount();
     auto choose = [this] { density_chosen_ = true; };
+    // x / y and X / Y step through the columns, skipping hidden ones.
+    auto otherColumn = [&](size_t column, bool forward)
+    { return nextVisibleColumn(hiddenColumnsOf(density_model_), column, forward, columns, true).value_or(column); };
     const bool boxes = density_box_ && plot.categorical();
     if (event == Event::Escape || event == Event::M || event == Event::q)
         closeDensity();
@@ -2183,9 +2217,9 @@ bool TuiApp::handleDensityEvent(Event event)
     {
         // The keys below are the density's.
         if (columns > 0 && (event == Event::x || event == Event::X))
-            showDensity((state.x_column + (event == Event::x ? 1 : columns - 1)) % columns, state.y_column);
+            showDensity(otherColumn(state.x_column, event == Event::x), state.y_column);
         else if (columns > 0 && (event == Event::y || event == Event::Y))
-            showDensity(state.x_column, (state.y_column + (event == Event::y ? 1 : columns - 1)) % columns);
+            showDensity(state.x_column, otherColumn(state.y_column, event == Event::y));
         else if (event == Event::t)
             showDensity(state.y_column, state.x_column);
         else if (event == Event::F)
@@ -2216,9 +2250,9 @@ bool TuiApp::handleDensityEvent(Event event)
         choose();
     }
     else if (columns > 0 && (event == Event::x || event == Event::X))
-        showDensity((state.x_column + (event == Event::x ? 1 : columns - 1)) % columns, state.y_column);
+        showDensity(otherColumn(state.x_column, event == Event::x), state.y_column);
     else if (columns > 0 && (event == Event::y || event == Event::Y))
-        showDensity(state.x_column, (state.y_column + (event == Event::y ? 1 : columns - 1)) % columns);
+        showDensity(state.x_column, otherColumn(state.y_column, event == Event::y));
     else if (event == Event::t)
         showDensity(state.y_column, state.x_column);
     else if (event == Event::L)

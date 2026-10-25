@@ -235,6 +235,73 @@ TEST_CASE("readAppended: a file without rows takes its header from them")
     CHECK(cellText(*model, 0, 1) == "INFO");
 }
 
+TEST_CASE("readAppended: the column types of a file with only a header come from the new rows", "[regression]")
+{
+    TempFile file("tableskim-test-follow-types.csv");
+    file.write("n,name\n");
+    std::shared_ptr<TableBook> book;
+    auto model = openRead(book, file.path());
+    REQUIRE(model->columnTypes().size() == 2);
+    CHECK(model->columnTypes()[0].kind == ColumnKind::Unknown);
+    file.write("1,a\n2,b\n", true);
+    CHECK(readAppended(*book) == AppendResult::Appended);
+    CHECK(exactRows(*model, 2) == 2);
+    const auto types = model->columnTypes();
+    REQUIRE(types.size() == 2);
+    CHECK(types[0].kind == ColumnKind::Number);
+    CHECK(types[0].values == 2);
+    CHECK(types[1].kind == ColumnKind::Text);
+}
+
+TEST_CASE("readAppended: rows appended pause at a memory checkpoint", "[regression]")
+{
+    TempFile file("tableskim-test-follow-memory.csv");
+    file.write("n\n1\n");
+    OpenOptions options;
+    options.header = OpenOptions::Header::Yes;
+    TableModel::Options model_options;
+    model_options.block_rows = 4;
+    model_options.memory_checkpoints = {size_t{256} << 10}; // above what opening reads
+    model_options.memory_checkpoint_interval = 0;
+    auto book = TableBook::open(file.path(), options, BackendRegistry::builtin(), model_options);
+    auto model = book->sheet(book->sheetNames().front());
+    REQUIRE(waitFor([&]
+                    { return model->state() == ModelState::Ready && model->rowCount().isExact(); }));
+    REQUIRE_FALSE(model->memoryCheckpoint());
+
+    std::string rows;
+    for (int i = 0; i < 20000; ++i)
+        rows += std::to_string(i) + ",some text to take up memory\n";
+    file.write(rows, true);
+    CHECK(readAppended(*book) == AppendResult::Appended);
+    REQUIRE(waitFor([&]
+                    { return model->memoryCheckpoint().has_value(); }));
+    const size_t read = model->rowCount().value;
+    CHECK(read == 20001);
+
+    // Paused: nothing more is read until the user answers.
+    file.write("more\n", true);
+    bool caught_up = true;
+    CHECK(readAppended(*book, &caught_up) == AppendResult::None);
+    CHECK_FALSE(caught_up);
+    CHECK(model->rowCount().value == read);
+
+    SECTION("continue reading")
+    {
+        model->continueReading();
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        CHECK(exactRows(*model, read + 1) == read + 1);
+    }
+    SECTION("stop reading")
+    {
+        model->stopReading();
+        REQUIRE(waitFor([&]
+                        { return model->readingStopped(); }));
+        CHECK(readAppended(*book) == AppendResult::None);
+        CHECK(model->rowCount().value == read);
+    }
+}
+
 TEST_CASE("readAppended: statistics, histograms and filters go on with the new rows")
 {
     TempFile file("tableskim-test-follow-jobs.csv");

@@ -304,6 +304,11 @@ namespace
             column.select = "CAST(" + column.alias + " AS VARCHAR)";
             break;
         }
+        // Text compares byte by byte, as in memory: a column's collation (say
+        // NOCASE) or default_collation would make sorts, filters and GROUP BY
+        // ignore case.
+        if (column.kind == ColumnKind::Text || type.id() == Id::HUGEINT || type.id() == Id::UHUGEINT)
+            column.select = "(" + column.select + " COLLATE \"binary\")";
         if (column.temporal && column.temporal_number.empty())
             column.temporal_number = "epoch_us(" + column.select + ")";
         if (column.temporal)

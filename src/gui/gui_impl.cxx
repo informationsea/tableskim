@@ -134,8 +134,16 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
             // below and restore its tab when the result arrives.
             if (old_sheet_names[i] == sql_sheet_)
             {
-                sql_restore_ = {scroll_positions[sql_sheet_], views[sql_sheet_],
-                                tab->value() == gui_table_views[i]};
+                const auto &model = gui_table_views[i]->model();
+                sql_restore_ = {.scroll = scroll_positions[sql_sheet_],
+                                .view = views[sql_sheet_],
+                                .hidden = gui_table_views[i]->hiddenColumns(),
+                                .formats = gui_table_views[i]->columnFormats(),
+                                .frozen = gui_table_views[i]->frozenColumns(),
+                                .stats_column = model && model->columnStatsState().active
+                                                    ? std::optional<size_t>(model->columnStatsState().column)
+                                                    : std::nullopt,
+                                .selected = tab->value() == gui_table_views[i]};
             }
         }
     }
@@ -397,6 +405,14 @@ void TableWindow::sql_finished(const std::shared_ptr<TableBook> &book, const std
     {
         table_view->restoreScrollPosition(sql_restore_->scroll);
         table_view->restoreView(sql_restore_->view);
+        if (!sql_restore_->hidden.empty())
+            table_view->restoreHiddenColumns(sql_restore_->hidden);
+        if (!sql_restore_->formats.empty())
+            table_view->restoreColumnFormats(sql_restore_->formats);
+        if (sql_restore_->frozen > 0)
+            table_view->freezeColumns(sql_restore_->frozen);
+        if (sql_restore_->stats_column && table_view->model())
+            table_view->model()->startColumnStats(*sql_restore_->stats_column);
         select = sql_restore_->selected;
     }
     sql_restore_.reset();
@@ -742,17 +758,26 @@ void TableWindow::update_sheet_label(GuiTableView *table_view)
     }
 }
 
+namespace
+{
+    // The selection's left column, or the first one, else the nearest
+    // visible column: a hidden one can be selected (with the whole row, say).
+    size_t selectedVisibleColumn(GuiTableView &table_view)
+    {
+        int row_top, col_left, row_bottom, col_right;
+        table_view.get_selection(row_top, col_left, row_bottom, col_right);
+        return table_view.hiddenColumns().nearestVisible(static_cast<size_t>(std::max(col_left, 0)), 1,
+                                                         static_cast<size_t>(std::max(table_view.cols(), 0)));
+    }
+} // namespace
+
 void TableWindow::setup_filter()
 {
     // New conditions are on the selected column.
     filter_pane->setDefaultColumn([this]() -> size_t
                                   {
         auto *table_view = dynamic_cast<GuiTableView *>(tab->value());
-        if (!table_view)
-            return 0;
-        int row_top, col_left, row_bottom, col_right;
-        table_view->get_selection(row_top, col_left, row_bottom, col_right);
-        return col_left >= 0 ? static_cast<size_t>(col_left) : 0; });
+        return table_view ? selectedVisibleColumn(*table_view) : 0; });
 }
 
 void TableWindow::sync_filter()
@@ -798,11 +823,7 @@ void TableWindow::show_stats(std::optional<size_t> column)
     if (!table_view || !table_view->model())
         return;
     if (!column)
-    {
-        int row_top, col_left, row_bottom, col_right;
-        table_view->get_selection(row_top, col_left, row_bottom, col_right);
-        column = col_left >= 0 ? static_cast<size_t>(col_left) : 0;
-    }
+        column = selectedVisibleColumn(*table_view);
     set_show_sidebar(true);
     sidebar_tab->value(stats_pane);
     sync_stats();
@@ -855,11 +876,7 @@ void TableWindow::show_histogram(std::optional<size_t> column)
     if (!table_view || !table_view->model())
         return;
     if (!column)
-    {
-        int row_top, col_left, row_bottom, col_right;
-        table_view->get_selection(row_top, col_left, row_bottom, col_right);
-        column = col_left >= 0 ? static_cast<size_t>(col_left) : 0;
-    }
+        column = selectedVisibleColumn(*table_view);
     if (!histogram_window_)
         histogram_window_ = std::make_unique<HistogramWindow>();
     histogram_window_->show(table_view->model(), table_view->model()->name(), *column);
@@ -882,10 +899,14 @@ void TableWindow::show_scatter_plot(std::optional<size_t> column)
     table_view->get_selection(row_top, col_left, row_bottom, col_right);
     size_t x_column = 0;
     size_t y_column = 0;
-    if (!column && col_left >= 0 && col_right > col_left)
+    const HiddenColumns &hidden = table_view->hiddenColumns();
+    const auto column_count = static_cast<size_t>(std::max(table_view->cols(), 0));
+    if (!column && col_left >= 0 && col_right > col_left &&
+        hidden.visibleIn(static_cast<size_t>(col_left), static_cast<size_t>(col_right)) >= 2)
     {
-        x_column = static_cast<size_t>(col_left);
-        y_column = static_cast<size_t>(col_right);
+        // The first and last visible columns of the selection.
+        x_column = hidden.nearestVisible(static_cast<size_t>(col_left), 1, column_count);
+        y_column = hidden.nearestVisible(static_cast<size_t>(col_right), -1, column_count);
     }
     else
     {
@@ -1153,12 +1174,20 @@ namespace
     }
 } // namespace
 
+// A cell being edited holds text the model does not have yet: a reopen
+// would drop it without asking, as modified() does not know of it.
+bool TableWindow::cell_editor_open() const
+{
+    return std::any_of(gui_table_views.begin(), gui_table_views.end(),
+                       [](const GuiTableView *view) { return view->editingCell(); });
+}
+
 void TableWindow::revert_if_changed()
 {
     // Checked before the stamp is read so that the change is picked up by a
     // later poll once the menu or alert is closed. Fl::grab() covers menus
     // that pop up without a guard (menu bar, Fl_Choice).
-    if (current_path.empty() || NestedLoopGuard::active() || Fl::grab())
+    if (current_path.empty() || NestedLoopGuard::active() || Fl::grab() || cell_editor_open())
         return;
     // Following: only the appended rows are read, if the file allows. Edit
     // mode reads the file again as Auto Revert does, which keeps the edits.
@@ -1215,8 +1244,9 @@ void TableWindow::appended_rows_read(const std::shared_ptr<TableBook> &book, App
         return;
     }
     // This may arrive while a menu or dialog runs its own loop, whose view
-    // the reopen would delete, or after an edit; the next poll asks again.
-    if (NestedLoopGuard::active() || Fl::grab() || table_book->modified())
+    // the reopen would delete, or after an edit (or during one, its text not
+    // yet in the model); the next poll asks again.
+    if (NestedLoopGuard::active() || Fl::grab() || table_book->modified() || cell_editor_open())
         return;
     spdlog::debug("Follow: {} was changed, reading it again", current_path);
     std::filesystem::file_time_type mtime;

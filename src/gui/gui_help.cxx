@@ -240,6 +240,11 @@ bool HelpWindow::writePages()
         if (!out)
         {
             spdlog::error("Cannot write {}", viewPath(path));
+            // show() writes the pages only while there is no directory: the
+            // next attempt starts over instead of showing missing pages.
+            out.close();
+            std::filesystem::remove_all(directory_, ec);
+            directory_.clear();
             return false;
         }
     }

@@ -329,8 +329,19 @@ namespace
                 if (kinds_[i] == 0 || (kinds_[i] & KIND_TEXT))
                     textual.push_back(i);
             }
-            const std::vector<std::string> inferred = inferTypes(*conn_, textual);
             std::vector<std::string> types(width_, "VARCHAR");
+            std::vector<std::string> inferred;
+            try
+            {
+                inferred = inferTypes(*conn_, textual);
+            }
+            catch (const std::runtime_error &)
+            {
+                // The interrupted query: the caller sees the stop and writes nothing.
+                if (stop_.stop_requested())
+                    return types;
+                throw;
+            }
             for (size_t i = 0; i < textual.size(); ++i)
                 types[textual[i]] = inferred[i];
             for (size_t i = 0; i < width_; ++i)

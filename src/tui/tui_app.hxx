@@ -233,6 +233,8 @@ private:
 
     TuiTableView::Poster poster();
     TuiTableView *currentView() const;
+    // The hidden columns of the view showing `model` (none if no view does).
+    const HiddenColumns &hiddenColumnsOf(const std::shared_ptr<TableModel> &model) const;
     void showSheet(size_t index);
     void revert();
     void revertIfChanged();

@@ -241,6 +241,32 @@ TEST_CASE("TableBook::addResultSheet: kept after an SQL query")
     CHECK(std::find(names.begin(), names.end(), result->sheet) != names.end());
 }
 
+TEST_CASE("TableBook::addResultSheet: a result is read past the memory checkpoints", "[regression]")
+{
+    // Pauses a text file's sheets after their first block.
+    TableModel::Options options;
+    options.block_rows = 2;
+    options.memory_checkpoints = {1};
+    auto book = TableBook::open(kDemoData / "normal.csv", {}, BackendRegistry::builtin(), options);
+    ResultSheet sheet;
+    sheet.columns = {{"n"}};
+    for (int64_t i = 0; i < 10; ++i)
+        sheet.rows.push_back({i});
+    const std::string name = book->addResultSheet("Group By", ResultRows::make(std::move(sheet), 2));
+
+    auto result = book->sheet(name);
+    REQUIRE(result);
+    const auto rows = sheetText(*result);
+    REQUIRE(rows.size() == 10);
+    CHECK(rows.back() == std::vector<std::string>{"9"});
+    CHECK_FALSE(result->memoryCheckpoint().has_value());
+
+    auto file = book->sheet(book->sheetNames().front());
+    file->setView({.sort = {{0, true}}});
+    CHECK(waitFor([&]
+                  { return file->memoryCheckpoint().has_value(); }));
+}
+
 TEST_CASE("GroupByAccumulator: sums and means without the noise of binary arithmetic")
 {
     GroupByAccumulator accumulator({.keys = {}, .values = {0}, .aggregates = {Aggregate::Sum, Aggregate::Mean}});

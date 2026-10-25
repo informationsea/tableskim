@@ -545,7 +545,7 @@ requestWindowMenuUpdate();} {}
   }
   decl {std::string sql_sheet_} {private local
   }
-  decl {struct SqlRestore { GuiTableView::ScrollPosition scroll; ViewSpec view; bool selected = false; };} {private local
+  decl {struct SqlRestore { GuiTableView::ScrollPosition scroll; ViewSpec view; HiddenColumns hidden; ColumnFormats formats; int frozen = 0; std::optional<size_t> stats_column; bool selected = false; };} {private local
   }
   decl {std::optional<SqlRestore> sql_restore_} {private local
   }
@@ -637,6 +637,8 @@ return !table_book || table_book->usesHeaderOption();} {}
   decl {std::uintmax_t file_size_ = 0} {private local
   }
   decl {void revert_if_changed()} {private local
+  }
+  decl {bool cell_editor_open() const} {private local
   }
   decl {void schedule_auto_revert()} {private local
   }

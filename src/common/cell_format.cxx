@@ -375,8 +375,23 @@ TsvCopyResult rangeToTsv(TableModel &model, size_t row_top, size_t col_left, siz
             {
                 std::string cell_text = formatCell(*cell.value);
                 if (!single_cell)
+                {
                     std::replace_if(cell_text.begin(), cell_text.end(), [](char c)
                                     { return c == '\t' || c == '\n' || c == '\r'; }, ' ');
+                    // A leading quote would open a quoted field when pasted
+                    // (parseTsv(), spreadsheets).
+                    if (cell_text.starts_with('"'))
+                    {
+                        std::string quoted = "\"";
+                        for (const char c : cell_text)
+                        {
+                            quoted += c;
+                            if (c == '"')
+                                quoted += '"';
+                        }
+                        cell_text = quoted + '"';
+                    }
+                }
                 row_text += cell_text;
             }
             else if (cell.state != CellState::Empty)
