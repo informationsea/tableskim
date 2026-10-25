@@ -30,7 +30,7 @@ Catch2, FTXUI, CLI11, spdlog, zlib, bzip2, xz, zstd, RE2, Abseil) are pulled wit
 `cmake/Dependencies.cmake` and linked statically (OpenXLSX is patched at
 every configure by `cmake/patches/openxlsx.cmake`, which must leave patched
 files alone). There is no system package
-requirement except a compiler, CMake ≥ 3.22, and (on Linux) fontconfig.
+requirement except a compiler, CMake ≥ 3.26, and (on Linux) fontconfig.
 On Linux, FLTK can optionally come from the system (FLTK ≥ 1.4 with its CMake
 config package) by configuring with `-DTABLESKIM_USE_SYSTEM_FLTK=ON`.
 Likewise `-DTABLESKIM_USE_SYSTEM_SQLITE=ON` and
@@ -57,6 +57,7 @@ runs the tests. The individual steps are:
 cmake --preset debug                 # first time only
 cmake --build --preset debug
 ctest --preset debug                 # output is shown on failure
+ctest --preset debug -j 8            # test cases in parallel
 # or run a subset:
 ./build/debug/tableskim-tests "normal.csv*"
 ```
@@ -77,6 +78,14 @@ ctest --preset debug                 # output is shown on failure
   version from `OVERRIDE_GIT_DESCRIBE`, so that it does not depend on the
   shallow clone having fetched the tag.
 - Debug builds define `TABLESKIM_DEBUG=1`, which enables debug logging.
+- TableSkim's own targets compile with `-Wall -Wextra` (MSVC: `/W4`) by
+  linking `tableskim-warnings`; link it to every new target of our own.
+  Dependencies are `SYSTEM`, so their headers do not warn. Keep the build
+  free of warnings.
+- The `asan` preset (Linux and macOS) is a Debug build with
+  AddressSanitizer and UndefinedBehaviorSanitizer, dependencies included;
+  run `cmake --preset asan`, `cmake --build --preset asan` and
+  `ctest --preset asan` after changes to memory handling or threading.
 - Windows uses the `vs-debug` / `vs-release` presets (Visual Studio 2026, MSVC)
   or, from a Developer Command Prompt, `msvc-debug` / `msvc-release` (Ninja,
   MSVC). CI and the release workflow use `msvc-release` so that ccache works
@@ -375,6 +384,11 @@ Match the existing code:
 ## Tests
 
 - Tests use Catch2 v3 (`TEST_CASE`, `SECTION`, `REQUIRE`/`CHECK`).
+  ctest runs each test case of `tableskim-tests` in a process of its own
+  (`catch_discover_tests`), possibly in parallel; `tests/test_main.cxx`
+  points `temp_directory_path()` at a directory of each process's own, so
+  temporary files of fixed names do not collide. Test case names must be
+  unique.
 - Model behaviour is tested against fake `SheetSource` implementations in
   `tests/table_tests.cxx`; backend tests use the files in `demo/data/`.
 - Because loading is asynchronous, use the helpers in

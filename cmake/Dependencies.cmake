@@ -3,6 +3,9 @@ SET(DUCKDB_VERSION 1.5.6)
 
 include(FetchContent)
 
+# Every dependency is SYSTEM, so that its headers are system headers and their
+# warnings stay out of TableSkim's own (tableskim-warnings).
+#
 # Git dependencies are cloned at their tag only (GIT_SHALLOW): the full history
 # of DuckDB alone is close to 1 GB, and CI clones every dependency on each run.
 # Archives are checked against their SHA-256 (URL_HASH); update the hash
@@ -36,6 +39,7 @@ if(TABLESKIM_USE_SYSTEM_FLTK)
 elseif(TABLESKIM_BUILD_GUI)
     FetchContent_Declare(
         fltk
+        SYSTEM
         GIT_REPOSITORY https://github.com/fltk/fltk.git
         GIT_TAG release-${FLTK_VERSION}
         GIT_SHALLOW TRUE
@@ -62,6 +66,7 @@ endif()
 
 FetchContent_Declare(
     duckdb
+    SYSTEM
     GIT_REPOSITORY https://github.com/duckdb/duckdb.git
     GIT_TAG v${DUCKDB_VERSION}
     GIT_SHALLOW TRUE
@@ -130,7 +135,7 @@ else()
         duckdb_static
     )
 endif()
-target_include_directories(duckdb-static INTERFACE
+target_include_directories(duckdb-static SYSTEM INTERFACE
     ${duckdb_SOURCE_DIR}/src/include
 )
 
@@ -148,6 +153,7 @@ if(TABLESKIM_USE_SYSTEM_SQLITE)
 else()
     FetchContent_Declare(
         sqlite
+        SYSTEM
         URL https://sqlite.org/2026/sqlite-amalgamation-3540100.zip
         URL_HASH SHA256=0a9c8e34352dad46006aa82836d5383bff9dc6bc9ce5a60553c05aa30e6ad1f9
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
@@ -160,7 +166,7 @@ else()
         ${sqlite_SOURCE_DIR}/sqlite3.c
         ${sqlite_SOURCE_DIR}/sqlite3.h
     )
-    target_include_directories(sqlite3 PUBLIC ${sqlite_SOURCE_DIR})
+    target_include_directories(sqlite3 SYSTEM PUBLIC ${sqlite_SOURCE_DIR})
 
     # sqlite3 lives in the top-level directory, so the override above does not
     # reach it; apply the Release flags to the target directly.
@@ -172,6 +178,7 @@ endif()
 
 FetchContent_Declare(
     catch2
+    SYSTEM
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG v3.16.1
     GIT_SHALLOW TRUE
@@ -185,6 +192,7 @@ set_target_properties(Catch2 Catch2WithMain PROPERTIES DEBUG_POSTFIX "")
 
 FetchContent_Declare(
     ftxui
+    SYSTEM
     GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
     GIT_TAG v7.0.3
     GIT_SHALLOW TRUE
@@ -200,6 +208,7 @@ set(OPENXLSX_BUILD_SAMPLES OFF)
 set(OPENXLSX_CREATE_DOCS OFF)
 FetchContent_Declare(
     openxlsx
+    SYSTEM
     GIT_REPOSITORY https://github.com/troldal/OpenXLSX.git
     GIT_TAG v0.5.1
     GIT_SHALLOW TRUE
@@ -229,6 +238,7 @@ execute_process(
 
 FetchContent_Declare(
   csv-parser
+  SYSTEM
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser.git
   GIT_TAG v5.5.0
   GIT_SHALLOW TRUE
@@ -237,6 +247,7 @@ FetchContent_MakeAvailable(csv-parser)
 
 FetchContent_Declare(
     CLI11
+    SYSTEM
     GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
     GIT_TAG v2.7.2
     GIT_SHALLOW TRUE
@@ -267,6 +278,7 @@ else()
     set(ZLIB_INSTALL OFF)
     FetchContent_Declare(
         zlib
+        SYSTEM
         URL https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
         URL_HASH SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
@@ -282,6 +294,7 @@ else()
     set(XZ_DOC OFF)
     FetchContent_Declare(
         xz
+        SYSTEM
         URL https://github.com/tukaani-project/xz/releases/download/v5.8.4/xz-5.8.4.tar.gz
         URL_HASH SHA256=0014c7886930454fe8bd4228665b51af55eeae560ea135c9c4cd33f55b2591d9
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
@@ -296,6 +309,7 @@ else()
     set(ZSTD_LEGACY_SUPPORT OFF)
     FetchContent_Declare(
         zstd
+        SYSTEM
         URL https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
         URL_HASH SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
@@ -307,6 +321,7 @@ else()
     # bzip2 1.0.8 has no CMake build; compile its sources directly.
     FetchContent_Declare(
         bzip2
+        SYSTEM
         URL https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz
         URL_HASH SHA256=ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
@@ -321,9 +336,10 @@ else()
         ${bzip2_SOURCE_DIR}/decompress.c
         ${bzip2_SOURCE_DIR}/bzlib.c
     )
-    target_include_directories(bz2 PUBLIC ${bzip2_SOURCE_DIR})
-    # Without BZ_EXPORT, bzlib.h declares the API as function pointers on Windows.
-    target_compile_definitions(bz2 PUBLIC BZ_EXPORT)
+    target_include_directories(bz2 SYSTEM PUBLIC ${bzip2_SOURCE_DIR})
+    # Without BZ_EXPORT, bzlib.h declares the API as function pointers on
+    # Windows. Empty, as bzlib.h defines it again, so that it is not redefined.
+    target_compile_definitions(bz2 PUBLIC BZ_EXPORT=)
     if(MSVC)
         target_compile_definitions(bz2 PRIVATE _CRT_SECURE_NO_WARNINGS)
     else()
@@ -336,7 +352,7 @@ else()
     target_link_libraries(tableskim-compression INTERFACE
         zlibstatic bz2 liblzma libzstd_static)
     # liblzma adds its public headers to the include path only when installed.
-    target_include_directories(tableskim-compression INTERFACE ${xz_SOURCE_DIR}/src/liblzma/api)
+    target_include_directories(tableskim-compression SYSTEM INTERFACE ${xz_SOURCE_DIR}/src/liblzma/api)
 endif()
 
 # Regular expression search. RE2 needs Abseil, which is added first so that
@@ -346,6 +362,7 @@ set(ABSL_BUILD_TESTING OFF)
 set(ABSL_ENABLE_INSTALL OFF)
 FetchContent_Declare(
     absl
+    SYSTEM
     GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
     GIT_TAG 20260817.0
     GIT_SHALLOW TRUE
@@ -358,6 +375,7 @@ set(RE2_BUILD_TESTING OFF)
 set(RE2_INSTALL OFF)
 FetchContent_Declare(
     re2
+    SYSTEM
     GIT_REPOSITORY https://github.com/google/re2.git
     GIT_TAG 2025-11-05
     GIT_SHALLOW TRUE
@@ -367,6 +385,7 @@ FetchContent_MakeAvailable(re2)
 
 FetchContent_Declare(
     spdlog
+    SYSTEM
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG v1.17.0
     GIT_SHALLOW TRUE
