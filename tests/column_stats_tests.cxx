@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -61,6 +62,26 @@ TEST_CASE("column statistics of numeric text", "[stats]")
     CHECK(stats.top[1] == ValueCount{text(" 1 "), 1});
     CHECK(stats.top[2] == ValueCount{text("2.5"), 1});
     CHECK(stats.top[3] == ValueCount{text("10"), 1});
+}
+
+TEST_CASE("column statistics rank large integer text exactly", "[stats]")
+{
+    std::vector<CellValue> values = {text("9007199254740992"), text("9007199254740993"),
+                                   text("-9007199254740993"), text("-9007199254740992"), int64_t{7}};
+    for (int order = 0; order < 2; ++order)
+    {
+        const ColumnStats stats = statsOf(values);
+        REQUIRE(stats.top.size() == 5);
+        CHECK(stats.top[0].value == text("-9007199254740993"));
+        CHECK(stats.top[1].value == text("-9007199254740992"));
+        CHECK(stats.top[2].value == CellValue{int64_t{7}});
+        CHECK(stats.top[3].value == text("9007199254740992"));
+        CHECK(stats.top[4].value == text("9007199254740993"));
+        const ColumnStats limited = statsOf(values, {.top_values = 1});
+        REQUIRE(limited.top.size() == 1);
+        CHECK(limited.top[0].value == text("-9007199254740993"));
+        std::reverse(values.begin(), values.end());
+    }
 }
 
 TEST_CASE("column statistics of mixed values follow the sort order", "[stats]")
