@@ -216,7 +216,16 @@ package.bat  [exe|zip|msix|all]        # Windows
 ```
 
 Packages are written to the release build directory. Pushing a tag such as
-`v0.1.0` builds packages for every platform with GitHub Actions.
+`v0.1.0` builds packages for every platform with GitHub Actions and attaches
+them to a GitHub release:
+
+- Linux: `.deb` (built on Ubuntu 24.04), `.rpm` (built on Rocky Linux 10),
+  and three ZIPs built on Rocky Linux 8 (glibc 2.28) for older
+  distributions: the GUI with Wayland, the GUI for X11 only (`-x11`), and
+  the terminal UI only (`tableskim-tui`)
+- macOS: `.dmg` and `.zip`
+- Windows: installer (`.exe`) and `.zip`; `package.bat msix` is not part of
+  the release
 
 ## Development
 

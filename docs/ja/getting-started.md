@@ -8,9 +8,17 @@ TableSkim は必要なライブラリをすべて組み込んだネイティブ�
 
 | プラットフォーム | パッケージ                                                  |
 | ---------------- | ----------------------------------------------------------- |
-| Linux            | `.deb`（Debian、Ubuntu）、`.rpm`（Fedora、RHEL、openSUSE）  |
+| Linux            | `.deb`（Ubuntu 24.04 以降）、`.rpm`（RHEL 10 とその互換ディストリビューション）、またはどのディストリビューションでも動く `.zip` |
 | macOS            | `.dmg` ディスクイメージ、または `TableSkim.app` を含む `.zip` |
-| Windows          | インストーラー（`.exe`）、`.zip`、`.msix`                    |
+| Windows          | インストーラー（`.exe`）、`.zip`                            |
+
+`.deb` と `.rpm` は Ubuntu 24.04 と Rocky Linux 10 でビルドしているため、それと同じかより新しいディストリビューションにしかインストールできません。ほかのディストリビューションや古いもの（glibc 2.28 以降：RHEL 8、Debian 10、Ubuntu 20.04 以降）では Linux 用の ZIP を使ってください。インストールは不要で、好きな場所に展開して中の `bin/tableskim` を実行します。
+
+| ZIP                                        | 内容                                                  |
+| ------------------------------------------ | ----------------------------------------------------- |
+| `tableskim-<version>-Linux-x86_64.zip`     | GUI（Wayland と X11）とターミナル UI                  |
+| `tableskim-<version>-Linux-x11-x86_64.zip` | X11 専用の GUI（Wayland のライブラリが不要）とターミナル UI |
+| `tableskim-tui-<version>-Linux-x86_64.zip` | ターミナル UI のみ（デスクトップのないサーバー向け）  |
 
 macOS 版は開発元の証明書で署名していないため、初回は macOS が許可を求めます。`TableSkim.app` を Control キーを押しながらクリック(右クリック)して **開く** を選ぶか、**システム設定 → プライバシーとセキュリティ** で許可してください。「壊れている」と表示されるときは、ターミナルでダウンロードの印を外します。
 
@@ -23,7 +31,7 @@ xattr -dr com.apple.quarantine /Applications/TableSkim.app
 
 ### 各プラットフォームでの `tableskim` コマンド
 
-- **Linux**：パッケージが `tableskim` コマンドとデスクトップエントリをインストールするので、アプリケーションメニューにも TableSkim が表示されます。
+- **Linux**：`.deb` と `.rpm` は `tableskim` コマンドとデスクトップエントリをインストールするので、アプリケーションメニューにも TableSkim が表示されます。ZIP ではコマンドは `bin/` にあります。どこからでも使うには `PATH` の通った場所にリンクを作ってください。
 - **macOS**：コマンドはアプリバンドル内の実行ファイルです。ターミナルから使うには、`PATH` の通った場所にリンクを作ります。
 
   ```sh
@@ -39,7 +47,7 @@ xattr -dr com.apple.quarantine /Applications/TableSkim.app
 
 | プラットフォーム | 場所                                                                     |
 | ---------------- | ------------------------------------------------------------------------ |
-| Linux            | `/usr/share/doc/tableskim/html/README.html`                              |
+| Linux            | `/usr/share/doc/tableskim/html/README.html`（ZIP では `share/doc/tableskim/html/README.html`） |
 | macOS            | `.dmg` または `.zip` 内の、`TableSkim.app` の隣にある `Manual` フォルダ |
 | Windows          | インストール先フォルダの `Manual\README.html`。インストーラーはスタートメニューに **TableSkim User Manual** も追加します |
 

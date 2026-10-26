@@ -7,11 +7,23 @@
 TableSkim is distributed as native packages with all libraries built in, so
 nothing else needs to be installed.
 
-| Platform | Packages                                                     |
-| -------- | ------------------------------------------------------------ |
-| Linux    | `.deb` (Debian, Ubuntu), `.rpm` (Fedora, RHEL, openSUSE)     |
-| macOS    | `.dmg` disk image or `.zip` containing `TableSkim.app`       |
-| Windows  | Installer (`.exe`), `.zip` or `.msix`                        |
+| Platform | Packages                                                               |
+| -------- | ---------------------------------------------------------------------- |
+| Linux    | `.deb` (Ubuntu 24.04 or later), `.rpm` (RHEL 10 and its rebuilds), or a `.zip` for any distribution |
+| macOS    | `.dmg` disk image or `.zip` containing `TableSkim.app`                 |
+| Windows  | Installer (`.exe`) or `.zip`                                           |
+
+The `.deb` and `.rpm` packages are built on Ubuntu 24.04 and Rocky Linux 10
+and install only on distributions at least as new. For other or older
+distributions (glibc 2.28 or later: RHEL 8, Debian 10, Ubuntu 20.04 and
+newer), use one of the Linux ZIPs, which need no installation: unpack one
+anywhere and run `bin/tableskim` in it.
+
+| ZIP                                     | Contents                                              |
+| --------------------------------------- | ----------------------------------------------------- |
+| `tableskim-<version>-Linux-x86_64.zip`     | GUI (Wayland and X11) and terminal UI               |
+| `tableskim-<version>-Linux-x11-x86_64.zip` | GUI for X11 only, which needs no Wayland libraries, and terminal UI |
+| `tableskim-tui-<version>-Linux-x86_64.zip` | Terminal UI only, for servers without a desktop     |
 
 The macOS app is not signed with a developer certificate, so macOS asks for
 your permission the first time: Control-click (right-click) `TableSkim.app`
@@ -28,8 +40,10 @@ To build TableSkim yourself, see the *Building* section of the
 
 ### The `tableskim` command on each platform
 
-- **Linux**: the package installs the `tableskim` command and a desktop
-  entry, so TableSkim also appears in the application menu.
+- **Linux**: the `.deb` and `.rpm` packages install the `tableskim` command
+  and a desktop entry, so TableSkim also appears in the application menu.
+  A ZIP has the command in `bin/`; link it into your `PATH` to use it from
+  anywhere.
 - **macOS**: the command is the executable inside the app bundle. To use
   it from a terminal, link it into your `PATH`:
 
@@ -49,7 +63,7 @@ which is handy when you use the terminal UI:
 
 | Platform | Location                                                                 |
 | -------- | ------------------------------------------------------------------------ |
-| Linux    | `/usr/share/doc/tableskim/html/README.html`                              |
+| Linux    | `/usr/share/doc/tableskim/html/README.html` (ZIP: `share/doc/tableskim/html/README.html`) |
 | macOS    | The `Manual` folder next to `TableSkim.app` in the `.dmg` or `.zip`      |
 | Windows  | `Manual\README.html` in the installation folder; the installer also adds **TableSkim User Manual** to the Start menu |
 
