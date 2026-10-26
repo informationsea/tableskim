@@ -1,6 +1,7 @@
 name: CI
 
-# Builds and tests pushes to main and all pull requests on each platform. The build
+# Builds and tests pushes to main and all pull requests on each platform, and on
+# Rocky Linux 10 and 8 (in containers) like the release workflow. The build
 # without the GUI (-DTABLESKIM_BUILD_GUI=OFF) is only built for releases.
 on:
   push:
@@ -74,4 +75,68 @@ jobs:
         with:
           name: tableskim-zip-${{ matrix.os }}
           path: build/${{ env.PRESET }}/*.zip
+          if-no-files-found: error
+
+  # The distributions the release workflow builds its RPM (Rocky Linux 10)
+  # and its ZIP for older distributions (Rocky Linux 8: glibc 2.28,
+  # gcc-toolset, X11 only) on. Their ccache is what those release jobs start
+  # from. The terminal UI's and the GUI's tests are left to Ubuntu (AUTO:
+  # neither pyte nor xvfb-run is installed here).
+  rocky:
+    name: rockylinux-${{ matrix.version }}
+    runs-on: ubuntu-latest
+    container: rockylinux/rockylinux:${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "10"
+            repo: crb
+            packages: >-
+              gcc gcc-c++ wayland-devel wayland-protocols-devel libxkbcommon-devel
+              dbus-devel gtk3-devel libdecor-devel mesa-libGL-devel mesa-libGLU-devel
+            cmake_args: ""
+          - version: "8"
+            repo: powertools
+            packages: gcc-toolset-14
+            cmake_args: -DTABLESKIM_X11_ONLY=ON
+    # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
+    # the path on the host, not the one mounted in the container.
+    env:
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - name: Point ccache at the workspace
+        run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: |
+          dnf install -y dnf-plugins-core epel-release
+          dnf config-manager --set-enabled ${{ matrix.repo }}
+          dnf install -y git make cmake ninja-build ccache \
+            which findutils tar zstd perl-core python3 \
+            fontconfig-devel libX11-devel libXext-devel libXft-devel libXinerama-devel \
+            libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel \
+            ${{ matrix.packages }}
+      - uses: actions/checkout@v4
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          # The release workflow reads this cache, so the key must match its own.
+          key: ccache-rocky${{ matrix.version }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-rocky${{ matrix.version }}-
+      - name: Build and test
+        shell: bash
+        run: |
+          if [ -f /opt/rh/gcc-toolset-14/enable ]; then
+            source /opt/rh/gcc-toolset-14/enable
+          fi
+          cmake --preset release ${{ matrix.cmake_args }}
+          cmake --build --preset release
+          ctest --preset release
+          (cd build/release && cpack -G ZIP)
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: tableskim-zip-rockylinux-${{ matrix.version }}
+          path: build/release/*.zip
           if-no-files-found: error

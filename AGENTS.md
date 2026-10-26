@@ -68,7 +68,8 @@ ctest --preset debug -j 8            # test cases in parallel
   dependencies; Ninja and Makefile generators only, `-DTABLESKIM_USE_CCACHE=OFF`
   disables it). CI and the release workflow keep its cache (`.ccache`) with
   `actions/cache`; the release builds read the cache CI saved for the same
-  runner (`ccache-<runner>-*`), and only the GUI builds save one, the
+  runner or Rocky Linux container (`ccache-<runner>-*`, `ccache-rocky10-*`,
+  `ccache-rocky8-*`), and only the GUI builds save one, the
   GUI-less release builds just read it. Configure again after installing it.
 - Dependencies are always built as Release, even in Debug builds (except with
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
