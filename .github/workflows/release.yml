@@ -30,15 +30,11 @@ jobs:
           fi
 
   # Built on the oldest supported distribution so the packages also run on
-  # newer ones (Ubuntu 24.04 and Rocky Linux 10 both ship glibc 2.39).
+  # newer ones (Ubuntu 24.04 and Rocky Linux 10 both ship glibc 2.39). The
+  # packages hold the GUI build only; the terminal UI alone comes as a ZIP
+  # (linux-zip).
   linux-deb:
-    name: linux-deb (GUI ${{ matrix.gui }})
     needs: check-version
-    strategy:
-      fail-fast: false
-      matrix:
-        # OFF: the terminal UI only, packaged as tableskim-tui.
-        gui: ["ON", "OFF"]
     runs-on: ubuntu-24.04
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -75,21 +71,15 @@ jobs:
       - name: Build, test and package
         # build.sh does not configure again when the cache exists.
         run: |
-          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
+          cmake --preset release
           ./package.sh deb
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-deb-gui-${{ matrix.gui }}
+          name: linux-deb
           path: build/release/*.deb
 
   linux-rpm:
-    name: linux-rpm (GUI ${{ matrix.gui }})
     needs: check-version
-    strategy:
-      fail-fast: false
-      matrix:
-        # OFF: the terminal UI only, packaged as tableskim-tui.
-        gui: ["ON", "OFF"]
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:10
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
@@ -129,11 +119,11 @@ jobs:
           key: deps-rocky10-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Build, test and package
         run: |
-          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
+          cmake --preset release
           ./package.sh rpm
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-rpm-gui-${{ matrix.gui }}
+          name: linux-rpm
           path: build/release/*.rpm
 
   # The Linux ZIPs, built on the oldest distribution the actions run on in
