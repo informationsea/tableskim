@@ -80,6 +80,20 @@
 				<string>org.openxmlformats.spreadsheetml.sheet</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>JSON File</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>json.icns</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.json</string>
+			</array>
+		</dict>
 		<!-- No system UTI for these; matched by extension instead. -->
 		<dict>
 			<key>CFBundleTypeName</key>
@@ -152,6 +166,37 @@
 				<string>sqlite</string>
 				<string>sqlite3</string>
 				<string>db3</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>JSON Lines File</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>json.icns</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>jsonl</string>
+				<string>ndjson</string>
+			</array>
+		</dict>
+		<!-- .vcf is also a vCard (public.vcard): Alternate leaves those to
+		     the user's contacts application. -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Variant Call Format File</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>vcf.icns</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>vcf</string>
 			</array>
 		</dict>
 	</array>

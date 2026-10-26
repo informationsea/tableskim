@@ -8,4 +8,4 @@ Icon=tableskim
 Terminal=false
 StartupWMClass=TableSkim
 Categories=Office;Spreadsheet;Viewer;
-MimeType=text/csv;text/tab-separated-values;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.ms-excel.sheet.macroEnabled.12;application/vnd.apache.parquet;application/x-duckdb;application/vnd.sqlite3;application/x-sqlite3;
+MimeType=text/csv;text/tab-separated-values;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.ms-excel.sheet.macroEnabled.12;application/vnd.apache.parquet;application/x-duckdb;application/vnd.sqlite3;application/x-sqlite3;application/json;application/x-ndjson;text/x-vcf;

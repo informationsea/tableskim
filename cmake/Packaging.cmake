@@ -34,14 +34,15 @@ if(UNIX AND NOT APPLE)
             )
         endforeach()
         # File icons only for the formats defined in tableskim-mime.xml;
-        # CSV, Excel and SQLite files keep the icons of the user's theme.
+        # CSV, Excel, SQLite and JSON files keep the icons of the user's theme.
         # Package triggers of shared-mime-info and the icon cache pick these up.
         install(FILES packaging/linux/tableskim-mime.xml
             DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages
             RENAME tableskim.xml
             COMPONENT runtime
         )
-        foreach(pair "parquet;application-vnd.apache.parquet" "duckdb;application-x-duckdb")
+        foreach(pair "parquet;application-vnd.apache.parquet" "duckdb;application-x-duckdb"
+                     "json;application-x-ndjson" "vcf;text-x-vcf")
             list(GET pair 0 format)
             list(GET pair 1 icon)
             install(FILES src/images/filetypes/${format}.svg

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Installed to share/mime/packages. Defines the formats that
      shared-mime-info may not know, so that their files get the TableSkim
-     icons (hicolor mimetypes/<type with "/" replaced by "-">). -->
+     icons (hicolor mimetypes/<type with "/" replaced by "-">). JSON files
+     keep application/json of shared-mime-info. -->
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
   <mime-type type="application/vnd.apache.parquet">
     <comment>Parquet file</comment>
@@ -17,5 +18,21 @@
     </magic>
     <glob pattern="*.duckdb"/>
     <glob pattern="*.ddb"/>
+  </mime-type>
+  <mime-type type="application/x-ndjson">
+    <comment>JSON Lines file</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.ndjson"/>
+    <glob pattern="*.jsonl"/>
+  </mime-type>
+  <!-- Variant Call Format. shared-mime-info gives *.vcf to vCards
+       (text/vcard); the magic of each tells the two apart. -->
+  <mime-type type="text/x-vcf">
+    <comment>Variant Call Format file</comment>
+    <sub-class-of type="text/plain"/>
+    <magic priority="50">
+      <match type="string" offset="0" value="##fileformat=VCF"/>
+    </magic>
+    <glob pattern="*.vcf"/>
   </mime-type>
 </mime-info>

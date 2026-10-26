@@ -35,6 +35,10 @@ WriteRegStr SHCTX "Software\Classes\Applications\TableSkim.exe\shell\open\comman
 !insertmacro _TableSkimRegisterExtension ".sqlite" "SQLite Database" 207
 !insertmacro _TableSkimRegisterExtension ".sqlite3" "SQLite Database" 207
 !insertmacro _TableSkimRegisterExtension ".db3" "SQLite Database" 207
+!insertmacro _TableSkimRegisterExtension ".json" "JSON File" 208
+!insertmacro _TableSkimRegisterExtension ".jsonl" "JSON Lines File" 208
+!insertmacro _TableSkimRegisterExtension ".ndjson" "JSON Lines File" 208
+!insertmacro _TableSkimRegisterExtension ".vcf" "Variant Call Format File" 209
 
 ; SHCNE_ASSOCCHANGED: make Explorer pick up the change without a restart.
 System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'

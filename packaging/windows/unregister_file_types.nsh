@@ -19,5 +19,9 @@ DeleteRegKey SHCTX "Software\Classes\Applications\TableSkim.exe"
 !insertmacro _TableSkimUnregisterExtension ".sqlite"
 !insertmacro _TableSkimUnregisterExtension ".sqlite3"
 !insertmacro _TableSkimUnregisterExtension ".db3"
+!insertmacro _TableSkimUnregisterExtension ".json"
+!insertmacro _TableSkimUnregisterExtension ".jsonl"
+!insertmacro _TableSkimUnregisterExtension ".ndjson"
+!insertmacro _TableSkimUnregisterExtension ".vcf"
 
 System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
