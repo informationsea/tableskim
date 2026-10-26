@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+# The jobs read the caches CI saves on main (ccache and the FetchContent
+# sources) but save none: a cache saved on a tag's run can be read by that
+# tag alone, so it would only take room from CI's.
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -26,19 +30,15 @@ jobs:
           fi
 
   # Built on the oldest supported distribution so the packages also run on
-  # newer ones (Ubuntu 24.04 and Rocky Linux 10 both ship glibc 2.39).
+  # newer ones (Ubuntu 24.04 and Rocky Linux 10 both ship glibc 2.39). The
+  # packages hold the GUI build only; the terminal UI alone comes as a ZIP
+  # (linux-zip).
   linux-deb:
-    name: linux-deb (GUI ${{ matrix.gui }})
     needs: check-version
-    strategy:
-      fail-fast: false
-      matrix:
-        # OFF: the terminal UI only, packaged as tableskim-tui.
-        gui: ["ON", "OFF"]
     runs-on: ubuntu-24.04
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -49,44 +49,49 @@ jobs:
             libxcursor-dev libxrender-dev libxfixes-dev libpango1.0-dev libcairo2-dev \
             libwayland-dev wayland-protocols libxkbcommon-dev libdbus-1-dev \
             libgtk-3-dev libdecor-0-dev libgl1-mesa-dev libglu1-mesa-dev
-      # The build without the GUI only reads the cache; the one with the GUI
-      # (also built by CI, which shares ccache-ubuntu-24.04-*) writes it.
+      # The ccache CI saved on main (see ci.yml).
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: ccache-ubuntu-24.04-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-ubuntu-24.04-
+      # The FetchContent sources CI saved for the same runner or container
+      # (see ci.yml), read only: the key must match CI's exactly.
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-ubuntu-24.04-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         # build.sh does not configure again when the cache exists.
         run: |
-          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
+          cmake --preset release
           ./package.sh deb
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-deb-gui-${{ matrix.gui }}
+          name: linux-deb
           path: build/release/*.deb
-      - name: Save ccache
-        if: success() && matrix.gui == 'ON'
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: ccache-ubuntu-24.04-${{ github.sha }}-${{ github.run_id }}
 
   linux-rpm:
-    name: linux-rpm (GUI ${{ matrix.gui }})
     needs: check-version
-    strategy:
-      fail-fast: false
-      matrix:
-        # OFF: the terminal UI only, packaged as tableskim-tui.
-        gui: ["ON", "OFF"]
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:10
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
     # the path on the host, not the one mounted in the container.
     env:
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - name: Point ccache at the workspace
         run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
@@ -101,28 +106,37 @@ jobs:
             wayland-devel wayland-protocols-devel libxkbcommon-devel dbus-devel \
             gtk3-devel libdecor-devel mesa-libGL-devel mesa-libGLU-devel
       - uses: actions/checkout@v4
-      # The build without the GUI only reads the cache; the one with the GUI
-      # writes it.
+      # The ccache CI saved on main (see ci.yml).
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: ccache-rocky10-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-rocky10-
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-rocky10-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         run: |
-          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
+          cmake --preset release
           ./package.sh rpm
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-rpm-gui-${{ matrix.gui }}
+          name: linux-rpm
           path: build/release/*.rpm
-      - name: Save ccache
-        if: success() && matrix.gui == 'ON'
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: ccache-rocky10-${{ github.sha }}-${{ github.run_id }}
 
   # The Linux ZIPs, built on the oldest distribution the actions run on in
   # a container, glibc 2.28 (RHEL 8, Debian 10, Ubuntu 20.04 and newer), so
@@ -140,25 +154,22 @@ jobs:
           - name: GUI
             gui: "ON"
             x11_only: "OFF"
-            cache: rocky8
-            save_cache: true
+            cache: rocky8-wayland
           - name: GUI X11 only
             gui: "ON"
             x11_only: "ON"
-            cache: rocky8x11
-            save_cache: true
+            cache: rocky8-x11
           # The terminal UI only, packaged as tableskim-tui.
           - name: TUI only
             gui: "OFF"
             x11_only: "OFF"
-            cache: rocky8
-            save_cache: false
+            cache: rocky8-tui
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:8
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
     # the path on the host, not the one mounted in the container.
     env:
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - name: Point ccache at the workspace
         run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
@@ -172,49 +183,76 @@ jobs:
             libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel \
             ${{ matrix.x11_only == 'OFF' && 'wayland-devel wayland-protocols-devel libxkbcommon-devel dbus-devel gtk3-devel mesa-libGL-devel mesa-libGLU-devel' || '' }}
       - uses: actions/checkout@v4
-      # CI builds the GUIs here too and saves their caches; the release
-      # builds save theirs as well, and the TUI only reads the GUI's.
+      # The ccache CI saved on main for its two builds here (see ci.yml).
+      # The builds differ in FLTK alone, so each starts from the newest.
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
-          restore-keys: ccache-${{ matrix.cache }}-
+          restore-keys: ccache-rocky8-
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-rocky8-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         shell: bash
         run: |
           source /opt/rh/gcc-toolset-14/enable
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }} -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
           ./package.sh zip
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: linux-zip-${{ matrix.cache }}-gui-${{ matrix.gui }}
           path: build/release/*.zip
-      - name: Save ccache
-        if: success() && matrix.save_cache
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
 
   macos:
     needs: check-version
     runs-on: macos-latest
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: brew install ninja ccache
-      - name: Cache ccache
-        uses: actions/cache@v4
+      # The ccache CI saved on main (see ci.yml).
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: ccache-macos-latest-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-macos-latest-
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-macos-latest-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         run: ./package.sh all
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -228,7 +266,7 @@ jobs:
     env:
       TABLESKIM_PRESET: msvc-release
       CCACHE_DIR: ${{ github.workspace }}\.ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
       - name: Install NSIS, Ninja and ccache
@@ -238,15 +276,33 @@ jobs:
       - name: Add NSIS to PATH
         shell: pwsh
         run: Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\NSIS"
-      - name: Cache ccache
-        uses: actions/cache@v4
+      # The ccache CI saved on main (see ci.yml).
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: ccache-windows-latest-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-windows-latest-
+      - name: Find the CMake version
+        id: cmake
+        shell: bash
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/msvc-release/_deps/*-src
+            build/msvc-release/_deps/*-subbuild
+          key: deps-windows-latest-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build and package
         shell: cmd
         run: package.bat all
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - name: Run tests
         shell: cmd
         run: ctest --preset msvc-release

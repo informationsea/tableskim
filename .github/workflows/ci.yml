@@ -31,7 +31,7 @@ jobs:
     env:
       PRESET: ${{ matrix.os == 'windows-latest' && 'msvc-release' || 'release' }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies (Linux)
@@ -53,19 +53,59 @@ jobs:
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja ccache
-      - name: Cache ccache
-        uses: actions/cache@v4
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
           # The release workflow reads this cache, so the key must match its own.
           key: ccache-${{ matrix.os }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-${{ matrix.os }}-
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate.
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
+      # The sources FetchContent cloned or downloaded, with the stamps of its
+      # sub-builds, so that configure does not fetch them again (DuckDB alone
+      # takes 30 s). The sub-builds record the CMake that made them, hence
+      # its version in the key; only an exact match is restored, so a changed
+      # dependency or patch is fetched afresh.
+      - name: Find the CMake version
+        id: cmake
+        shell: bash
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        id: deps
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/${{ env.PRESET }}/_deps/*-src
+            build/${{ env.PRESET }}/_deps/*-subbuild
+          key: deps-${{ matrix.os }}-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Configure
         # The terminal UI's (tests/tui/) and the GUI's (tests/gui/, under
         # Xvfb) tests run on Linux only.
         run: cmake --preset ${{ env.PRESET }} ${{ runner.os == 'Linux' && '-DTABLESKIM_TUI_TESTS=ON -DTABLESKIM_GUI_TESTS=ON' || '' }}
+      - name: Save dependency sources
+        if: github.event_name != 'pull_request' && steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/${{ env.PRESET }}/_deps/*-src
+            build/${{ env.PRESET }}/_deps/*-subbuild
+          key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Build
         run: cmake --build --preset ${{ env.PRESET }}
+      - name: Show ccache statistics
+        run: ccache --show-stats
+      # Pull requests only read the ccache: a cache saved on a pull request's
+      # ref can be read by that pull request alone, so it would only take
+      # room from the caches main and the release workflow read.
+      - name: Save ccache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.os }}-${{ github.sha }}-${{ github.run_id }}
       - name: Test
         run: ctest --preset ${{ env.PRESET }}
       - name: Package (ZIP)
@@ -101,6 +141,8 @@ jobs:
               dbus-devel gtk3-devel libdecor-devel mesa-libGL-devel mesa-libGLU-devel
             x11_only: "OFF"
             cache: rocky10
+            restore: rocky10
+            save_deps: true
             zip: false
           - name: rockylinux-8
             version: "8"
@@ -109,19 +151,27 @@ jobs:
               gcc-toolset-14 wayland-devel wayland-protocols-devel libxkbcommon-devel
               dbus-devel gtk3-devel mesa-libGL-devel mesa-libGLU-devel
             x11_only: "OFF"
-            cache: rocky8
+            cache: rocky8-wayland
+            restore: rocky8
+            save_deps: true
             zip: true
           - name: rockylinux-8-x11
             version: "8"
             repo: powertools
             packages: gcc-toolset-14
             x11_only: "ON"
-            cache: rocky8x11
+            cache: rocky8-x11
+            restore: rocky8
+            # Same sources as rockylinux-8, which saves them.
+            save_deps: false
             zip: true
+    # The two Rocky Linux 8 builds differ in FLTK alone (same compiler and
+    # flags), so each starts from whichever of their caches is newer
+    # (restore: the shared key prefix).
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
     # the path on the host, not the one mounted in the container.
     env:
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - name: Point ccache at the workspace
         run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
@@ -135,22 +185,56 @@ jobs:
             libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel \
             ${{ matrix.packages }}
       - uses: actions/checkout@v4
-      - name: Cache ccache
-        uses: actions/cache@v4
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
           # The release workflow reads this cache, so the key must match its own.
           key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
-          restore-keys: ccache-${{ matrix.cache }}-
-      - name: Build and test
+          restore-keys: ccache-${{ matrix.restore }}-
+      # As in the build job above.
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        id: deps
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-${{ matrix.restore }}-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      - name: Configure
         shell: bash
         run: |
           if [ -f /opt/rh/gcc-toolset-14/enable ]; then
             source /opt/rh/gcc-toolset-14/enable
           fi
           cmake --preset release -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
+      - name: Save dependency sources
+        if: github.event_name != 'pull_request' && matrix.save_deps && steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: ${{ steps.deps.outputs.cache-primary-key }}
+      - name: Build and test
+        shell: bash
+        run: |
+          if [ -f /opt/rh/gcc-toolset-14/enable ]; then
+            source /opt/rh/gcc-toolset-14/enable
+          fi
+          ccache --zero-stats
           cmake --build --preset release
+          ccache --show-stats
           ctest --preset release
+      - name: Save ccache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
       - name: Package (ZIP)
         if: matrix.zip
         run: cd build/release && cpack -G ZIP
