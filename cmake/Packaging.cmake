@@ -144,25 +144,26 @@ set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_RPM_COMPONENT_INSTALL ON)
 set(CPACK_STRIP_FILES ON)
 
-# Linux packages run only on distributions as new as the one they were
-# built on, so their names tell which one that was (e.g. ubuntu24.04).
-set(_tableskim_os_tag "")
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    # -DTABLESKIM_PACKAGE_OS_TAG=... overrides ID and VERSION_ID of
-    # /etc/os-release; read on every configure, so it follows an upgrade.
-    if(NOT DEFINED TABLESKIM_PACKAGE_OS_TAG)
-        cmake_host_system_information(RESULT _tableskim_distrib_id QUERY DISTRIB_ID)
-        cmake_host_system_information(RESULT _tableskim_distrib_version QUERY DISTRIB_VERSION_ID)
-        set(TABLESKIM_PACKAGE_OS_TAG "${_tableskim_distrib_id}${_tableskim_distrib_version}")
-    endif()
-    if(TABLESKIM_PACKAGE_OS_TAG)
-        set(_tableskim_os_tag "-${TABLESKIM_PACKAGE_OS_TAG}")
-    endif()
+# DEB and RPM packages run only on distributions as new as the one they
+# were built on, so their names tell which one that was (e.g. ubuntu24.04).
+# The ZIP is built on the oldest supported one (Rocky Linux 8) for all of
+# them, so its name has none.
+# -DTABLESKIM_PACKAGE_OS_TAG=... overrides ID and VERSION_ID of
+# /etc/os-release; read on every configure, so it follows an upgrade.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT DEFINED TABLESKIM_PACKAGE_OS_TAG)
+    cmake_host_system_information(RESULT _tableskim_distrib_id QUERY DISTRIB_ID)
+    cmake_host_system_information(RESULT _tableskim_distrib_version QUERY DISTRIB_VERSION_ID)
+    set(TABLESKIM_PACKAGE_OS_TAG "${_tableskim_distrib_id}${_tableskim_distrib_version}")
 endif()
 
-# Archive names: tableskim-<version>-<system>[-<distribution>]-<arch>.zip
+# Archive names: tableskim-<version>-<system>[-x11]-<arch>.zip, -x11 for the
+# GUI without Wayland (TABLESKIM_X11_ONLY), built next to the default one.
+set(_tableskim_variant "")
+if(TABLESKIM_X11_ONLY)
+    set(_tableskim_variant "-x11")
+endif()
 set(CPACK_PACKAGE_FILE_NAME
-    "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}${_tableskim_os_tag}-${CMAKE_SYSTEM_PROCESSOR}")
+    "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}${_tableskim_variant}-${CMAKE_SYSTEM_PROCESSOR}")
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 
 # DEB: tableskim_<version>_<distribution>_<arch>.deb
