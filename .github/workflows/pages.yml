@@ -1,0 +1,53 @@
+name: Pages
+
+# Publishes the introduction page (site/) and the user manual (docs/,
+# converted by tableskim-html-manual) to GitHub Pages when they change on
+# main. The repository's Pages source must be set to "GitHub Actions".
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs/**
+      - site/**
+      - src/common/markdown.*
+      - src/common/help_docs.*
+      - src/tools/html_manual.cxx
+      - src/images/icon.png
+      - tools/build-site.sh
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deployments run one at a time; a newer one waits instead of cancelling a
+# deployment in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the site
+        run: tools/build-site.sh _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
