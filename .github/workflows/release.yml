@@ -68,11 +68,17 @@ jobs:
             build/release/_deps/*-src
             build/release/_deps/*-subbuild
           key: deps-ubuntu-24.04-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         # build.sh does not configure again when the cache exists.
         run: |
           cmake --preset release
           ./package.sh deb
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: linux-deb
@@ -117,10 +123,16 @@ jobs:
             build/release/_deps/*-src
             build/release/_deps/*-subbuild
           key: deps-rocky10-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         run: |
           cmake --preset release
           ./package.sh rpm
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: linux-rpm
@@ -189,12 +201,18 @@ jobs:
             build/release/_deps/*-src
             build/release/_deps/*-subbuild
           key: deps-rocky8-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         shell: bash
         run: |
           source /opt/rh/gcc-toolset-14/enable
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }} -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
           ./package.sh zip
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: linux-zip-${{ matrix.cache }}-gui-${{ matrix.gui }}
@@ -227,8 +245,14 @@ jobs:
             build/release/_deps/*-src
             build/release/_deps/*-subbuild
           key: deps-macos-latest-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build, test and package
         run: ./package.sh all
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -270,9 +294,15 @@ jobs:
             build/msvc-release/_deps/*-src
             build/msvc-release/_deps/*-subbuild
           key: deps-windows-latest-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
       - name: Build and package
         shell: cmd
         run: package.bat all
+      - name: Show ccache statistics
+        run: ccache --show-stats
       - name: Run tests
         shell: cmd
         run: ctest --preset msvc-release
