@@ -37,8 +37,9 @@ Likewise `-DTABLESKIM_USE_SYSTEM_SQLITE=ON` and
 `-DTABLESKIM_USE_SYSTEM_COMPRESSION=ON` (zlib, bzip2, liblzma, zstd) use the
 system copies; each option is independent.
 `-DTABLESKIM_X11_ONLY=ON` builds the bundled FLTK without Wayland (still
-drawing with Cairo and Pango); the release workflow uses it for the ZIP
-built on Rocky Linux 8 for older distributions (glibc 2.28).
+drawing with Cairo and Pango); the Linux ZIPs are built on Rocky Linux 8
+(glibc 2.28, so they run on older distributions too) both with Wayland and
+without it (`-x11` in the ZIP's name).
 `-DTABLESKIM_BUILD_GUI=OFF` drops the GUI (and FLTK) entirely: `src/gui/`
 is not compiled, `TABLESKIM_HAS_GUI` is left undefined and `main()` always
 runs the TUI. Keep GUI-only code out of `src/common/` and `src/tui/`.
@@ -68,7 +69,8 @@ ctest --preset debug -j 8            # test cases in parallel
   dependencies; Ninja and Makefile generators only, `-DTABLESKIM_USE_CCACHE=OFF`
   disables it). CI and the release workflow keep its cache (`.ccache`) with
   `actions/cache`; the release builds read the cache CI saved for the same
-  runner (`ccache-<runner>-*`), and only the GUI builds save one, the
+  runner or Rocky Linux container (`ccache-<runner>-*`, `ccache-rocky10-*`,
+  `ccache-rocky8-*`, `ccache-rocky8x11-*`), and only the GUI builds save one, the
   GUI-less release builds just read it. Configure again after installing it.
 - Dependencies are always built as Release, even in Debug builds (except with
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
@@ -127,10 +129,12 @@ them. Their tests are hidden and run only on request:
 
 `./package.sh [deb|rpm|dmg|zip|all]` (Linux/macOS) and
 `package.bat [exe|zip|msix|all]` (Windows) build a release and run CPack.
-Packaging rules live in `cmake/Packaging.cmake` and `packaging/`. Linux
-package names include the build distribution from `/etc/os-release`
+Packaging rules live in `cmake/Packaging.cmake` and `packaging/`. DEB and
+RPM package names include the build distribution from `/etc/os-release`
 (e.g. `tableskim_0.2.2_ubuntu24.04_amd64.deb`); `-DTABLESKIM_PACKAGE_OS_TAG=`
-overrides it.
+overrides it. ZIP names do not, since the release builds them on Rocky
+Linux 8 for every distribution (e.g. `tableskim-0.2.2-Linux-x86_64.zip`,
+`tableskim-0.2.2-Linux-x11-x86_64.zip`).
 
 ## Architecture
 

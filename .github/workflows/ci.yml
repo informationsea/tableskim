@@ -1,7 +1,9 @@
 name: CI
 
-# Builds and tests pushes to main and all pull requests on each platform. The build
-# without the GUI (-DTABLESKIM_BUILD_GUI=OFF) is only built for releases.
+# Builds and tests pushes to main and all pull requests on each platform, and on
+# Rocky Linux 10 and 8 (in containers) like the release workflow. The build
+# without the GUI (-DTABLESKIM_BUILD_GUI=OFF) is only built for releases. The
+# Linux ZIPs come from Rocky Linux 8 only, as in the release workflow.
 on:
   push:
     branches:
@@ -67,11 +69,95 @@ jobs:
       - name: Test
         run: ctest --preset ${{ env.PRESET }}
       - name: Package (ZIP)
+        if: runner.os != 'Linux'
         shell: bash
         run: cd build/${{ env.PRESET }} && cpack -G ZIP
       - name: Upload ZIP
+        if: runner.os != 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: tableskim-zip-${{ matrix.os }}
           path: build/${{ env.PRESET }}/*.zip
+          if-no-files-found: error
+
+  # The distributions the release workflow builds its RPM (Rocky Linux 10)
+  # and its Linux ZIPs (Rocky Linux 8: glibc 2.28, gcc-toolset; with Wayland
+  # and for X11 only) on. Their ccache is what those release jobs start
+  # from. The terminal UI's and the GUI's tests are left to Ubuntu (AUTO:
+  # neither pyte nor xvfb-run is installed here).
+  rocky:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container: rockylinux/rockylinux:${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: rockylinux-10
+            version: "10"
+            repo: crb
+            packages: >-
+              gcc gcc-c++ wayland-devel wayland-protocols-devel libxkbcommon-devel
+              dbus-devel gtk3-devel libdecor-devel mesa-libGL-devel mesa-libGLU-devel
+            x11_only: "OFF"
+            cache: rocky10
+            zip: false
+          - name: rockylinux-8
+            version: "8"
+            repo: powertools
+            packages: >-
+              gcc-toolset-14 wayland-devel wayland-protocols-devel libxkbcommon-devel
+              dbus-devel gtk3-devel mesa-libGL-devel mesa-libGLU-devel
+            x11_only: "OFF"
+            cache: rocky8
+            zip: true
+          - name: rockylinux-8-x11
+            version: "8"
+            repo: powertools
+            packages: gcc-toolset-14
+            x11_only: "ON"
+            cache: rocky8x11
+            zip: true
+    # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
+    # the path on the host, not the one mounted in the container.
+    env:
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - name: Point ccache at the workspace
+        run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: |
+          dnf install -y dnf-plugins-core epel-release
+          dnf config-manager --set-enabled ${{ matrix.repo }}
+          dnf install -y git make cmake ninja-build ccache \
+            which findutils tar zstd perl-core python3 \
+            fontconfig-devel libX11-devel libXext-devel libXft-devel libXinerama-devel \
+            libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel \
+            ${{ matrix.packages }}
+      - uses: actions/checkout@v4
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          # The release workflow reads this cache, so the key must match its own.
+          key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-${{ matrix.cache }}-
+      - name: Build and test
+        shell: bash
+        run: |
+          if [ -f /opt/rh/gcc-toolset-14/enable ]; then
+            source /opt/rh/gcc-toolset-14/enable
+          fi
+          cmake --preset release -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
+          cmake --build --preset release
+          ctest --preset release
+      - name: Package (ZIP)
+        if: matrix.zip
+        run: cd build/release && cpack -G ZIP
+      - name: Upload ZIP
+        if: matrix.zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: tableskim-zip-${{ matrix.name }}
+          path: build/release/*.zip
           if-no-files-found: error

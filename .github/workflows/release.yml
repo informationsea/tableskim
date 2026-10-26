@@ -62,13 +62,10 @@ jobs:
         run: |
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
           ./package.sh deb
-          (cd build/release && cpack -G ZIP)
       - uses: actions/upload-artifact@v4
         with:
           name: linux-deb-gui-${{ matrix.gui }}
-          path: |
-            build/release/*.deb
-            build/release/*.zip
+          path: build/release/*.deb
       - name: Save ccache
         if: success() && matrix.gui == 'ON'
         uses: actions/cache/save@v4
@@ -116,13 +113,10 @@ jobs:
         run: |
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
           ./package.sh rpm
-          (cd build/release && cpack -G ZIP)
       - uses: actions/upload-artifact@v4
         with:
           name: linux-rpm-gui-${{ matrix.gui }}
-          path: |
-            build/release/*.rpm
-            build/release/*.zip
+          path: build/release/*.rpm
       - name: Save ccache
         if: success() && matrix.gui == 'ON'
         uses: actions/cache/save@v4
@@ -130,17 +124,35 @@ jobs:
           path: .ccache
           key: ccache-rocky10-${{ github.sha }}-${{ github.run_id }}
 
-  # A ZIP for older distributions: glibc 2.28 (RHEL 8, Debian 10,
-  # Ubuntu 20.04 and newer), the oldest that the actions run on in a
-  # container. GCC comes from gcc-toolset, which links the newer parts of
-  # libstdc++ statically, and the GUI is X11 only.
-  linux-legacy:
-    name: linux-legacy (GUI ${{ matrix.gui }})
+  # The Linux ZIPs, built on the oldest distribution the actions run on in
+  # a container, glibc 2.28 (RHEL 8, Debian 10, Ubuntu 20.04 and newer), so
+  # that one ZIP runs on all of them. GCC comes from gcc-toolset, which
+  # links the newer parts of libstdc++ statically. The GUI is built twice:
+  # with Wayland (and X11), and for X11 only (-x11 in the ZIP's name), which
+  # needs neither libwayland, libxkbcommon, libdecor nor D-Bus at run time.
+  linux-zip:
+    name: linux-zip (${{ matrix.name }})
     needs: check-version
     strategy:
       fail-fast: false
       matrix:
-        gui: ["ON", "OFF"]
+        include:
+          - name: GUI
+            gui: "ON"
+            x11_only: "OFF"
+            cache: rocky8
+            save_cache: true
+          - name: GUI X11 only
+            gui: "ON"
+            x11_only: "ON"
+            cache: rocky8x11
+            save_cache: true
+          # The terminal UI only, packaged as tableskim-tui.
+          - name: TUI only
+            gui: "OFF"
+            x11_only: "OFF"
+            cache: rocky8
+            save_cache: false
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:8
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
@@ -157,32 +169,33 @@ jobs:
           dnf install -y git gcc-toolset-14 make cmake ninja-build ccache \
             which findutils tar zstd perl-core python3 \
             fontconfig-devel libX11-devel libXext-devel libXft-devel libXinerama-devel \
-            libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel
+            libXcursor-devel libXrender-devel libXfixes-devel pango-devel cairo-devel \
+            ${{ matrix.x11_only == 'OFF' && 'wayland-devel wayland-protocols-devel libxkbcommon-devel dbus-devel gtk3-devel mesa-libGL-devel mesa-libGLU-devel' || '' }}
       - uses: actions/checkout@v4
-      # Only this workflow builds here, so the build with the GUI writes the
-      # cache and the one without reads it.
+      # CI builds the GUIs here too and saves their caches; the release
+      # builds save theirs as well, and the TUI only reads the GUI's.
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-rocky8-${{ github.sha }}-${{ github.run_id }}
-          restore-keys: ccache-rocky8-
+          key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-${{ matrix.cache }}-
       - name: Build, test and package
         shell: bash
         run: |
           source /opt/rh/gcc-toolset-14/enable
-          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }} -DTABLESKIM_X11_ONLY=ON
+          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }} -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
           ./package.sh zip
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-legacy-gui-${{ matrix.gui }}
+          name: linux-zip-${{ matrix.cache }}-gui-${{ matrix.gui }}
           path: build/release/*.zip
       - name: Save ccache
-        if: success() && matrix.gui == 'ON'
+        if: success() && matrix.save_cache
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: ccache-rocky8-${{ github.sha }}-${{ github.run_id }}
+          key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
 
   macos:
     needs: check-version
@@ -247,7 +260,7 @@ jobs:
             build/msvc-release/*-Windows-*.zip
 
   release:
-    needs: [linux-deb, linux-rpm, linux-legacy, macos, windows]
+    needs: [linux-deb, linux-rpm, linux-zip, macos, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
