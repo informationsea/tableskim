@@ -57,6 +57,18 @@ jobs:
           path: .ccache
           key: ccache-ubuntu-24.04-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-ubuntu-24.04-
+      # The FetchContent sources CI saved for the same runner or container
+      # (see ci.yml), read only: the key must match CI's exactly.
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-ubuntu-24.04-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Build, test and package
         # build.sh does not configure again when the cache exists.
         run: |
@@ -109,6 +121,16 @@ jobs:
           path: .ccache
           key: ccache-rocky10-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-rocky10-
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-rocky10-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Build, test and package
         run: |
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }}
@@ -181,6 +203,16 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-rocky8-
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-rocky8-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Build, test and package
         shell: bash
         run: |
@@ -214,6 +246,16 @@ jobs:
           path: .ccache
           key: ccache-macos-latest-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-macos-latest-
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-macos-latest-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Build, test and package
         run: ./package.sh all
       - uses: actions/upload-artifact@v4
@@ -245,6 +287,17 @@ jobs:
           path: .ccache
           key: ccache-windows-latest-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-windows-latest-
+      - name: Find the CMake version
+        id: cmake
+        shell: bash
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/msvc-release/_deps/*-src
+            build/msvc-release/_deps/*-subbuild
+          key: deps-windows-latest-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Build and package
         shell: cmd
         run: package.bat all
