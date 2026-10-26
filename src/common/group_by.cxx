@@ -54,8 +54,12 @@ bool GroupByAccumulator::KeyLess::operator()(const std::vector<CellValue> &a, co
             return order < 0;
         if (a[i].index() != b[i].index())
             return a[i].index() < b[i].index();
+        // Exact values apart; a NaN equals itself here, so later keys decide.
         if (a[i] != b[i])
-            return formatCell(a[i]) < formatCell(b[i]);
+        {
+            if (const int text = formatCell(a[i]).compare(formatCell(b[i])); text != 0)
+                return text < 0;
+        }
     }
     return a.size() < b.size();
 }

@@ -70,7 +70,7 @@ namespace
         {"x / X", "Hide the column (or the selected ones) / show all columns"},
         {"|", "Freeze the columns up to the cursor's (again: unfreeze)"},
         {"o", "Sort by the column: ascending, descending, none"},
-        {"Tab / Shift+Tab, [ / ]", "Next / previous sheet"},
+        {"Tab / Shift+Tab, ] / [", "Next / previous sheet"},
         {"/", "Search the sheet (empty: clear the search)"},
         {"Ctrl+R (in the / prompt)", "Toggle regular expression search"},
         {"n / N", "Next / previous search hit"},
@@ -1792,12 +1792,20 @@ bool TuiApp::handleEvent(Event event)
     }
     if (event == Event::Character('#'))
     {
-        if (!refuseReopen())
+        // Checked before asking about unsaved edits, which the answer may discard.
+        if (!skipMetaLinesAvailable())
+            setStatus("Only text files can skip lines", true);
+        else if (!refuseReopen())
             checkUnsaved([this] { setSkipMetaLines(!skipsMetaLines()); });
         return true;
     }
     if (event == Event::E)
     {
+        if (!skipMetaLinesAvailable())
+        {
+            setStatus("Only text files have an encoding", true);
+            return true;
+        }
         if (refuseReopen())
             return true;
         const auto it = std::find(TEXT_ENCODINGS.begin(), TEXT_ENCODINGS.end(), textEncoding());

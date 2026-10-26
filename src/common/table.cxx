@@ -3125,10 +3125,15 @@ void TableBook::saveEdits(std::filesystem::path target, std::function<void(const
         {
             if (!supports_editing_)
                 throw std::runtime_error("This file cannot be edited");
-            std::filesystem::file_time_type mtime{};
-            std::uintmax_t size = 0;
-            if (has_file_stamp_ && (!readFileStamp(path_, mtime, size) || mtime != file_mtime_ || size != file_size_))
-                throw std::runtime_error("The file has been changed by another program since it was opened");
+            auto check_unchanged = [&]
+            {
+                std::filesystem::file_time_type mtime{};
+                std::uintmax_t size = 0;
+                if (has_file_stamp_ &&
+                    (!readFileStamp(path_, mtime, size) || mtime != file_mtime_ || size != file_size_))
+                    throw std::runtime_error("The file has been changed by another program since it was opened");
+            };
+            check_unchanged();
             std::vector<SheetEdits> edits;
             {
                 std::lock_guard lock(models_mutex_);
@@ -3143,6 +3148,8 @@ void TableBook::saveEdits(std::filesystem::path target, std::function<void(const
             data_source.saveEdits(edits, written, stop);
             if (stop.stop_requested())
                 throw std::runtime_error("The file was closed");
+            // Rows appended while copying (a growing log) would be lost by the rename.
+            check_unchanged();
             result = {.ok = true, .written = written};
         }
         catch (const std::exception &e)

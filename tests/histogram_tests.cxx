@@ -477,6 +477,25 @@ TEST_CASE("histogram texts")
     CHECK(histogramBinConditions(hours, 0, 1)[1].value == "2024-01-01 08:30:00");
 }
 
+TEST_CASE("a time on the last edge is outside every bin, as its filter says", "[regression]")
+{
+    HistogramRange range;
+    range.add(Date{19723}); // 2024-01-01
+    range.add(Date{19732}); // 2024-01-10
+    HistogramCounter counter(range.layout(30));
+    const auto &edges = counter.result().edges;
+    REQUIRE(edges.size() >= 2);
+    // A row appended while following, on the last edge: the histogram must start over.
+    const CellValue last = DateTime{static_cast<int64_t>(edges.back())};
+    const auto conditions = histogramBinConditions(counter.result(), 0, counter.result().binCount() - 1);
+    CHECK_FALSE(std::all_of(conditions.begin(), conditions.end(), [&](const FilterCondition &condition)
+                            { return cellMatchesCondition(last, condition); }));
+    CHECK_FALSE(counter.fits(last));
+    counter.add(last);
+    CHECK(counter.result().values == 0);
+    CHECK(counter.result().others == 1);
+}
+
 TEST_CASE("time bins ending past the year 9999 keep their rows", "[regression]")
 {
     // 9999-12-31 as a "no end" date: the last edge is in the year 10000.

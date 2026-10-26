@@ -2,6 +2,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <filesystem>
+#include <limits>
 #include <stdexcept>
 
 #include "group_by.hxx"
@@ -113,6 +114,22 @@ TEST_CASE("GroupByAccumulator: several keys, values that sort alike stay apart")
     for (const auto &row : sheet.rows)
         total += static_cast<size_t>(std::get<int64_t>(row[2]));
     CHECK(total == 5);
+}
+
+TEST_CASE("GroupByAccumulator: a NaN key leaves the later keys apart", "[regression]")
+{
+    using S = std::string;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    GroupByAccumulator accumulator({.keys = {0, 1}});
+    accumulator.add({nan, S("x")});
+    accumulator.add({nan, S("y")});
+    accumulator.add({nan, S("x")});
+    const ResultSheet sheet = accumulator.result(letters);
+    REQUIRE(sheet.rows.size() == 2);
+    CHECK(rowText(sheet.rows[0])[1] == "x");
+    CHECK(rowText(sheet.rows[0])[2] == "2");
+    CHECK(rowText(sheet.rows[1])[1] == "y");
+    CHECK(rowText(sheet.rows[1])[2] == "1");
 }
 
 TEST_CASE("GroupByAccumulator: no keys make one group; too many groups fail")

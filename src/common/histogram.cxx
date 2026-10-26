@@ -367,7 +367,13 @@ std::optional<size_t> HistogramCounter::binOf(const CellValue &value) const
             return static_cast<size_t>(it - number_lower_bounds_.begin()) - 1;
     }
     else if (c.kind == Classified::Kind::Time && histogram_.kind == HistogramKind::Time)
+    {
+        // A time bin's filter ends before its upper edge (histogramBinConditions()),
+        // so a value appended on the last edge belongs to no bin.
+        if (!histogram_.edges.empty() && static_cast<double>(c.micros) >= histogram_.edges.back())
+            return std::nullopt;
         return histogramBin(histogram_.edges, static_cast<double>(c.micros));
+    }
     return std::nullopt;
 }
 

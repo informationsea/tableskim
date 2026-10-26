@@ -54,6 +54,10 @@
               <uap:FileType>.sqlite</uap:FileType>
               <uap:FileType>.sqlite3</uap:FileType>
               <uap:FileType>.db3</uap:FileType>
+              <uap:FileType>.json</uap:FileType>
+              <uap:FileType>.jsonl</uap:FileType>
+              <uap:FileType>.ndjson</uap:FileType>
+              <uap:FileType>.vcf</uap:FileType>
             </uap:SupportedFileTypes>
           </uap3:FileTypeAssociation>
         </uap3:Extension>
