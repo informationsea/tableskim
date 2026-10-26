@@ -360,6 +360,12 @@ read their header comments before changing anything in `src/common/`.
   `tableskim-html-manual` (`src/tools/html_manual.cxx`) into
   `build/<preset>/manual/`, which `cmake/Packaging.cmake` installs
   (Linux: `share/doc/tableskim/html`; macOS and Windows: `Manual/`).
+- The GitHub Pages site is the introduction page in `site/` (`index.html`,
+  `ja/index.html`, `style.css`) plus the manual converted by
+  `tableskim-html-manual` into `manual/`. `tools/build-site.sh [dir]`
+  builds it (only the converter is compiled, without CMake), and
+  `.github/workflows/pages.yml` deploys it from main. Keep the two
+  landing pages in step, and link to manual pages by their `.html` names.
 - The GUI layout is defined in `src/gui/gui.fl` (FLUID file, compiled with
   `fltk_wrap_ui`). Edit it with care to keep it loadable by `fluid`;
   generated `gui.h`/`gui.cxx` live in the build directory.

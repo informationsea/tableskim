@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TableSkim – a fast viewer for tabular files</title>
+<meta name="description" content="TableSkim is a lightweight, fast viewer for CSV, TSV, Excel, Parquet, JSON, DuckDB and SQLite files, with a desktop GUI and a terminal UI.">
+<link rel="icon" href="icon.png">
+<link rel="alternate" hreflang="ja" href="ja/">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28"> TableSkim</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="#documentation">Documentation</a>
+      <a href="https://github.com/informationsea/tableskim">GitHub</a>
+      <a href="ja/" lang="ja">日本語</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="hero wrap">
+  <img src="icon.png" alt="TableSkim icon" width="96" height="96">
+  <h1>TableSkim</h1>
+  <p class="tagline">A lightweight, fast viewer for tabular files. Open a large CSV, an Excel workbook,
+    a Parquet or JSON file or a DuckDB / SQLite database and start scrolling immediately.</p>
+  <div class="buttons">
+    <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+    <a class="button" href="manual/en/README.html">User Manual</a>
+    <a class="button" href="https://github.com/informationsea/tableskim">Source on GitHub</a>
+  </div>
+  <p class="platforms">Linux · macOS · Windows — free and open source (AGPL-3.0)</p>
+  <div class="screenshot">
+    <img src="manual/images/gui-main-window.png" alt="TableSkim window showing a CSV file" width="900">
+  </div>
+</div>
+
+<section class="alt" id="why">
+  <div class="wrap two">
+    <div>
+      <h2>Open first, wait never</h2>
+      <p>Rows are loaded on a worker thread while the window stays responsive, so even files of
+        millions of rows open instantly. Sorting and filtering of Parquet files and databases run
+        inside DuckDB or SQLite and work on tables of any size.</p>
+      <p>Native builds come with every library linked in: nothing else needs to be installed.</p>
+    </div>
+    <div>
+      <h2>One program, two interfaces</h2>
+      <p>The same <code>tableskim</code> command opens a desktop window when a display is available,
+        and a full-featured terminal UI otherwise — handy over SSH. Both offer the same features.</p>
+      <figure>
+        <img src="manual/images/tui-main.png" alt="TableSkim terminal UI" width="560">
+        <figcaption>The terminal UI</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="formats">
+  <div class="wrap">
+    <h2>Supported formats</h2>
+    <ul class="formats">
+      <li>CSV / TSV</li>
+      <li>gzip · bzip2 · xz · zstd compressed text</li>
+      <li>VCF</li>
+      <li>Excel (.xlsx, .xlsm)</li>
+      <li>Parquet</li>
+      <li>JSON · NDJSON / JSON Lines</li>
+      <li>DuckDB</li>
+      <li>SQLite</li>
+    </ul>
+    <p class="lead">Text is read as UTF-8, UTF-16 or Shift_JIS (CP932), detected automatically.
+      Every sheet of a workbook and every table and view of a database is shown as a sheet.
+      <a href="manual/en/file-formats.html">More about file formats →</a></p>
+  </div>
+</section>
+
+<section class="alt" id="features">
+  <div class="wrap">
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Sort, filter and search</h3>
+        <p>Filters on any number of columns that compare by type: numbers numerically, dates by day
+          or time, booleans as TRUE / FALSE, and regular expressions.</p>
+        <a class="more" href="manual/en/filtering.html">Filtering →</a>
+      </div>
+      <div class="card">
+        <h3>Column statistics</h3>
+        <p>Row, empty and distinct counts, min / max, sum, mean, standard deviation and the most
+          frequent values over the filtered rows.</p>
+        <a class="more" href="manual/en/filtering.html">Statistics →</a>
+      </div>
+      <div class="card">
+        <h3>Charts</h3>
+        <p>Histograms, scatter plots with the correlation and least-squares line, 2D density and
+          box plots. Double-click a bar to filter to its rows; save charts as PNG or SVG.</p>
+        <a class="more" href="manual/en/charts.html">Charts →</a>
+      </div>
+      <div class="card">
+        <h3>Group By</h3>
+        <p>Count the rows by the values of some columns, with the sum, mean, min, max and more of
+          others, into a sheet of its own.</p>
+        <a class="more" href="manual/en/charts.html">Group By →</a>
+      </div>
+      <div class="card">
+        <h3>SQL</h3>
+        <p>Query DuckDB, SQLite, Parquet and JSON files; the result is shown as a sheet. History
+          shared by all windows, and Tab completion of tables, columns and keywords.</p>
+        <a class="more" href="manual/en/sql.html">SQL →</a>
+      </div>
+      <div class="card">
+        <h3>Export and convert</h3>
+        <p>Export a sheet as shown — sorted, filtered, without hidden columns — to CSV, TSV, Excel
+          or Parquet, or convert a text file to Parquet or DuckDB with typed columns.</p>
+        <a class="more" href="manual/en/exporting.html">Exporting →</a>
+      </div>
+      <div class="card">
+        <h3>Edit cells</h3>
+        <p>Edit CSV / TSV and Excel files in edit mode, with undo and paste. Saving rewrites only
+          the edited lines, keeping the encoding and compression.</p>
+        <a class="more" href="manual/en/editing.html">Editing →</a>
+      </div>
+      <div class="card">
+        <h3>Follow a growing file</h3>
+        <p>Like <code>tail -f</code>: appended lines of CSV / TSV files are read as they arrive,
+          and filters, statistics and charts keep up with them.</p>
+        <a class="more" href="manual/en/gui.html">Using the GUI →</a>
+      </div>
+      <div class="card">
+        <h3>Made for wide tables</h3>
+        <p>Hide and freeze columns, go to a row, cell or column by name, and set number and date
+          formats per column.</p>
+        <a class="more" href="manual/en/keyboard-shortcuts.html">Keyboard shortcuts →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="gallery">
+  <div class="wrap gallery">
+    <figure>
+      <img src="manual/images/gui-histogram.png" alt="Histogram window">
+      <figcaption>Histogram of a column</figcaption>
+    </figure>
+    <figure>
+      <img src="manual/images/gui-scatter.png" alt="Scatter plot window">
+      <figcaption>Scatter plot with the least-squares line</figcaption>
+    </figure>
+    <figure>
+      <img src="manual/images/gui-filter-pane.png" alt="Filter pane">
+      <figcaption>Filters on several columns</figcaption>
+    </figure>
+    <figure>
+      <img src="manual/images/gui-sql-result.png" alt="SQL result shown as a sheet">
+      <figcaption>An SQL query shown as a sheet</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="alt" id="download">
+  <div class="wrap">
+    <h2>Download</h2>
+    <p class="lead">Get the packages from the
+      <a href="https://github.com/informationsea/tableskim/releases/latest">latest release</a>.
+      All libraries are built in.</p>
+    <div class="table-scroll">
+      <table>
+        <tr><th>Platform</th><th>Packages</th></tr>
+        <tr><td>Linux</td><td><code>.deb</code> (Ubuntu 24.04 or later), <code>.rpm</code> (RHEL 10 and its
+          rebuilds), or a <code>.zip</code> for any distribution with glibc 2.28 or later (GUI and terminal UI,
+          X11-only GUI, or terminal UI only)</td></tr>
+        <tr><td>macOS</td><td><code>.dmg</code> disk image or <code>.zip</code> containing
+          <code>TableSkim.app</code></td></tr>
+        <tr><td>Windows</td><td>Installer (<code>.exe</code>) or <code>.zip</code></td></tr>
+      </table>
+    </div>
+    <p>Then open a file:</p>
+<pre><code>tableskim data.csv          # GUI when a display is available
+tableskim -t data.parquet   # terminal UI</code></pre>
+    <p><a href="manual/en/getting-started.html">Installation notes and command-line options →</a></p>
+  </div>
+</section>
+
+<section id="documentation">
+  <div class="wrap">
+    <h2>Documentation</h2>
+    <p class="lead">The user manual is also built into the GUI (<b>Help → User Manual</b>, <code>F1</code>)
+      and installed with the packages. It is available in
+      <a href="manual/en/README.html">English</a> and <a href="manual/ja/README.html" lang="ja">日本語</a>.</p>
+    <ol class="docs-list">
+      <li><a href="manual/en/getting-started.html">Getting Started</a>: installing, starting TableSkim and
+        command-line options</li>
+      <li><a href="manual/en/file-formats.html">Supported File Formats</a>: what TableSkim can open, text
+        encodings and compression</li>
+      <li><a href="manual/en/gui.html">Using the GUI</a>: the window, menus, sidebar and all GUI features</li>
+      <li><a href="manual/en/tui.html">Using the Terminal UI</a>: the terminal screen and its keys</li>
+      <li><a href="manual/en/filtering.html">Sorting, Filtering, Searching and Statistics</a>: how values
+        are compared</li>
+      <li><a href="manual/en/charts.html">Charts and Group By</a>: histograms, scatter plots, box plots and
+        Group By</li>
+      <li><a href="manual/en/sql.html">Running SQL</a>: queries on DuckDB, SQLite, Parquet and JSON files</li>
+      <li><a href="manual/en/exporting.html">Exporting and Converting</a>: saving the view and converting
+        text files</li>
+      <li><a href="manual/en/editing.html">Editing Cells</a>: changing and saving CSV / TSV and Excel
+        files</li>
+      <li><a href="manual/en/keyboard-shortcuts.html">Keyboard Shortcuts</a>: a quick reference for both
+        interfaces</li>
+    </ol>
+    <p>To build TableSkim from source, see the
+      <a href="https://github.com/informationsea/tableskim#building">README on GitHub</a>.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    TableSkim is free software under the
+    <a href="https://github.com/informationsea/tableskim/blob/main/LICENSE">GNU AGPL v3</a>.
+    · <a href="https://github.com/informationsea/tableskim/issues">Report an issue</a>
+    · <a href="ja/" lang="ja">日本語</a>
+  </div>
+</footer>
+
+</body>
+</html>

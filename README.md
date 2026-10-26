@@ -97,7 +97,8 @@ background while the window stays responsive.
 ## Usage
 
 See the [user manual](docs/en/README.md) ([日本語](docs/ja/README.md)) for a
-full guide with screenshots.
+full guide with screenshots. The manual is also online on the
+[TableSkim website](https://informationsea.github.io/tableskim/).
 
 ```sh
 tableskim [options] [files...]
