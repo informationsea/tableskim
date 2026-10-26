@@ -366,6 +366,10 @@ read their header comments before changing anything in `src/common/`.
   builds it (only the converter is compiled, without CMake), and
   `.github/workflows/pages.yml` deploys it from main. Keep the two
   landing pages in step, and link to manual pages by their `.html` names.
+  The download pages (`download.html`, `ja/download.html`) describe each
+  release file; `site/download.js` fills in the links and sizes from the
+  GitHub API by asset-name patterns (keep them in step with
+  `cmake/Packaging.cmake`) and recommends a file for the visitor's system.
 - The GUI layout is defined in `src/gui/gui.fl` (FLUID file, compiled with
   `fltk_wrap_ui`). Edit it with care to keep it loadable by `fluid`;
   generated `gui.h`/`gui.cxx` live in the build directory.

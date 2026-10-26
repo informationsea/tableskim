@@ -299,6 +299,135 @@ th {
     margin-bottom: 0.4rem;
 }
 
+/* Download page */
+
+.download-hero {
+    padding: 2.5rem 16px 1.5rem;
+}
+
+.download-hero h1 {
+    font-size: 2.2rem;
+    margin: 0 0 0.5rem;
+}
+
+.release-info {
+    color: var(--muted);
+}
+
+.release-error {
+    border-left: 4px solid #d08a2f;
+    padding: 0.4rem 0.8rem;
+    background: var(--bg-alt);
+}
+
+.recommended-box {
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    margin-top: 1.5rem;
+}
+
+.recommended-box h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.3rem;
+}
+
+.recommended-box .badge {
+    display: none;
+}
+
+.recommended-box .file {
+    border: none;
+    padding: 0;
+    background: none;
+}
+
+.arch-note {
+    border-left: 4px solid #d08a2f;
+    padding: 0.2rem 0.8rem;
+}
+
+.other-files {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 0;
+}
+
+h3.group {
+    margin: 1.5rem 0 0.5rem;
+    font-size: 1.1rem;
+}
+
+.files {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+    gap: 1rem;
+}
+
+.file {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+}
+
+.file.recommended {
+    border: 2px solid var(--accent);
+}
+
+.file .file-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.file h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.badge {
+    display: none;
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-radius: 999px;
+    padding: 0 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.file.recommended .badge {
+    display: inline-block;
+}
+
+.file .file-meta {
+    margin: 0.3rem 0 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}
+
+.file-size {
+    white-space: nowrap;
+}
+
+.file p {
+    margin: 0.5rem 0;
+}
+
+.file .button {
+    margin-top: auto;
+    align-self: flex-start;
+}
+
+/* An asset the release does not have: still listed, but greyed out. */
+.file.missing {
+    opacity: 0.6;
+}
+
 footer {
     border-top: 1px solid var(--border);
     color: var(--muted);

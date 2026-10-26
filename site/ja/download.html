@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TableSkim のダウンロード</title>
+<meta name="description" content="Windows、macOS、Linux 用の TableSkim をダウンロード：インストーラー、ディスクイメージ、パッケージ、ポータブル ZIP。">
+<link rel="icon" href="../icon.png">
+<link rel="alternate" hreflang="en" href="../download.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="../icon.png" alt="" width="28" height="28"> TableSkim</a>
+    <nav>
+      <a href="./#features">機能</a>
+      <a href="download.html">ダウンロード</a>
+      <a href="./#documentation">ドキュメント</a>
+      <a href="https://github.com/informationsea/tableskim">GitHub</a>
+      <a href="../download.html" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="download-hero wrap">
+  <h1>TableSkim のダウンロード</h1>
+  <p class="lead">どのファイルにも必要なライブラリがすべて組み込まれているので、ほかに何もインストールする必要はありません。
+    TableSkim は無料のオープンソースです（AGPL-3.0）。</p>
+  <p class="release-info" id="release-info" hidden>最新リリース <b id="release-version"></b>
+    <span id="release-date"></span> ·
+    <a id="release-notes" href="https://github.com/informationsea/tableskim/releases/latest">リリースノート</a></p>
+  <p class="release-error" id="release-error" hidden>GitHub からファイルの一覧を読み込めませんでした。
+    下のボタンは<a href="https://github.com/informationsea/tableskim/releases/latest">最新のリリース</a>を開くので、
+    そこでファイルを選んでください。</p>
+
+  <div class="recommended-box" id="recommended" hidden>
+    <h2>お使いのシステムへのおすすめ</h2>
+    <div class="recommended-card"></div>
+    <p class="arch-note" id="arch-note-intel-mac" hidden>この Mac は Intel プロセッサのようです。
+      macOS 版は Apple シリコン（M1 以降）専用です。Intel Mac では
+      <a href="https://github.com/informationsea/tableskim#building">ソースからビルド</a>してください。</p>
+    <p class="arch-note" id="arch-note-arm-windows" hidden>この PC は ARM プロセッサのようです。
+      Windows 版は x64 用ですが、ARM 版 Windows 11 ではエミュレーションで動きます。</p>
+    <p class="arch-note" id="arch-note-arm-linux" hidden>このコンピュータは ARM プロセッサのようです。
+      Linux 版は x86-64 専用です。ARM では
+      <a href="https://github.com/informationsea/tableskim#building">ソースからビルド</a>してください。</p>
+    <p class="other-files">ほかのファイルが必要な場合は、下の一覧から選んでください。</p>
+  </div>
+  <p class="lead" id="no-recommendation">お使いのシステムに合ったファイルを下から選んでください。</p>
+</div>
+
+<section class="alt" id="windows">
+  <div class="wrap">
+    <h2>Windows</h2>
+    <p class="lead">64 ビット版 Windows（x64）用です。どちらにも GUI の <code>TableSkim.exe</code> と、
+      ターミナル UI の <code>tableskim-tui.exe</code> が含まれます。</p>
+    <div class="files">
+      <article class="file" data-asset="windows-installer">
+        <div class="file-head"><h3>インストーラー</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-AMD64.exe</code>
+          <span class="file-size"></span></p>
+        <p>TableSkim をインストールし、ユーザーマニュアルを含むスタートメニューの項目を追加します。通常はこちらを選んでください。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+      <article class="file" data-asset="windows-zip">
+        <div class="file-head"><h3>ポータブル ZIP</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-AMD64.zip</code>
+          <span class="file-size"></span></p>
+        <p>インストールも管理者権限も不要です。好きな場所に展開して <code>TableSkim.exe</code> を実行します。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="macos">
+  <div class="wrap">
+    <h2>macOS</h2>
+    <p class="lead">Apple シリコン（M1 以降）の Mac 用です。アプリは開発者証明書で署名されていないため、
+      初回は <code>TableSkim.app</code> を Control キーを押しながらクリックして<b>開く</b>を選んでください
+      （<a href="../manual/ja/getting-started.html#インストール">詳しく</a>）。</p>
+    <div class="files">
+      <article class="file" data-asset="macos-dmg">
+        <div class="file-head"><h3>ディスクイメージ</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-arm64.dmg</code>
+          <span class="file-size"></span></p>
+        <p>開いて <code>TableSkim.app</code> をアプリケーションフォルダにドラッグします。通常はこちらを選んでください。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+      <article class="file" data-asset="macos-zip">
+        <div class="file-head"><h3>ZIP</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-arm64.zip</code>
+          <span class="file-size"></span></p>
+        <p>同じ <code>TableSkim.app</code> とマニュアルを ZIP にしたものです。スクリプトでのインストールや、
+          ディスクイメージをマウントしたくない場合に。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="linux">
+  <div class="wrap">
+    <h2>Linux</h2>
+    <p class="lead">x86-64 用です。パッケージは <code>tableskim</code> コマンドとデスクトップエントリをインストールします。
+      ZIP はインストール不要で、glibc 2.28 以降のどのディストリビューション（RHEL 8、Debian 10、Ubuntu 20.04 以降）でも動きます。
+      好きな場所に展開して <code>bin/tableskim</code> を実行してください。</p>
+    <h3 class="group">パッケージ</h3>
+    <div class="files">
+      <article class="file" data-asset="linux-deb">
+        <div class="file-head"><h3>Debian パッケージ</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim_&lt;version&gt;_ubuntu24.04_amd64.deb</code>
+          <span class="file-size"></span></p>
+        <p>Ubuntu 24.04 以降と、同程度に新しいディストリビューション用です。
+          <code>sudo apt install ./tableskim_*.deb</code> でインストールします。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+      <article class="file" data-asset="linux-rpm">
+        <div class="file-head"><h3>RPM パッケージ</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-1.rocky10.x86_64.rpm</code>
+          <span class="file-size"></span></p>
+        <p>RHEL 10 とその互換ディストリビューション（Rocky Linux、AlmaLinux）用です。
+          <code>sudo dnf install ./tableskim-*.rpm</code> でインストールします。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+    </div>
+    <h3 class="group">ポータブル ZIP</h3>
+    <div class="files">
+      <article class="file" data-asset="linux-zip">
+        <div class="file-head"><h3>GUI とターミナル UI</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Linux-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>Wayland と X11 に対応した GUI と、ターミナル UI。デスクトップでは通常こちらを選んでください。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+      <article class="file" data-asset="linux-x11-zip">
+        <div class="file-head"><h3>X11 専用の GUI</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Linux-x11-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>Wayland のライブラリ（libwayland、libxkbcommon、libdecor、D-Bus）が不要です。X11 のデスクトップや
+          SSH の X 転送、もう一方の ZIP でライブラリが足りない場合に。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+      <article class="file" data-asset="linux-tui-zip">
+        <div class="file-head"><h3>ターミナル UI のみ</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-tui-&lt;version&gt;-Linux-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>グラフィックスのライブラリを一切使わない、最も小さなファイルです。デスクトップのないサーバーやクラスタで
+          SSH 越しに使う場合に。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="next">
+  <div class="wrap">
+    <h2>インストールしたら</h2>
+<pre><code>tableskim data.csv          # ディスプレイがあれば GUI
+tableskim -t data.parquet   # ターミナル UI</code></pre>
+    <p><a href="../manual/ja/getting-started.html">はじめにとコマンドラインオプション →</a></p>
+    <p>以前のバージョンは<a href="https://github.com/informationsea/tableskim/releases">リリースのページ</a>にあります。
+      ソースからビルドするには <a href="https://github.com/informationsea/tableskim#building">GitHub の README</a>
+      を参照してください。</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    TableSkim は <a href="https://github.com/informationsea/tableskim/blob/main/LICENSE">GNU AGPL v3</a>
+    のもとで配布されるフリーソフトウェアです。
+    · <a href="https://github.com/informationsea/tableskim/issues">問題を報告</a>
+    · <a href="../download.html" lang="en">English</a>
+  </div>
+</footer>
+
+<script src="../download.js"></script>
+</body>
+</html>

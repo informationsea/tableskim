@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download TableSkim</title>
+<meta name="description" content="Download TableSkim for Windows, macOS and Linux: installers, disk images, packages and portable ZIPs.">
+<link rel="icon" href="icon.png">
+<link rel="alternate" hreflang="ja" href="ja/download.html">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28"> TableSkim</a>
+    <nav>
+      <a href="./#features">Features</a>
+      <a href="download.html">Download</a>
+      <a href="./#documentation">Documentation</a>
+      <a href="https://github.com/informationsea/tableskim">GitHub</a>
+      <a href="ja/download.html" lang="ja">日本語</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="download-hero wrap">
+  <h1>Download TableSkim</h1>
+  <p class="lead">Every download has all libraries built in: nothing else needs to be installed.
+    TableSkim is free and open source (AGPL-3.0).</p>
+  <p class="release-info" id="release-info" hidden>Latest release <b id="release-version"></b>
+    <span id="release-date"></span> ·
+    <a id="release-notes" href="https://github.com/informationsea/tableskim/releases/latest">Release notes</a></p>
+  <p class="release-error" id="release-error" hidden>The file list could not be loaded from GitHub;
+    the buttons below open the
+    <a href="https://github.com/informationsea/tableskim/releases/latest">latest release</a>,
+    where you can pick the file.</p>
+
+  <div class="recommended-box" id="recommended" hidden>
+    <h2>Recommended for your system</h2>
+    <div class="recommended-card"></div>
+    <p class="arch-note" id="arch-note-intel-mac" hidden>This Mac seems to have an Intel processor.
+      The macOS build is for Apple silicon (M1 and later) only; on an Intel Mac,
+      <a href="https://github.com/informationsea/tableskim#building">build TableSkim from source</a>.</p>
+    <p class="arch-note" id="arch-note-arm-windows" hidden>This PC seems to have an ARM processor.
+      The Windows build is for x64; Windows 11 on ARM runs it by emulation.</p>
+    <p class="arch-note" id="arch-note-arm-linux" hidden>This computer seems to have an ARM processor.
+      The Linux builds are for x86-64 only; on ARM,
+      <a href="https://github.com/informationsea/tableskim#building">build TableSkim from source</a>.</p>
+    <p class="other-files">Not the right one? All files are listed below.</p>
+  </div>
+  <p class="lead" id="no-recommendation">Choose the file for your system below.</p>
+</div>
+
+<section class="alt" id="windows">
+  <div class="wrap">
+    <h2>Windows</h2>
+    <p class="lead">For 64-bit Windows (x64). Both contain <code>TableSkim.exe</code>, the GUI, and
+      <code>tableskim-tui.exe</code>, the terminal UI.</p>
+    <div class="files">
+      <article class="file" data-asset="windows-installer">
+        <div class="file-head"><h3>Installer</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-AMD64.exe</code>
+          <span class="file-size"></span></p>
+        <p>Installs TableSkim with Start menu entries, including the user manual. The usual choice.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+      <article class="file" data-asset="windows-zip">
+        <div class="file-head"><h3>Portable ZIP</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-AMD64.zip</code>
+          <span class="file-size"></span></p>
+        <p>Needs no installation or administrator rights: unpack it anywhere and run
+          <code>TableSkim.exe</code>.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="macos">
+  <div class="wrap">
+    <h2>macOS</h2>
+    <p class="lead">For Macs with Apple silicon (M1 and later). The app is not signed with a developer
+      certificate: the first time, Control-click <code>TableSkim.app</code> and choose <b>Open</b>
+      (<a href="manual/en/getting-started.html#installing">more</a>).</p>
+    <div class="files">
+      <article class="file" data-asset="macos-dmg">
+        <div class="file-head"><h3>Disk image</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-arm64.dmg</code>
+          <span class="file-size"></span></p>
+        <p>Open it and drag <code>TableSkim.app</code> to Applications. The usual choice.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+      <article class="file" data-asset="macos-zip">
+        <div class="file-head"><h3>ZIP</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-arm64.zip</code>
+          <span class="file-size"></span></p>
+        <p>The same <code>TableSkim.app</code> and manual in a ZIP, for scripted installs or if you
+          prefer not to mount a disk image.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="linux">
+  <div class="wrap">
+    <h2>Linux</h2>
+    <p class="lead">For x86-64. The packages install the <code>tableskim</code> command and a desktop
+      entry; the ZIPs need no installation and run on any distribution with glibc 2.28 or later
+      (RHEL 8, Debian 10, Ubuntu 20.04 and newer): unpack one anywhere and run
+      <code>bin/tableskim</code>.</p>
+    <h3 class="group">Packages</h3>
+    <div class="files">
+      <article class="file" data-asset="linux-deb">
+        <div class="file-head"><h3>Debian package</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim_&lt;version&gt;_ubuntu24.04_amd64.deb</code>
+          <span class="file-size"></span></p>
+        <p>For Ubuntu 24.04 or later and other distributions as new. Install with
+          <code>sudo apt install ./tableskim_*.deb</code>.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+      <article class="file" data-asset="linux-rpm">
+        <div class="file-head"><h3>RPM package</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-1.rocky10.x86_64.rpm</code>
+          <span class="file-size"></span></p>
+        <p>For RHEL 10 and its rebuilds (Rocky Linux, AlmaLinux). Install with
+          <code>sudo dnf install ./tableskim-*.rpm</code>.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+    </div>
+    <h3 class="group">Portable ZIPs</h3>
+    <div class="files">
+      <article class="file" data-asset="linux-zip">
+        <div class="file-head"><h3>GUI and terminal UI</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Linux-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>The GUI for Wayland and X11, and the terminal UI. The usual choice on a desktop.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+      <article class="file" data-asset="linux-x11-zip">
+        <div class="file-head"><h3>GUI for X11 only</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Linux-x11-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>Needs no Wayland libraries (libwayland, libxkbcommon, libdecor, D-Bus). For X11 desktops,
+          X forwarding over SSH, or when the other ZIP misses a library.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+      <article class="file" data-asset="linux-tui-zip">
+        <div class="file-head"><h3>Terminal UI only</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-tui-&lt;version&gt;-Linux-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>The smallest download, with no graphics libraries at all. For servers and clusters without
+          a desktop, used over SSH.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="next">
+  <div class="wrap">
+    <h2>After installing</h2>
+<pre><code>tableskim data.csv          # GUI when a display is available
+tableskim -t data.parquet   # terminal UI</code></pre>
+    <p><a href="manual/en/getting-started.html">Getting started and command-line options →</a></p>
+    <p>Older versions are on the <a href="https://github.com/informationsea/tableskim/releases">releases
+      page</a>. To build TableSkim from source, see the
+      <a href="https://github.com/informationsea/tableskim#building">README on GitHub</a>.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    TableSkim is free software under the
+    <a href="https://github.com/informationsea/tableskim/blob/main/LICENSE">GNU AGPL v3</a>.
+    · <a href="https://github.com/informationsea/tableskim/issues">Report an issue</a>
+    · <a href="ja/download.html" lang="ja">日本語</a>
+  </div>
+</footer>
+
+<script src="download.js"></script>
+</body>
+</html>
