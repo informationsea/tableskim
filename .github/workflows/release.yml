@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -86,7 +86,7 @@ jobs:
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
     # the path on the host, not the one mounted in the container.
     env:
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - name: Point ccache at the workspace
         run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
@@ -140,25 +140,25 @@ jobs:
           - name: GUI
             gui: "ON"
             x11_only: "OFF"
-            cache: rocky8
+            cache: rocky8-wayland
             save_cache: true
           - name: GUI X11 only
             gui: "ON"
             x11_only: "ON"
-            cache: rocky8x11
+            cache: rocky8-x11
             save_cache: true
           # The terminal UI only, packaged as tableskim-tui.
           - name: TUI only
             gui: "OFF"
             x11_only: "OFF"
-            cache: rocky8
+            cache: rocky8-tui
             save_cache: false
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:8
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
     # the path on the host, not the one mounted in the container.
     env:
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - name: Point ccache at the workspace
         run: echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
@@ -173,13 +173,14 @@ jobs:
             ${{ matrix.x11_only == 'OFF' && 'wayland-devel wayland-protocols-devel libxkbcommon-devel dbus-devel gtk3-devel mesa-libGL-devel mesa-libGLU-devel' || '' }}
       - uses: actions/checkout@v4
       # CI builds the GUIs here too and saves their caches; the release
-      # builds save theirs as well, and the TUI only reads the GUI's.
+      # builds save theirs as well, and the TUI only reads them. The builds
+      # differ in FLTK alone, so each starts from the newest of them.
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
-          restore-keys: ccache-${{ matrix.cache }}-
+          restore-keys: ccache-rocky8-
       - name: Build, test and package
         shell: bash
         run: |
@@ -202,7 +203,7 @@ jobs:
     runs-on: macos-latest
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -228,7 +229,7 @@ jobs:
     env:
       TABLESKIM_PRESET: msvc-release
       CCACHE_DIR: ${{ github.workspace }}\.ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v4
       - name: Install NSIS, Ninja and ccache

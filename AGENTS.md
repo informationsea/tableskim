@@ -70,8 +70,10 @@ ctest --preset debug -j 8            # test cases in parallel
   disables it). CI and the release workflow keep its cache (`.ccache`) with
   `actions/cache`; the release builds read the cache CI saved for the same
   runner or Rocky Linux container (`ccache-<runner>-*`, `ccache-rocky10-*`,
-  `ccache-rocky8-*`, `ccache-rocky8x11-*`), and only the GUI builds save one, the
-  GUI-less release builds just read it. Configure again after installing it.
+  `ccache-rocky8-*`, the last shared by both Rocky Linux 8 GUI builds), and
+  only the GUI builds save one, the GUI-less release builds just read it.
+  Pull requests only read the cache; runs on main save it. Configure again
+  after installing it.
 - Dependencies are always built as Release, even in Debug builds (except with
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
   `cmake/Dependencies.cmake`.
