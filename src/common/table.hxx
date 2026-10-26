@@ -311,7 +311,7 @@ public:
         size_t rows = 0;
     };
     // Set while reading is paused at a memory checkpoint (see
-    // Options::memory_checkpoint_bytes): rows not read yet stay Loading, and
+    // Options::memory_checkpoints): rows not read yet stay Loading, and
     // sorts, filters, searches and statistics that need them wait.
     std::optional<MemoryCheckpoint> memoryCheckpoint() const;
     // The first checkpoint above `bytes` (Options::memory_checkpoints, then
@@ -517,7 +517,8 @@ private:
     uint64_t stats_generation_ = 0;
     std::chrono::steady_clock::time_point stats_published_;
     // Histogram: the worker's progress (only it touches the accumulators'
-    // contents), reset once done.
+    // contents), kept once done so that appended rows can be counted
+    // (continueAfterAppendLocked()).
     struct HistogramJob
     {
         size_t next_row = 0;

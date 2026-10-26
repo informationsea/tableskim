@@ -150,7 +150,8 @@ read their header comments before changing anything in `src/common/`.
   sheet), and register a `BackendFactory` whose `probe()` scores a file by
   path and leading bytes. Built-in backends are registered in
   `table_registry.cxx` (`registerCsvBackend`, `registerExcelBackend`,
-  `registerDuckDbBackend`, `registerParquetBackend`, `registerSqliteBackend`).
+  `registerDuckDbBackend`, `registerParquetBackend`, `registerSqliteBackend`,
+  `registerJsonBackend`).
   To add a format: create `table_<format>.{hxx,cxx}`, implement the two
   interfaces, register it in `table_registry.cxx`, add the files to
   `tableskim-common` in `CMakeLists.txt`, and add `tests/table_<format>_tests.cxx`.
@@ -203,9 +204,9 @@ read their header comments before changing anything in `src/common/`.
   posted closure alone does not redraw. The grid is built in a custom node's
   `SetBox()`, when its size is known. Log output goes to `--log` or nowhere,
   as it would corrupt the screen.
-- `TableBook::executeSql()` runs `DataSource::executeSql()` (DuckDB, SQLite
-  and Parquet files, `supportsSql()`; a Parquet file is the view
-  `DuckDbRelation::sql_name`) as a task on the book's worker. A single
+- `TableBook::executeSql()` runs `DataSource::executeSql()` (DuckDB, SQLite,
+  Parquet and JSON files, `supportsSql()`; a Parquet or JSON file is the
+  view `DuckDbRelation::sql_name`) as a task on the book's worker. A single
   query becomes a TEMP view shown as an extra sheet ("SQL Result"), so
   `sheetNames()` can grow; running another query retires the old model
   (`TableModel::retire()`) and `sheet()` returns a new one. The view dies

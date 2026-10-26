@@ -181,6 +181,27 @@ class EditingTest(TuiTestCase):
             self.assertEqual(saved.read(), "a,b\n42,x\n2,y\n")
 
 
+    def test_text_options_on_excel_keep_unsaved_edits(self):
+        path = os.path.join(self.temp, "t.xlsx")
+        shutil.copyfile(self.demo("normal.xlsx"), path)
+        tui = self.run_tui(path)
+        tui.wait_text("55 rows")
+        tui.send("I")
+        tui.wait_text("EDIT")
+        tui.send("j", "i")
+        tui.wait_text("Edit R")
+        tui.send("ctrl+u")
+        tui.type("42")
+        tui.send("enter")
+        tui.wait_text("*t.xlsx")
+        # Refused before asking whether to save or discard the edits.
+        tui.send("E")
+        tui.wait_text("Only text files have an encoding")
+        tui.send("#")
+        tui.wait_text("Only text files can skip lines")
+        self.assertNotIn("Save them?", tui.text())
+        self.assertIn("*t.xlsx", status(tui))
+
 class FollowTest(TuiTestCase):
     def test_appended_rows_are_shown(self):
         path = self.temp_file("log.csv", "time,level\n12:00,INFO\n")
