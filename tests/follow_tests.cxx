@@ -118,6 +118,32 @@ TEST_CASE("readAppended: rows appended to a CSV file are added")
         file.write("n,name\n1,a\n");
         CHECK(readAppended(*book) == AppendResult::Changed);
     }
+    SECTION("a same-size rewrite is read again even with the same timestamp")
+    {
+        const auto mtime = std::filesystem::last_write_time(file.path());
+        file.write("n,name\n1,a\n2,b\n3,c\n4,d\n5,e\n6,f,other\n");
+        std::filesystem::last_write_time(file.path(), mtime);
+        bool caught_up = true;
+        CHECK(readAppended(*book, &caught_up) == AppendResult::Changed);
+        CHECK_FALSE(caught_up);
+    }
+}
+
+TEST_CASE("readAppended: same-size changes before the saved tail are detected")
+{
+    TempFile file("tableskim-test-follow-same-size.csv");
+    const std::string tail(100, 'a');
+    file.write("n,name\n1,old\n2," + tail + "\n");
+    std::shared_ptr<TableBook> book;
+    auto model = openRead(book, file.path());
+    REQUIRE(cellText(*model, 0, 1) == "old");
+    const auto mtime = std::filesystem::last_write_time(file.path());
+    file.write("n,name\n1,new\n2," + tail + "\n");
+    std::filesystem::last_write_time(file.path(), mtime + std::chrono::seconds(1));
+    bool caught_up = true;
+    CHECK(readAppended(*book, &caught_up) == AppendResult::Changed);
+    CHECK_FALSE(caught_up);
+    CHECK(cellText(*model, 0, 1) == "old");
 }
 
 TEST_CASE("readAppended: a last row without a line break is read again with the rest")
@@ -173,6 +199,47 @@ TEST_CASE("readAppended: VCF meta lines and Shift_JIS")
         CHECK(exactRows(*model, 2) == 2);
         CHECK(cellText(*model, 1, 1) == "東京");
     }
+}
+
+TEST_CASE("readAppended: skipped meta lines do not change quote state")
+{
+    TempFile file("tableskim-test-follow-meta.csv");
+    // The two hashes straddle an endsInQuotedField() input chunk boundary.
+    const std::string prefix = "n,name\n1,old\n";
+    file.write(prefix + "##" + std::string(65535 - prefix.size() - 3, 'x') + "\n##note,\"ignored\n");
+    OpenOptions options;
+    options.header = OpenOptions::Header::Yes;
+    options.skip_meta_lines = true;
+    auto book = TableBook::open(file.path(), options);
+    auto model = book->sheet(book->sheetNames().front());
+    REQUIRE(waitFor([&] { return model->rowCount().isExact(); }));
+    REQUIRE(model->rowCount().value == 1);
+    REQUIRE(cellText(*model, 0, 1) == "old");
+
+    file.write("##note,\"ignored\n2,new\n", true);
+    bool caught_up = false;
+    CHECK(readAppended(*book, &caught_up) == AppendResult::Appended);
+    CHECK(caught_up);
+    CHECK(exactRows(*model, 2) == 2);
+    CHECK(cellText(*model, 1, 1) == "new");
+
+    // Meta lines are removed even inside a quoted multiline field, without
+    // ending that field or publishing a partial row.
+    file.write("3,\"first\n##note,\"ignored\nlast", true);
+    CHECK(readAppended(*book, &caught_up) == AppendResult::None);
+    CHECK_FALSE(caught_up);
+    file.write("\"\n4,last\n", true);
+    CHECK(readAppended(*book, &caught_up) == AppendResult::Appended);
+    CHECK(caught_up);
+    CHECK(exactRows(*model, 4) == 4);
+    CHECK(cellText(*model, 2, 1) == "first\nlast");
+    CHECK(cellText(*model, 3, 1) == "last");
+
+    file.write("##only,\"metadata\n", true);
+    CHECK(readAppended(*book, &caught_up) == AppendResult::None);
+    CHECK(caught_up);
+    CHECK(readAppended(*book, &caught_up) == AppendResult::None);
+    CHECK(caught_up);
 }
 
 TEST_CASE("readsAppendedRows: plain text files only")

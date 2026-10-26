@@ -15,14 +15,6 @@ namespace
         return std::nullopt;
     }
 
-    // NaN last, as in the sort order.
-    bool numberBefore(double a, double b)
-    {
-        if (std::isnan(a))
-            return false;
-        return std::isnan(b) || a < b;
-    }
-
     // A value in ColumnStats::top being ranked; text is compared without copies.
     struct Candidate
     {
@@ -41,7 +33,7 @@ namespace
         if (a.text && b.text)
         {
             if (a.number && b.number)
-                return numberBefore(*a.number, *b.number);
+                return compareCells(a.value(), b.value()) < 0;
             if (a.number || b.number)
                 return a.number.has_value();
             return *a.text < *b.text;

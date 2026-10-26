@@ -221,54 +221,97 @@ namespace
         };
         char delimiter_;
         State state_ = State::FieldStart;
+        bool skip_meta_lines_;
+        bool line_start_ = true;
+        bool pending_hash_ = false;
+        bool skipping_meta_ = false;
+
+        bool feedCharacter(char c)
+        {
+            switch (state_)
+            {
+            case State::FieldStart:
+            case State::Unquoted:
+                if (c == '\n')
+                {
+                    state_ = State::FieldStart;
+                    return true;
+                }
+                else if (c == delimiter_)
+                    state_ = State::FieldStart;
+                else if (c == '"' && state_ == State::FieldStart)
+                    state_ = State::Quoted;
+                else
+                    state_ = State::Unquoted;
+                break;
+            case State::Quoted:
+                if (c == '"')
+                    state_ = State::QuoteInQuoted;
+                break;
+            case State::QuoteInQuoted:
+                if (c == '"')
+                    state_ = State::Quoted; // a doubled quote
+                else if (c == '\n')
+                {
+                    state_ = State::FieldStart;
+                    return true;
+                }
+                else if (c == delimiter_)
+                    state_ = State::FieldStart;
+                else if (c == '\r')
+                    state_ = State::Unquoted;
+                else
+                    state_ = State::Quoted; // a stray quote, which stays in the field
+                break;
+            }
+            return false;
+        }
 
     public:
-        explicit RecordScanner(char delimiter) : delimiter_(delimiter) {}
+        explicit RecordScanner(char delimiter, bool skip_meta_lines = false)
+            : delimiter_(delimiter), skip_meta_lines_(skip_meta_lines) {}
 
-        // The length of the whole records at the start of `text`: up to the
-        // last line break outside a quoted field (0 if there is none).
+        // Raw byte offsets are retained while meta lines are ignored just as
+        // they are before parsing, including lines inside quoted fields.
         size_t feed(std::string_view text)
         {
             size_t length = 0;
             for (size_t i = 0; i < text.size(); ++i)
             {
                 const char c = text[i];
-                switch (state_)
+                if (skip_meta_lines_)
                 {
-                case State::FieldStart:
-                case State::Unquoted:
-                    if (c == '\n')
+                    if (skipping_meta_)
                     {
-                        length = i + 1;
-                        state_ = State::FieldStart;
+                        if (c == '\n')
+                        {
+                            skipping_meta_ = false;
+                            line_start_ = true;
+                            if (state_ == State::FieldStart)
+                                length = i + 1;
+                        }
+                        continue;
                     }
-                    else if (c == delimiter_)
-                        state_ = State::FieldStart;
-                    else if (c == '"' && state_ == State::FieldStart)
-                        state_ = State::Quoted;
-                    else
-                        state_ = State::Unquoted;
-                    break;
-                case State::Quoted:
-                    if (c == '"')
-                        state_ = State::QuoteInQuoted;
-                    break;
-                case State::QuoteInQuoted:
-                    if (c == '"')
-                        state_ = State::Quoted; // a doubled quote
-                    else if (c == '\n')
+                    if (pending_hash_)
                     {
-                        length = i + 1;
-                        state_ = State::FieldStart;
+                        pending_hash_ = false;
+                        if (c == '#')
+                        {
+                            skipping_meta_ = true;
+                            continue;
+                        }
+                        feedCharacter('#');
                     }
-                    else if (c == delimiter_)
-                        state_ = State::FieldStart;
-                    else if (c == '\r')
-                        state_ = State::Unquoted;
-                    else
-                        state_ = State::Quoted; // a stray quote, which stays in the field
-                    break;
+                    else if (line_start_ && c == '#')
+                    {
+                        pending_hash_ = true;
+                        line_start_ = false;
+                        continue;
+                    }
+                    line_start_ = c == '\n';
                 }
+                if (feedCharacter(c))
+                    length = i + 1;
             }
             return length;
         }
@@ -278,18 +321,18 @@ namespace
         bool inQuotedField() const { return state_ == State::Quoted; }
     };
 
-    size_t wholeRecordsLength(std::string_view text, char delimiter)
+    size_t wholeRecordsLength(std::string_view text, char delimiter, bool skip_meta_lines)
     {
-        return RecordScanner(delimiter).feed(text);
+        return RecordScanner(delimiter, skip_meta_lines).feed(text);
     }
 
     // Whether the first `size` bytes of the file end inside a quoted field.
-    bool endsInQuotedField(const std::filesystem::path &path, uint64_t size, char delimiter)
+    bool endsInQuotedField(const std::filesystem::path &path, uint64_t size, char delimiter, bool skip_meta_lines)
     {
         std::ifstream in(path, std::ios::binary);
         if (!in)
             return false;
-        RecordScanner scanner(delimiter);
+        RecordScanner scanner(delimiter, skip_meta_lines);
         std::string chunk(64 * 1024, '\0');
         bool first = true;
         for (uint64_t done = 0; done < size && in;)
@@ -762,6 +805,7 @@ namespace
         bool skip_meta_lines_;
         char delimiter_ = ',';
         const CountingBuf *counter_ = nullptr; // the file's bytes, if it can be followed
+        std::optional<std::filesystem::file_time_type> file_mtime_;
         uint64_t offset_ = 0;
         std::string tail_;
         bool quotes_checked_ = false; // that the rows read end outside a quoted field
@@ -807,6 +851,10 @@ namespace
             : path_(path), encoding_(encoding), skip_meta_lines_(skip_meta_lines), header_option_(options.header),
               layout_(&layout)
         {
+            std::error_code stamp_error;
+            const auto mtime = std::filesystem::last_write_time(path, stamp_error);
+            if (!stamp_error)
+                file_mtime_ = mtime;
             csv::CSVFormat format;
             if (const auto delimiter = delimiterFor(path, options))
                 format.delimiter(*delimiter);
@@ -894,6 +942,19 @@ namespace
                 return AppendResult::None; // being replaced, say
             if (size < offset_)
                 return AppendResult::Changed;
+            const auto mtime = std::filesystem::last_write_time(path_, ec);
+            if (ec)
+                return AppendResult::None;
+            if (size == offset_ && file_mtime_ && mtime != *file_mtime_)
+                return AppendResult::Changed;
+            std::ifstream in(path_, std::ios::binary);
+            if (!in)
+                return AppendResult::None;
+            in.seekg(static_cast<std::streamoff>(offset_ - tail_.size()));
+            std::string before(tail_.size(), '\0');
+            in.read(before.data(), static_cast<std::streamsize>(before.size()));
+            if (!in || before != tail_)
+                return AppendResult::Changed;
             caught_up = size == offset_;
             if (caught_up)
                 return AppendResult::None;
@@ -906,23 +967,15 @@ namespace
             // a row, but more of it may follow: read the file again.
             if (offset_ > 0 && !quotes_checked_)
             {
-                if (endsInQuotedField(path_, offset_, delimiter_))
+                if (endsInQuotedField(path_, offset_, delimiter_, skip_meta_lines_))
                     return AppendResult::Changed;
                 quotes_checked_ = true;
             }
-            std::ifstream in(path_, std::ios::binary);
-            if (!in)
-                return AppendResult::None;
-            in.seekg(static_cast<std::streamoff>(offset_ - tail_.size()));
-            std::string before(tail_.size(), '\0');
-            in.read(before.data(), static_cast<std::streamsize>(before.size()));
-            if (!in || before != tail_)
-                return AppendResult::Changed;
             std::string appended(static_cast<size_t>(std::min<uint64_t>(size - offset_, MAX_APPENDED_BYTES)), '\0');
             in.read(appended.data(), static_cast<std::streamsize>(appended.size()));
             appended.resize(static_cast<size_t>(std::max<std::streamsize>(in.gcount(), 0)));
             // A row being written waits for its line break.
-            appended.resize(wholeRecordsLength(appended, delimiter_));
+            appended.resize(wholeRecordsLength(appended, delimiter_, skip_meta_lines_));
             if (appended.empty())
                 return AppendResult::None;
 
@@ -938,6 +991,7 @@ namespace
             while (readCsvRow(reader, row))
                 pending_.push_back(std::move(row));
             offset_ += appended.size();
+            file_mtime_ = mtime;
             caught_up = offset_ == size;
             tail_ += appended.substr(appended.size() - std::min(appended.size(), CountingBuf::TAIL_BYTES));
             if (tail_.size() > CountingBuf::TAIL_BYTES)
