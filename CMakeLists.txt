@@ -139,7 +139,7 @@ target_include_directories(tableskim-common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(tableskim-common PUBLIC duckdb-static sqlite3 spdlog::spdlog csv OpenXLSX::OpenXLSX)
-target_link_libraries(tableskim-common PRIVATE pugixml::pugixml tableskim-compression CLI11::CLI11 re2::re2 tableskim-warnings)
+target_link_libraries(tableskim-common PRIVATE pugixml::pugixml tableskim-compression CLI11::CLI11 re2::re2 absl::strings tableskim-warnings)
 target_compile_definitions(tableskim-common PRIVATE
     $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
 )

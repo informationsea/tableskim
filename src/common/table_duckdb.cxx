@@ -467,10 +467,8 @@ namespace
                     }
                     else
                     {
-                        double number = 0;
-                        const auto floating = std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), number);
-                        if (floating.ec == std::errc() && floating.ptr == trimmed.data() + trimmed.size())
-                            numbers[i] = number;
+                        if (const auto number = parseDouble(trimmed))
+                            numbers[i] = *number;
                         else
                             duckdb::FlatVector::SetNull(result, i, true);
                     }

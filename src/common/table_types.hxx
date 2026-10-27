@@ -40,6 +40,13 @@ std::string formatCell(const CellValue &value);
 // Parses the whole string as a number; used for numeric-aware sort/filter of text cells.
 std::optional<double> parseNumber(const std::string &text);
 
+// Floating-point std::from_chars / std::to_chars need macOS 26.0 / 13.3, so
+// these stand in for them with the same results (NaN aside: "nan" / "-nan").
+// The whole text as a double, without spaces, '+' or hexadecimal.
+std::optional<double> parseDouble(std::string_view text);
+// The shortest text that reads back as the value ("5e+05", "0.1").
+std::string shortestDoubleText(double value);
+
 // "A", "B", ..., "Z", "AA", ...
 std::string columnLetter(size_t column);
 

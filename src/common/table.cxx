@@ -16,7 +16,9 @@
 #include <stdexcept>
 #include <utility>
 
+#include <absl/strings/charconv.h>
 #include <re2/re2.h>
+#include <spdlog/fmt/fmt.h>
 
 #include "file_util.hxx"
 
@@ -58,18 +60,86 @@ namespace
         return result;
     }
 
+    // The value in fixed notation, or else in the shorter of fixed and
+    // exponent notation (fixed on a tie), as std::to_chars writes them.
+    std::string doubleText(double value, bool fixed_only)
+    {
+        // fmt writes the shortest digits that read back as the value, but
+        // chooses between the notations by a rule of its own.
+        const std::string text = fmt::format("{}", value);
+        if (!std::isfinite(value))
+            return text;
+        const std::string sign = std::signbit(value) ? "-" : "";
+        const size_t exponent_at = text.find('e');
+        const std::string_view mantissa =
+            std::string_view(text).substr(sign.size(), exponent_at == std::string::npos ? std::string::npos : exponent_at - sign.size());
+        // The value is 0.<digits> times 10 to the power of `point`.
+        std::string digits;
+        int point = static_cast<int>(mantissa.size());
+        for (size_t i = 0; i < mantissa.size(); ++i)
+        {
+            if (mantissa[i] == '.')
+                point = static_cast<int>(i);
+            else
+                digits += mantissa[i];
+        }
+        if (exponent_at != std::string::npos)
+            point += std::stoi(text.substr(exponent_at + 1));
+        const size_t first = digits.find_first_not_of('0');
+        if (first == std::string::npos)
+        {
+            digits = "0";
+            point = 1;
+        }
+        else
+        {
+            digits.erase(0, first);
+            point -= static_cast<int>(first);
+            digits.erase(digits.find_last_not_of('0') + 1);
+        }
+        const int count = static_cast<int>(digits.size());
+
+        std::string fixed;
+        if (point >= count)
+            fixed = fmt::format("{:.0f}", value); // the exact integer, not the shortest digits padded with zeros
+        else if (point > 0)
+            fixed = sign + digits.substr(0, point) + "." + digits.substr(point);
+        else
+            fixed = sign + "0." + std::string(-point, '0') + digits;
+        if (fixed_only)
+            return fixed;
+        std::string scientific = sign + digits.substr(0, 1);
+        if (count > 1)
+            scientific += "." + digits.substr(1);
+        scientific += fmt::format("e{}{:02}", point < 1 ? '-' : '+', std::abs(point - 1));
+        return fixed.size() <= scientific.size() ? fixed : scientific;
+    }
+
     std::string formatDouble(double value)
     {
-        char buf[400];
-        auto result = std::to_chars(buf, buf + sizeof(buf), value);
         // The shortest form of 500000.0 is "5e+05"; numbers of everyday
         // size are written out ("500000", "0.0001").
         const double magnitude = std::fabs(value);
-        if (std::find(buf, result.ptr, 'e') != result.ptr && magnitude >= 1e-5 && magnitude < 1e16)
-            result = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::fixed);
-        return std::string(buf, result.ptr);
+        return doubleText(value, magnitude >= 1e-5 && magnitude < 1e16);
     }
 } // namespace
+
+std::string shortestDoubleText(double value)
+{
+    return doubleText(value, false);
+}
+
+std::optional<double> parseDouble(std::string_view text)
+{
+    // absl reads "0x1p3" as hexadecimal even in the general format.
+    if (text.find_first_of("xX") != std::string_view::npos)
+        return std::nullopt;
+    double value = 0;
+    const auto result = absl::from_chars(text.data(), text.data() + text.size(), value);
+    if (result.ec != std::errc() || result.ptr != text.data() + text.size())
+        return std::nullopt;
+    return value;
+}
 
 std::string formatCell(const CellValue &value)
 {
@@ -98,11 +168,7 @@ std::optional<double> parseNumber(const std::string &text)
         ++begin;
     if (begin == end)
         return std::nullopt;
-    double value = 0;
-    const auto result = std::from_chars(begin, end, value);
-    if (result.ec != std::errc() || result.ptr != end)
-        return std::nullopt;
-    return value;
+    return parseDouble(std::string_view(begin, static_cast<size_t>(end - begin)));
 }
 
 std::optional<TemporalValue> parseTemporal(std::string_view text)
