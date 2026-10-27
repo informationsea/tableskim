@@ -1,5 +1,5 @@
-#ifndef _TUI_SEARCH_HXX_
-#define _TUI_SEARCH_HXX_
+#ifndef _SEARCH_HITS_HXX_
+#define _SEARCH_HITS_HXX_
 
 #include <cstddef>
 #include <optional>
@@ -19,4 +19,4 @@ struct SearchHitLookup
 // is reported as pending.
 SearchHitLookup findSearchHit(const SearchState &state, CellPosition from, bool forward, bool include_from = false);
 
-#endif // _TUI_SEARCH_HXX_
+#endif // _SEARCH_HITS_HXX_

@@ -100,6 +100,8 @@ add_library(tableskim-common
     src/common/table_export.hxx
     src/common/sql_text.hxx
     src/common/sql_text.cxx
+    src/common/search_hits.hxx
+    src/common/search_hits.cxx
     src/common/sql_history.hxx
     src/common/sql_history.cxx
     src/common/recent_files.hxx
@@ -215,8 +217,6 @@ set(TABLESKIM_TUI_SOURCES
     src/tui/tui_table_view.cxx
     src/tui/tui_text.hxx
     src/tui/tui_text.cxx
-    src/tui/tui_search.hxx
-    src/tui/tui_search.cxx
 )
 
 # The single `tableskim` command: it starts the GUI or, without a display
@@ -504,11 +504,10 @@ add_executable(tableskim-tests
     tests/licenses_tests.cxx
     tests/cell_format_tests.cxx
     tests/tui_text_tests.cxx
-    tests/tui_search_tests.cxx
+    tests/search_hits_tests.cxx
     tests/cli_options_tests.cxx
     tests/table_summary_tests.cxx
     src/tui/tui_text.cxx
-    src/tui/tui_search.cxx
 )
 target_include_directories(tableskim-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
 target_link_libraries(tableskim-tests PRIVATE tableskim-common Catch2::Catch2 pugixml::pugixml ftxui::screen tableskim-warnings)

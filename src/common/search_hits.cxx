@@ -1,4 +1,4 @@
-#include "tui_search.hxx"
+#include "search_hits.hxx"
 
 #include <algorithm>
 

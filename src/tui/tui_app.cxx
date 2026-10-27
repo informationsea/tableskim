@@ -21,7 +21,7 @@
 #include "licenses.hxx"
 #include "sql_text.hxx"
 #include "tableskim_version.hxx"
-#include "tui_search.hxx"
+#include "search_hits.hxx"
 #include "tui_text.hxx"
 
 using namespace ftxui;

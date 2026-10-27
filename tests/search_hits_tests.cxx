@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "tui_search.hxx"
+#include "search_hits.hxx"
 
 namespace
 {
