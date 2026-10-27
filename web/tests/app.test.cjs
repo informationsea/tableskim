@@ -170,6 +170,18 @@ describe('the web app', () => {
         await page.context().close();
     });
 
+    test('opens the last of files given in quick succession', async () => {
+        const page = await newPage();
+        // The second file is mounted before the first is answered, which
+        // must not take the second one's mount away.
+        await page.setInputFiles('#file-input', demo('normal.xlsx'));
+        await page.setInputFiles('#file-input', demo('多言語サンプル.csv'));
+        await waitForText(page.locator('.cell'), '日本語');
+        assert.match(await page.locator('#status-file').textContent(), /多言語サンプル\.csv/);
+        assert.equal(await page.locator('#message').isHidden(), true);
+        await page.context().close();
+    });
+
     test('opens Parquet, Excel and JSON files and non-ASCII names', async () => {
         const page = await newPage();
         for (const [file, text] of [

@@ -31,17 +31,18 @@ if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
 
     // The session closes the book before opening the next file, so once an
     // "open" is answered, the files mounted for earlier ones are unused.
+    // Later ones may not have been opened yet (files opened in quick
+    // succession): they stay.
     var tskReleaseMounts = function (json)
     {
         var match = /^\{"id":(\d+)/.exec(json);
         var id = match && Number(match[1]);
-        var keep = tskOpenMounts[id];
-        if (!keep)
+        if (!tskOpenMounts[id])
             return;
         for (var key in tskOpenMounts)
         {
             var dir = tskOpenMounts[key];
-            if (dir === keep)
+            if (Number(key) >= id)
                 continue;
             try
             {
