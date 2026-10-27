@@ -74,6 +74,62 @@ TEST_CASE("parseCommandLine reads the shared options", "[cli]")
     }
 }
 
+TEST_CASE("parseCommandLine reads the summary options", "[cli]")
+{
+    CommandLineOptions options;
+
+    SECTION("defaults")
+    {
+        REQUIRE_FALSE(parse({"a.csv"}, options));
+        CHECK_FALSE(options.printsSummary());
+        CHECK_FALSE(options.head);
+        CHECK(options.summary_format == SummaryFormat::Markdown);
+        CHECK(options.sheets.empty());
+        CHECK_FALSE(options.scan_rows);
+        CHECK_FALSE(options.header);
+    }
+
+    SECTION("--summary")
+    {
+        REQUIRE_FALSE(parse({"--summary", "--format", "json", "--scan-rows", "1000", "--header", "no", "a.csv"},
+                            options));
+        CHECK(options.summary);
+        CHECK(options.printsSummary());
+        CHECK(options.summary_format == SummaryFormat::Json);
+        CHECK(options.scan_rows == 1000u);
+        CHECK(options.header == false);
+        CHECK(options.files == std::vector<std::string>{"a.csv"});
+    }
+
+    SECTION("--head with sheets")
+    {
+        REQUIRE_FALSE(parse({"--head", "20", "--sheet", "A", "--sheet", "B", "a.xlsx", "b.xlsx"}, options));
+        CHECK_FALSE(options.summary);
+        CHECK(options.printsSummary());
+        CHECK(options.head == 20u);
+        CHECK(options.sheets == std::vector<std::string>{"A", "B"});
+        CHECK(options.files == std::vector<std::string>{"a.xlsx", "b.xlsx"});
+    }
+
+    SECTION("errors")
+    {
+        for (const std::vector<std::string> &args : {
+                 std::vector<std::string>{"--summary"},                        // no file
+                 std::vector<std::string>{"--format", "json", "a.csv"},        // no --summary
+                 std::vector<std::string>{"--sheet", "A", "a.csv"},            // no --summary
+                 std::vector<std::string>{"--summary", "--format", "xml", "a.csv"},
+                 std::vector<std::string>{"--summary", "--header", "maybe", "a.csv"},
+                 std::vector<std::string>{"--head", "many", "a.csv"},
+             })
+        {
+            CommandLineOptions fresh;
+            const auto exit_code = parse(args, fresh);
+            REQUIRE(exit_code);
+            CHECK(*exit_code != 0);
+        }
+    }
+}
+
 TEST_CASE("chooseFrontend prefers the GUI unless forced or impossible", "[cli]")
 {
     CommandLineOptions options;

@@ -104,6 +104,8 @@ add_library(tableskim-common
     src/common/help_docs.hxx
     src/common/help_docs.cxx
     src/common/table_export.cxx
+    src/common/table_summary.hxx
+    src/common/table_summary.cxx
     src/common/xlsx_writer.hxx
     src/common/xlsx_writer.cxx
     src/common/table_sqlite.hxx
@@ -453,6 +455,7 @@ add_executable(tableskim-tests
     tests/tui_text_tests.cxx
     tests/tui_search_tests.cxx
     tests/cli_options_tests.cxx
+    tests/table_summary_tests.cxx
     src/tui/tui_text.cxx
     src/tui/tui_search.cxx
 )

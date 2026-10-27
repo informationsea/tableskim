@@ -108,6 +108,52 @@ tableskim --encoding cp932 old.csv # read a Shift_JIS CSV file
 The terminal UI writes log messages only with `--log`, because they would
 otherwise be drawn over the screen.
 
+## Printing a summary
+
+`--summary` and `--head` print a summary of each file to standard output
+and exit, without a window, for a quick look from a script, a pipeline or an
+AI agent. Any file TableSkim can open works, compressed CSV files included.
+
+```sh
+tableskim --summary data.xlsx               # columns, statistics, first 10 rows
+tableskim --head 20 data.csv.gz             # columns and the first 20 rows
+tableskim --summary --format json db.duckdb # the same as JSON
+tableskim --summary --sheet Sales book.xlsx # one sheet only
+```
+
+For each sheet, the summary has:
+
+- The number of rows and columns.
+- Each column's name and type (number, date, date and time, boolean, text or
+  mixed), judged from the first 1000 rows.
+- With `--summary`: each column's statistics over every row, as in the
+  statistics panel: empty cells, distinct values, minimum, maximum, mean,
+  standard deviation and the five most frequent values. DuckDB and Parquet
+  files count them in the database; other files are read once, row by row,
+  without keeping the rows in memory.
+- The first rows: 10 with `--summary`, N with `--head N`.
+
+The first row of a CSV / TSV file or an Excel sheet is taken as the column
+names when it looks like a header (`--header auto`); `--header yes` or
+`--header no` decides instead.
+
+| Option              | Description                                                         |
+| ------------------- | ------------------------------------------------------------------- |
+| `--summary`         | Print the columns, their types and statistics, and the first rows   |
+| `--head <N>`        | Print the columns and the first N rows (with `--summary`: N rows instead of 10) |
+| `--format <format>` | `markdown` (default) or `json`                                      |
+| `--sheet <name>`    | Only this sheet (may be repeated)                                   |
+| `--scan-rows <N>`   | Compute the statistics over the first N rows only                   |
+| `--header <when>`   | Whether the first row holds the column names: `auto` (default), `yes` or `no` |
+
+Markdown cells are cut at 80 bytes. JSON keeps every value: numbers and
+booleans as such, dates and date-times as ISO text, empty cells as `null`.
+Each file is an object with `file`, `encoding` (text files) and `sheets`;
+each sheet has `name`, `rows`, `rows_exact`, `columns` (`name`, `type`,
+`stats`) and `head`, an array of rows. Several files make an array of
+objects. When a file or a sheet cannot be read, its object has an `error`,
+the error is also written to standard error, and the exit status is 1.
+
 ## A first look
 
 The window shows the table with row numbers on the left and column headers

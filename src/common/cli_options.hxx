@@ -8,6 +8,12 @@
 
 #include "text_encoding.hxx"
 
+enum class SummaryFormat
+{
+    Markdown,
+    Json,
+};
+
 // Command-line options shared by the GUI and the TUI. The single `tableskim`
 // executable parses them once and then starts one of the two frontends.
 struct CommandLineOptions
@@ -19,6 +25,19 @@ struct CommandLineOptions
     // Encoding of the text files given here; unset: detected.
     std::optional<TextEncoding> encoding;
     std::vector<std::string> files; // UTF-8
+
+    // --summary / --head: print the files' columns, statistics and first
+    // rows to standard output and exit, without a UI (see runSummary()).
+    bool summary = false;
+    std::optional<size_t> head; // rows shown; --summary alone: 10
+    SummaryFormat summary_format = SummaryFormat::Markdown;
+    std::vector<std::string> sheets;  // empty: every sheet
+    std::optional<size_t> scan_rows; // statistics over the first rows only
+    // Whether the first row of a CSV / TSV or Excel sheet holds the column
+    // names; unset: guessed (the UIs ask instead).
+    std::optional<bool> header;
+
+    bool printsSummary() const { return summary || head.has_value(); }
 };
 
 // Parses UTF-8 arguments, args[0] being the program name. Returns the exit
