@@ -7,18 +7,29 @@
 #   Linux : .deb (dpkg-dev), .rpm (rpmbuild), .zip
 #   macOS : .dmg, .zip
 # On Windows use package.bat.
+#
+# The preset is release (make-release without Ninja) unless TABLESKIM_PRESET
+# is set, e.g. to macos-x86_64-release for Intel Macs.
 
 set -e
 
 KIND="${1:-all}"
 cd "$(dirname "$0")"
 
-./build.sh release
-
-if command -v ninja &> /dev/null; then
-    BUILD_DIR="build/release"
+if [ -n "${TABLESKIM_PRESET}" ]; then
+    BUILD_DIR="build/${TABLESKIM_PRESET}"
+    if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
+        cmake --preset "${TABLESKIM_PRESET}"
+    fi
+    cmake --build --preset "${TABLESKIM_PRESET}"
+    ctest --preset "${TABLESKIM_PRESET}"
 else
-    BUILD_DIR="build/make-release"
+    ./build.sh release
+    if command -v ninja &> /dev/null; then
+        BUILD_DIR="build/release"
+    else
+        BUILD_DIR="build/make-release"
+    fi
 fi
 
 case "$(uname -s)" in

@@ -32,17 +32,12 @@
   <p class="release-info" id="release-info" hidden>Latest release <b id="release-version"></b>
     <span id="release-date"></span> ·
     <a id="release-notes" href="https://github.com/informationsea/tableskim/releases/latest">Release notes</a></p>
-  <p class="release-error" id="release-error" hidden>The file list could not be loaded from GitHub;
-    the buttons below open the
-    <a href="https://github.com/informationsea/tableskim/releases/latest">latest release</a>,
-    where you can pick the file.</p>
 
   <div class="recommended-box" id="recommended" hidden>
     <h2>Recommended for your system</h2>
     <div class="recommended-card"></div>
-    <p class="arch-note" id="arch-note-intel-mac" hidden>This Mac seems to have an Intel processor.
-      The macOS build is for Apple silicon (M1 and later) only; on an Intel Mac,
-      <a href="https://github.com/informationsea/tableskim#building">build TableSkim from source</a>.</p>
+    <p class="arch-note" id="arch-note-mac" hidden>This is for Macs with Apple silicon (M1 and later).
+      On a Mac with an Intel processor, choose the <a href="#macos-intel">Intel disk image</a> instead.</p>
     <p class="arch-note" id="arch-note-arm-windows" hidden>This PC seems to have an ARM processor.
       The Windows build is for x64; Windows 11 on ARM runs it by emulation.</p>
     <p class="arch-note" id="arch-note-arm-linux" hidden>This computer seems to have an ARM processor.
@@ -81,9 +76,10 @@
 <section id="macos">
   <div class="wrap">
     <h2>macOS</h2>
-    <p class="lead">For Macs with Apple silicon (M1 and later). The app is not signed with a developer
+    <p class="lead">For macOS 12 (Monterey) or later. The app is not signed with a developer
       certificate: the first time, Control-click <code>TableSkim.app</code> and choose <b>Open</b>
       (<a href="manual/en/getting-started.html#installing">more</a>).</p>
+    <h3 class="group">Apple silicon (M1 and later)</h3>
     <div class="files">
       <article class="file" data-asset="macos-dmg">
         <div class="file-head"><h3>Disk image</h3><span class="badge">Recommended</span></div>
@@ -98,6 +94,24 @@
           <span class="file-size"></span></p>
         <p>The same <code>TableSkim.app</code> and manual in a ZIP, for scripted installs or if you
           prefer not to mount a disk image.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+    </div>
+    <h3 class="group" id="macos-intel">Intel</h3>
+    <div class="files">
+      <article class="file" data-asset="macos-intel-dmg">
+        <div class="file-head"><h3>Disk image</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-x86_64.dmg</code>
+          <span class="file-size"></span></p>
+        <p>For Macs with an Intel processor. Open it and drag <code>TableSkim.app</code> to
+          Applications.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+      <article class="file" data-asset="macos-intel-zip">
+        <div class="file-head"><h3>ZIP</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>The Intel <code>TableSkim.app</code> and manual in a ZIP.</p>
         <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
       </article>
     </div>

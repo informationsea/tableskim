@@ -163,8 +163,14 @@ set(_tableskim_variant "")
 if(TABLESKIM_X11_ONLY)
     set(_tableskim_variant "-x11")
 endif()
+# A macOS build for another architecture (CMAKE_OSX_ARCHITECTURES, e.g. the
+# macos-x86_64-* presets) is named after it, not after the host.
+set(_tableskim_arch "${CMAKE_SYSTEM_PROCESSOR}")
+if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+    string(REPLACE ";" "-" _tableskim_arch "${CMAKE_OSX_ARCHITECTURES}")
+endif()
 set(CPACK_PACKAGE_FILE_NAME
-    "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}${_tableskim_variant}-${CMAKE_SYSTEM_PROCESSOR}")
+    "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}${_tableskim_variant}-${_tableskim_arch}")
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 
 # DEB: tableskim_<version>_<distribution>_<arch>.deb

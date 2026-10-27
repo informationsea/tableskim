@@ -1,13 +1,19 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <bit>
+#include <charconv>
+#include <cmath>
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <mutex>
+#include <random>
+#include <string>
 #include <thread>
 #include <tuple>
+#include <vector>
 
 #include "cell_format.hxx"
 #include "file_util.hxx"
@@ -616,3 +622,77 @@ TEST_CASE("formatCell: numbers of everyday size without an exponent")
     CHECK(formatCell(1e20) == "1e+20");
     CHECK(formatCell(1.5e-7) == "1.5e-07");
 }
+
+TEST_CASE("formatCell and shortestDoubleText write doubles as std::to_chars does")
+{
+    // {value, formatCell(), shortestDoubleText()}, as written by std::to_chars
+    const std::vector<std::tuple<double, std::string, std::string>> cases = {
+        {0.0, "0", "0"},
+        {-0.0, "-0", "-0"},
+        {1e-5, "0.00001", "1e-05"},
+        {-1e-5, "-0.00001", "-1e-05"},
+        {9.99999999999999e-6, "9.99999999999999e-06", "9.99999999999999e-06"},
+        {0.1, "0.1", "0.1"},
+        {1.0 / 3, "0.3333333333333333", "0.3333333333333333"},
+        {9999999999999998.0, "9999999999999998", "9999999999999998"},
+        {0x1p53 + 2, "9007199254740994", "9007199254740994"},
+        {1e16, "1e+16", "1e+16"},
+        // Integers written out keep their exact digits.
+        {123456789012345678.0, "123456789012345680", "123456789012345680"},
+        {0x1p60, "1152921504606846976", "1152921504606846976"},
+        {1e22, "1e+22", "1e+22"},
+        {1e23, "1e+23", "1e+23"},
+        {-1.5e300, "-1.5e+300", "-1.5e+300"},
+        {5e-324, "5e-324", "5e-324"},
+        {std::numeric_limits<double>::max(), "1.7976931348623157e+308", "1.7976931348623157e+308"},
+        {std::numeric_limits<double>::infinity(), "inf", "inf"},
+        {-std::numeric_limits<double>::infinity(), "-inf", "-inf"},
+    };
+    for (const auto &[value, cell, shortest] : cases)
+    {
+        INFO(shortest);
+        CHECK(formatCell(value) == cell);
+        CHECK(shortestDoubleText(value) == shortest);
+        CHECK(parseDouble(shortest) == value);
+    }
+    CHECK(formatCell(std::numeric_limits<double>::quiet_NaN()) == "nan");
+}
+
+TEST_CASE("parseDouble reads numbers as std::from_chars does")
+{
+    CHECK(parseDouble("12.5") == 12.5);
+    CHECK(parseDouble("-.5") == -0.5);
+    CHECK(parseDouble("1E5") == 1e5);
+    CHECK(parseDouble("1.") == 1.0);
+    CHECK(parseDouble("4.9e-324") == 5e-324);
+    CHECK(parseDouble("-Infinity") == -std::numeric_limits<double>::infinity());
+    CHECK(std::isnan(*parseDouble("nan")));
+    for (const char *text : {"", "+1", " 1", "1 ", "1e", "e5", ".", "-", "1..2", "1,5", "1e400", "-1e400", "1e-400", "0x10", "0x1p3"})
+    {
+        INFO(text);
+        CHECK_FALSE(parseDouble(text).has_value());
+    }
+}
+
+#if !defined(__APPLE__) || __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 260000
+TEST_CASE("shortestDoubleText and parseDouble match std::to_chars and std::from_chars")
+{
+    std::mt19937_64 random(7);
+    for (int i = 0; i < 200000; ++i)
+    {
+        // Every bit pattern, then decimals of a few digits as typed in files.
+        const double value = i % 2 == 0 ? std::bit_cast<double>(random())
+                                         : static_cast<double>(random() % 100000) * std::pow(10.0, static_cast<int>(random() % 41) - 20);
+        if (std::isnan(value))
+            continue;
+        char buf[400];
+        const auto written = std::to_chars(buf, buf + sizeof(buf), value);
+        const std::string expected(buf, written.ptr);
+        INFO(expected);
+        CHECK(shortestDoubleText(value) == expected);
+        double read = 0;
+        std::from_chars(buf, written.ptr, read);
+        CHECK(parseDouble(expected) == read);
+    }
+}
+#endif

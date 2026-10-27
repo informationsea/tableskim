@@ -32,16 +32,12 @@
   <p class="release-info" id="release-info" hidden>最新リリース <b id="release-version"></b>
     <span id="release-date"></span> ·
     <a id="release-notes" href="https://github.com/informationsea/tableskim/releases/latest">リリースノート</a></p>
-  <p class="release-error" id="release-error" hidden>GitHub からファイルの一覧を読み込めませんでした。
-    下のボタンは<a href="https://github.com/informationsea/tableskim/releases/latest">最新のリリース</a>を開くので、
-    そこでファイルを選んでください。</p>
 
   <div class="recommended-box" id="recommended" hidden>
     <h2>お使いのシステムへのおすすめ</h2>
     <div class="recommended-card"></div>
-    <p class="arch-note" id="arch-note-intel-mac" hidden>この Mac は Intel プロセッサのようです。
-      macOS 版は Apple シリコン（M1 以降）専用です。Intel Mac では
-      <a href="https://github.com/informationsea/tableskim#building">ソースからビルド</a>してください。</p>
+    <p class="arch-note" id="arch-note-mac" hidden>これは Apple シリコン（M1 以降）の Mac 用です。
+      Intel プロセッサの Mac では、<a href="#macos-intel">Intel 用のディスクイメージ</a>を選んでください。</p>
     <p class="arch-note" id="arch-note-arm-windows" hidden>この PC は ARM プロセッサのようです。
       Windows 版は x64 用ですが、ARM 版 Windows 11 ではエミュレーションで動きます。</p>
     <p class="arch-note" id="arch-note-arm-linux" hidden>このコンピュータは ARM プロセッサのようです。
@@ -79,9 +75,10 @@
 <section id="macos">
   <div class="wrap">
     <h2>macOS</h2>
-    <p class="lead">Apple シリコン（M1 以降）の Mac 用です。アプリは開発者証明書で署名されていないため、
+    <p class="lead">macOS 12（Monterey）以降用です。アプリは開発者証明書で署名されていないため、
       初回は <code>TableSkim.app</code> を Control キーを押しながらクリックして<b>開く</b>を選んでください
       （<a href="../manual/ja/getting-started.html#インストール">詳しく</a>）。</p>
+    <h3 class="group">Apple シリコン（M1 以降）</h3>
     <div class="files">
       <article class="file" data-asset="macos-dmg">
         <div class="file-head"><h3>ディスクイメージ</h3><span class="badge">おすすめ</span></div>
@@ -96,6 +93,23 @@
           <span class="file-size"></span></p>
         <p>同じ <code>TableSkim.app</code> とマニュアルを ZIP にしたものです。スクリプトでのインストールや、
           ディスクイメージをマウントしたくない場合に。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+    </div>
+    <h3 class="group" id="macos-intel">Intel</h3>
+    <div class="files">
+      <article class="file" data-asset="macos-intel-dmg">
+        <div class="file-head"><h3>ディスクイメージ</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-x86_64.dmg</code>
+          <span class="file-size"></span></p>
+        <p>Intel プロセッサの Mac 用です。開いて <code>TableSkim.app</code> をアプリケーションフォルダにドラッグします。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+      <article class="file" data-asset="macos-intel-zip">
+        <div class="file-head"><h3>ZIP</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Darwin-x86_64.zip</code>
+          <span class="file-size"></span></p>
+        <p>Intel 用の <code>TableSkim.app</code> とマニュアルを ZIP にしたものです。</p>
         <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
       </article>
     </div>

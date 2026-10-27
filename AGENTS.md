@@ -101,6 +101,14 @@ ctest --preset debug -j 8            # test cases in parallel
   MSVC). CI and the release workflow use `msvc-release` so that ccache works
   (Visual Studio generators ignore compiler launchers); `package.bat` follows
   `TABLESKIM_PRESET`.
+- macOS builds target macOS 12 (`CMAKE_OSX_DEPLOYMENT_TARGET`, set before
+  `project()` in `CMakeLists.txt`), so APIs newer than that are unavailable
+  there: floating-point `std::from_chars` / `std::to_chars` need macOS 26 /
+  13.3, hence `parseDouble()` / `shortestDoubleText()` (`table_types.hxx`).
+  The `macos-x86_64-debug` / `macos-x86_64-release` presets build for Intel
+  Macs (`CMAKE_OSX_ARCHITECTURES`), on Apple silicon too, whose tests run
+  under Rosetta 2; `package.sh` follows `TABLESKIM_PRESET` like
+  `package.bat`, and the package is named after the target architecture.
 
 ### Demo / test data
 
@@ -139,7 +147,9 @@ RPM package names include the build distribution from `/etc/os-release`
 (e.g. `tableskim_0.2.2_ubuntu24.04_amd64.deb`); `-DTABLESKIM_PACKAGE_OS_TAG=`
 overrides it. ZIP names do not, since the release builds them on Rocky
 Linux 8 for every distribution (e.g. `tableskim-0.2.2-Linux-x86_64.zip`,
-`tableskim-0.2.2-Linux-x11-x86_64.zip`).
+`tableskim-0.2.2-Linux-x11-x86_64.zip`). The release builds the macOS DMG
+and ZIP twice on an Apple silicon runner, for `arm64` and cross-compiled
+for `x86_64`; the download pages list both.
 
 ## Architecture
 
@@ -362,14 +372,17 @@ read their header comments before changing anything in `src/common/`.
   (Linux: `share/doc/tableskim/html`; macOS and Windows: `Manual/`).
 - The GitHub Pages site is the introduction page in `site/` (`index.html`,
   `ja/index.html`, `style.css`) plus the manual converted by
-  `tableskim-html-manual` into `manual/`. `tools/build-site.sh [dir]`
-  builds it (only the converter is compiled, without CMake), and
-  `.github/workflows/pages.yml` deploys it from main. Keep the two
-  landing pages in step, and link to manual pages by their `.html` names.
-  The download pages (`download.html`, `ja/download.html`) describe each
-  release file; `site/download.js` fills in the links and sizes from the
-  GitHub API by asset-name patterns (keep them in step with
-  `cmake/Packaging.cmake`) and recommends a file for the visitor's system.
+  `tableskim-html-manual` into `manual/`. `tools/build-site.sh [dir
+  [release.json]]` builds it (only the converter is compiled, without
+  CMake), and `.github/workflows/pages.yml` deploys it from main and again
+  after each release. Keep the two landing pages in step, and link to
+  manual pages by their `.html` names. The download pages
+  (`download.html`, `ja/download.html`) describe each release file; their
+  links, names, sizes and the version are filled in at build time from
+  the latest release (the API's JSON, fetched by `pages.yml`) by
+  `tools/fill-download-pages.py`, by asset-name patterns (keep them in
+  step with `cmake/Packaging.cmake`). `site/download.js` only recommends
+  a file for the visitor's system.
 - The GUI layout is defined in `src/gui/gui.fl` (FLUID file, compiled with
   `fltk_wrap_ui`). Edit it with care to keep it loadable by `fluid`;
   generated `gui.h`/`gui.cxx` live in the build directory.

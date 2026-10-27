@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.26)
 
+# macOS builds (Apple silicon and Intel alike) run on macOS 12 and later,
+# not only on the version they were built on. Set before project() so that
+# the dependencies get it too; a directory configured without it has it
+# cached empty, hence FORCE. MACOSX_DEPLOYMENT_TARGET or
+# -DCMAKE_OSX_DEPLOYMENT_TARGET=... overrides it.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version to run on" FORCE)
+endif()
+
 project(table-skim VERSION 0.3.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -139,7 +148,7 @@ target_include_directories(tableskim-common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(tableskim-common PUBLIC duckdb-static sqlite3 spdlog::spdlog csv OpenXLSX::OpenXLSX)
-target_link_libraries(tableskim-common PRIVATE pugixml::pugixml tableskim-compression CLI11::CLI11 re2::re2 tableskim-warnings)
+target_link_libraries(tableskim-common PRIVATE pugixml::pugixml tableskim-compression CLI11::CLI11 re2::re2 absl::strings tableskim-warnings)
 target_compile_definitions(tableskim-common PRIVATE
     $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
 )

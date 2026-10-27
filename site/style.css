@@ -314,12 +314,6 @@ th {
     color: var(--muted);
 }
 
-.release-error {
-    border-left: 4px solid #d08a2f;
-    padding: 0.4rem 0.8rem;
-    background: var(--bg-alt);
-}
-
 .recommended-box {
     border: 2px solid var(--accent);
     border-radius: 10px;

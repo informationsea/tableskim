@@ -218,8 +218,22 @@ jobs:
           name: linux-zip-${{ matrix.cache }}-gui-${{ matrix.gui }}
           path: build/release/*.zip
 
+  # Apple silicon, and Intel Macs cross-compiled on the same runner, whose
+  # tests run under Rosetta 2. Both are configured in build/release (the
+  # release preset rather than macos-x86_64-release), where the dependency
+  # sources CI saved are restored. Only arm64 finds its objects in the
+  # ccache, which CI fills for the native build alone.
   macos:
+    name: macos (${{ matrix.arch }})
     needs: check-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            cmake_args: ""
+          - arch: x86_64
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64
     runs-on: macos-latest
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -249,13 +263,18 @@ jobs:
       # run's hit rate (as in ci.yml).
       - name: Reset ccache statistics
         run: ccache --zero-stats
+      - name: Install Rosetta 2
+        if: matrix.arch == 'x86_64'
+        run: softwareupdate --install-rosetta --agree-to-license
       - name: Build, test and package
-        run: ./package.sh all
+        run: |
+          cmake --preset release ${{ matrix.cmake_args }}
+          ./package.sh all
       - name: Show ccache statistics
         run: ccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: macos-${{ matrix.arch }}
           path: |
             build/release/*.dmg
             build/release/*.zip

@@ -1,6 +1,5 @@
 #include "xlsx_writer.hxx"
 
-#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -171,9 +170,7 @@ namespace
 
     void appendNumber(std::string &out, double value)
     {
-        char buf[64];
-        const auto result = std::to_chars(buf, buf + sizeof(buf), value);
-        out.append(buf, result.ptr);
+        out += shortestDoubleText(value);
     }
 
     void put16(std::string &out, uint32_t value)
