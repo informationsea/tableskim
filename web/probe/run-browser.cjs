@@ -13,7 +13,7 @@ const { chromium } = require('playwright');
         process.exit(2);
     }
     const port = String(8765 + Math.floor(Math.random() * 1000));
-    const server = spawn(process.execPath, [path.join(__dirname, 'serve.mjs'), buildDir, port], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const server = spawn(process.execPath, [path.join(__dirname, '..', 'serve.mjs'), buildDir, port], { stdio: ['ignore', 'pipe', 'inherit'] });
     await new Promise((resolve) => server.stdout.once('data', resolve));
     const browser = await chromium.launch();
     let code = 1;
@@ -22,7 +22,7 @@ const { chromium } = require('playwright');
         const page = await browser.newPage();
         page.on('console', (message) => console.error('console:', message.text()));
         page.on('pageerror', (error) => console.error('page error:', error.message));
-        await page.goto(`http://127.0.0.1:${port}/`);
+        await page.goto(`http://127.0.0.1:${port}/probe/`);
         if (!await page.evaluate(() => self.crossOriginIsolated))
             throw new Error('the page is not cross-origin isolated');
         await page.setInputFiles('#file', file);

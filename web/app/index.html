@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TableSkim</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="main.js"></script>
+</head>
+<body>
+<header class="toolbar">
+  <span class="brand">TableSkim</span>
+  <button type="button" id="open-button">Open…</button>
+  <input type="file" id="file-input" hidden>
+  <label id="header-option" hidden>First row
+    <select id="header-mode">
+      <option value="auto">Auto</option>
+      <option value="yes">Header</option>
+      <option value="no">Data</option>
+    </select>
+  </label>
+  <button type="button" id="filter-toggle" aria-pressed="false" disabled>Filter</button>
+  <span class="grow"></span>
+  <form id="search-form" class="search" autocomplete="off">
+    <input type="search" id="search-text" placeholder="Search" aria-label="Search" disabled>
+    <label title="Match case"><input type="checkbox" id="search-case">Aa</label>
+    <label title="Regular expression"><input type="checkbox" id="search-regex">.*</label>
+    <button type="button" id="search-prev" title="Previous hit (Shift+Enter)" disabled>↑</button>
+    <button type="button" id="search-next" title="Next hit (Enter)" disabled>↓</button>
+    <span id="search-status" class="muted"></span>
+  </form>
+</header>
+
+<section id="filter-bar" class="filter-bar" hidden>
+  <select id="filter-combine" aria-label="Combine conditions">
+    <option value="and">All of</option>
+    <option value="or">Any of</option>
+  </select>
+  <ul id="filter-conditions"></ul>
+  <form id="filter-form" autocomplete="off">
+    <select id="filter-column" aria-label="Column"></select>
+    <select id="filter-op" aria-label="Operator"></select>
+    <input id="filter-value" placeholder="Value" aria-label="Value">
+    <button type="submit">Add</button>
+  </form>
+  <button type="button" id="filter-clear">Clear</button>
+</section>
+
+<div id="checkpoint" class="banner" hidden>
+  <span id="checkpoint-text"></span>
+  <button type="button" id="continue-reading">Continue reading</button>
+  <button type="button" id="stop-reading">Stop here</button>
+</div>
+<div id="message" class="banner error" hidden></div>
+
+<nav id="tabs" class="tabs" hidden></nav>
+
+<main id="grid" class="grid">
+  <div id="empty" class="empty">
+    <p id="empty-title">Loading…</p>
+    <p class="muted">CSV, TSV, Excel, Parquet, JSON, SQLite and DuckDB files, compressed or not.
+    The file is read here in your browser; it is not uploaded anywhere.</p>
+  </div>
+  <div id="drop-overlay" class="drop-overlay" hidden>Drop the file to open it</div>
+</main>
+
+<footer class="status">
+  <span id="status-file"></span>
+  <span id="status-rows"></span>
+  <span id="status-filter" class="muted"></span>
+  <span class="grow"></span>
+  <span id="status-cell" class="muted"></span>
+</footer>
+</body>
+</html>

@@ -109,11 +109,11 @@ ctest --preset debug -j 8            # test cases in parallel
   Macs (`CMAKE_OSX_ARCHITECTURES`), on Apple silicon too, whose tests run
   under Rosetta 2; `package.sh` follows `TABLESKIM_PRESET` like
   `package.bat`, and the package is named after the target architecture.
-- `wasm-debug` / `wasm-release` build `tableskim-common` and the tests as
-  WebAssembly with Emscripten (`source <emsdk>/emsdk_env.sh` first; threads
-  and wasm exceptions for every object, no TUI, GUI or manual tool); ctest
-  runs the tests in Node.js. `tableskim-wasm-probe` and `web/probe/` time
-  the core in Node.js and browsers; see `src/wasm/README.md`. `size_t` is
+- `wasm-debug` / `wasm-release` build `tableskim-common`, the tests and the
+  web app's module as WebAssembly with Emscripten (`source
+  <emsdk>/emsdk_env.sh` first; threads and wasm exceptions for every
+  object, no TUI, GUI or manual tool); ctest runs the tests in Node.js and
+  the web app's end-to-end tests. See `src/wasm/README.md`. `size_t` is
   32 bits there, and reads of a file are much dearer in a browser, so read
   in large pieces.
 
@@ -215,6 +215,16 @@ read their header comments before changing anything in `src/common/`.
   double, bool, `Date`, `DateTime`); rows are delivered in immutable,
   shared `RowBlock`s. Avoid per-cell heap allocations and virtual calls.
   Rows may be ragged (different lengths).
+- The web app (`web/app/`, plain ES modules) runs the core in a Web Worker:
+  `tableskim-wasm` (`src/wasm/`) is that worker's script. Its `main()` is a
+  session thread running `WebSession` (`web_session.{hxx,cxx}`, portable
+  and tested natively too) on the JSON requests the page posts; the
+  thread running the runtime only relays them, posts replies and events,
+  and serves the files (WORKERFS mounts of the page's `File`s), as the
+  core's threads read through it. Like the other UIs, it asks for rows,
+  gets `Loading` cells, and asks again on the model's events. Helpers it
+  shares with the TUI live in `src/common/` (e.g. `findSearchHit()` in
+  `search_hits.{hxx,cxx}`).
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops
   back with `ftxui::App::Post` plus `PostEvent(Event::Custom)`, since a
@@ -462,6 +472,11 @@ Match the existing code:
   ```
 
   Add a test there for TUI changes that the Catch2 tests cannot reach.
+- The web app has end-to-end tests in `web/tests/` (`node:test` with
+  Playwright, headless Chromium), which ctest runs in a WebAssembly build
+  as `tableskim-web-tests` when Node.js can load Playwright
+  (`TABLESKIM_WEB_TESTS`: `AUTO`). Wait for what the page shows, never for
+  fixed periods.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest
   starts it with `xvfb-run -a` (`TABLESKIM_GUI_TESTS`: `AUTO` when

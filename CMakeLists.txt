@@ -205,6 +205,27 @@ if(EMSCRIPTEN)
     )
     set_property(TARGET tableskim-wasm-probe APPEND PROPERTY LINK_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_probe_pre.js)
+
+    # The module of the web frontend (web/app/), run as a worker's script.
+    add_executable(tableskim-wasm
+        src/wasm/wasm_api.cxx
+        src/wasm/web_session.hxx
+        src/wasm/web_session.cxx
+        src/wasm/web_json.hxx
+        src/wasm/web_json.cxx
+    )
+    target_link_libraries(tableskim-wasm PRIVATE tableskim-common tableskim-warnings)
+    target_link_options(tableskim-wasm PRIVATE
+        ${TABLESKIM_WASM_LINK_OPTIONS}
+        -sEXIT_RUNTIME=0
+        -sENVIRONMENT=worker
+        -sFORCE_FILESYSTEM=1
+        -sEXPORTED_RUNTIME_METHODS=stringToNewUTF8,UTF8ToString
+        -lworkerfs.js
+        --pre-js ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js
+    )
+    set_property(TARGET tableskim-wasm APPEND PROPERTY LINK_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js)
 endif()
 
 set(TABLESKIM_TUI_SOURCES
@@ -507,9 +528,12 @@ add_executable(tableskim-tests
     tests/search_hits_tests.cxx
     tests/cli_options_tests.cxx
     tests/table_summary_tests.cxx
+    tests/web_session_tests.cxx
     src/tui/tui_text.cxx
+    src/wasm/web_session.cxx
+    src/wasm/web_json.cxx
 )
-target_include_directories(tableskim-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
+target_include_directories(tableskim-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm)
 target_link_libraries(tableskim-tests PRIVATE tableskim-common Catch2::Catch2 pugixml::pugixml ftxui::screen tableskim-warnings)
 target_compile_definitions(tableskim-tests PRIVATE
     TABLESKIM_DEMO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/demo/data"
@@ -559,6 +583,35 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_TUI_TESTS STREQUAL "OFF"
         message(FATAL_ERROR "TABLESKIM_TUI_TESTS=ON needs Python 3 with pyte (python3-pyte, or pip install -r tests/tui/requirements.txt)")
     else()
         message(STATUS "Terminal UI tests skipped: Python 3 with pyte not found")
+    endif()
+endif()
+
+# End-to-end tests of the web app (web/tests/) in headless Chromium, with
+# Node.js and Playwright: WebAssembly builds only. AUTO adds them when
+# Playwright is found, ON requires it.
+set(TABLESKIM_WEB_TESTS AUTO CACHE STRING "End-to-end tests of the web app (AUTO, ON or OFF; WebAssembly builds only)")
+set_property(CACHE TABLESKIM_WEB_TESTS PROPERTY STRINGS AUTO ON OFF)
+if(EMSCRIPTEN AND NOT TABLESKIM_WEB_TESTS STREQUAL "OFF")
+    find_program(TABLESKIM_NODE node)
+    set(TABLESKIM_HAVE_PLAYWRIGHT FALSE)
+    if(TABLESKIM_NODE)
+        execute_process(COMMAND ${TABLESKIM_NODE} -e "require('playwright')"
+            RESULT_VARIABLE TABLESKIM_PLAYWRIGHT_RESULT OUTPUT_QUIET ERROR_QUIET)
+        if(TABLESKIM_PLAYWRIGHT_RESULT EQUAL 0)
+            set(TABLESKIM_HAVE_PLAYWRIGHT TRUE)
+        endif()
+    endif()
+    if(TABLESKIM_HAVE_PLAYWRIGHT)
+        add_test(NAME tableskim-web-tests
+            COMMAND ${TABLESKIM_NODE} --test ${CMAKE_CURRENT_SOURCE_DIR}/web/tests/app.test.cjs)
+        # Chromium drops non-ASCII paths given to a file input without a
+        # UTF-8 locale.
+        set_tests_properties(tableskim-web-tests PROPERTIES TIMEOUT 600
+            ENVIRONMENT "TABLESKIM_WASM_BUILD=${CMAKE_CURRENT_BINARY_DIR};LANG=C.UTF-8")
+    elseif(TABLESKIM_WEB_TESTS STREQUAL "ON")
+        message(FATAL_ERROR "TABLESKIM_WEB_TESTS=ON needs Node.js with Playwright")
+    else()
+        message(STATUS "Web app tests skipped: Node.js with Playwright not found")
     endif()
 endif()
 

@@ -1,17 +1,16 @@
-# WebAssembly build (feasibility probe)
+# WebAssembly build and web app
 
-The plan is a browser-only TableSkim: the core (`tableskim-common`) built
-with Emscripten and run in a Web Worker, with a frontend of its own, as the
-GUI and the TUI share the core today. This directory holds the first step,
-which checks that the core builds and runs as WebAssembly:
+A browser-only TableSkim: the core (`tableskim-common`) built with
+Emscripten and run in a Web Worker, with a frontend of its own (`web/app/`),
+as the GUI and the TUI share the core. The file never leaves the browser.
 
-- the `wasm-debug` / `wasm-release` presets build `tableskim-common` and
-  `tableskim-tests` with Emscripten (threads, wasm exceptions), and ctest
-  runs the tests in Node.js;
-- `tableskim-wasm-probe` (`wasm_probe.cxx`) opens one file through the
-  normal backends, reads it to the end, sorts it and runs an SQL query,
-  timing each step. It runs in Node.js, in a browser (`web/probe/`) and,
-  for comparison, natively.
+- `tableskim-wasm` (`wasm_api.cxx`, `web_session.{hxx,cxx}`,
+  `web_json.{hxx,cxx}`) is the module the web app runs in a worker.
+- `web/app/` is the app: plain ES modules (no build step), a virtual grid,
+  sheet tabs, sorting, filtering, searching, copying.
+- `tableskim-wasm-probe` (`wasm_probe.cxx`, `web/probe/`) was the
+  feasibility probe: it opens one file, reads it to the end, sorts it and
+  runs an SQL query, timing each step, in Node.js, a browser or natively.
 
 ## Building and testing
 
@@ -22,49 +21,91 @@ Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloa
 source <emsdk>/emsdk_env.sh
 cmake --preset wasm-release            # first time only
 cmake --build --preset wasm-release
-ctest --preset wasm-release            # tableskim-tests in Node.js
+ctest --preset wasm-release
 ```
 
-The probe in Node.js sees the host file system under `/host`:
+ctest runs `tableskim-tests` in Node.js and, when Node.js can load
+Playwright, the web app's end-to-end tests (`web/tests/app.test.cjs`) in
+headless Chromium (`TABLESKIM_WEB_TESTS`: `AUTO`, `ON` or `OFF`). By hand:
+
+```sh
+LANG=C.UTF-8 TABLESKIM_WASM_BUILD=build/wasm-release node --test web/tests/app.test.cjs
+```
+
+Without a UTF-8 locale, Chromium drops a non-ASCII path given to a file
+input. `WebSession` itself is tested natively too
+(`tests/web_session_tests.cxx`).
+
+## Running the web app
+
+```sh
+node web/serve.mjs build/wasm-release    # http://127.0.0.1:8765/ (the probe: /probe/)
+```
+
+`web/serve.mjs` serves `web/app/` with the module from the build directory
+and the headers that make the page cross-origin isolated, which threads
+need (`SharedArrayBuffer`): `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. Any static server that sends
+them will do; the page says so when they are missing.
+
+The probe in Node.js sees the host file system under `/host`; in Chromium,
+`web/probe/run-browser.cjs` runs the probe page through Playwright:
 
 ```sh
 node build/wasm-release/tableskim-wasm-probe.js /host$PWD/demo/data/normal.parquet \
     'SELECT City, count(*) FROM normal GROUP BY City'
-```
-
-In a browser, `web/probe/serve.mjs` serves the page with the headers that
-make it cross-origin isolated (needed for threads); open it and pick a file.
-`web/probe/run-browser.cjs` does the same in headless Chromium through
-Playwright:
-
-```sh
-node web/probe/serve.mjs build/wasm-release            # http://127.0.0.1:8765/
 LANG=C.UTF-8 node web/probe/run-browser.cjs build/wasm-release demo/data/normal.xlsx
 ```
-
-Without a UTF-8 locale, Chromium drops a non-ASCII path given to the file
-input; the harness then stops with a message.
 
 ## How it runs
 
 - Every object is built with `-pthread -fwasm-exceptions` (set before the
   dependencies are added). `TableBook`'s worker is a pthread, so the core
-  is unchanged; threads need `SharedArrayBuffer`, i.e. a page served with
-  `Cross-Origin-Opener-Policy: same-origin` and
-  `Cross-Origin-Embedder-Policy: require-corp`.
-- `-sPROXY_TO_PTHREAD`: `main()` runs on a thread of its own, so that the
-  thread running the runtime stays free to start more threads and to serve
-  the file systems, which only it may touch.
-- In a browser the module is the worker's own script (Emscripten starts
-  its threads from the script of the worker that starts them). The page
-  posts the `File`; `wasm_probe_pre.js` mounts it under `/input` with
-  WORKERFS, which reads slices of it as needed instead of copying it into
-  memory.
+  is unchanged.
+- `-sPROXY_TO_PTHREAD`: `main()` runs on a thread of its own. The thread
+  running the runtime (the worker's own) is the only one that may post to
+  the page and touch the file systems, and the core's threads read files
+  through it; it must never wait for them. So `main()` is the session
+  thread: it takes the requests the worker received from a queue, runs
+  them on a `WebSession` and hands the replies back to the runtime thread
+  (`emscripten_proxy_async`), which posts them to the page.
+- The module is the worker's own script: Emscripten starts its threads from
+  the script of the worker that starts them. `wasm_worker_pre.js` receives
+  the page's messages; an "open" request carries the `File`, which it
+  mounts with WORKERFS (read in place, in slices, not copied into memory)
+  and replaces with its path. The mounts of earlier files go once the next
+  "open" is answered, as the session closes the book first.
+- `TableModel` never blocks: a "rows" reply marks cells that are still
+  loading, and the model's events reach the page as `{sheet: bits}`
+  (`WebSession::Event`), coalesced on the runtime thread; the page then
+  asks again for what it shows.
 - DuckDB cannot run the program it builds to name its platform, so
   `cmake/Dependencies.cmake` names it (`wasm_threads`, as duckdb-wasm does).
 - The TUI, the GUI and the HTML manual tool are not built.
 
-## Results
+## Protocol
+
+The page posts `{id, method, params}`; the reply is
+`{id, result}` or `{id, error}` (`web/app/client.js` wraps this in
+promises). Rows and columns are 0-based; `sheet` is the id a "sheet"
+request returned.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `open` | `file` (a `File`), `header` (`auto`, `yes`, `no`), `encoding` | `sheets`, `usesHeaderOption`, `isTextFormat`, `supportsSql`, `textEncoding` |
+| `close` | | |
+| `sheet` | `name` | the sheet's info (below), with its `sheet` id |
+| `info` | `sheet` | `state` (`opening`, `ready`, `error`), `error`, `rows`, `rowsExact`, `displayRows`, `rowsText`, `hasHeader`, `columns` (`name`, `mark`), `capabilities`, `view`, `pending`, `filterText`, `viewError` (once), `checkpoint`, `readingStopped` |
+| `rows` | `sheet`, `first`, `last`, `firstColumn`, `lastColumn` | `first`, `firstColumn`, `rows` (display texts), `kinds` (a character per cell: `n` number, `s` other, `e` empty, `l` loading, `o` beyond the row, `x` error), `loading`, `end` |
+| `setView` | `sheet`, `sort` (`column`, `ascending`), `filter` (`combine`, `conditions`: `column`, `op`, `value`) or null | `view` |
+| `sortCycle` | `sheet`, `column` | `view` (by the column ascending, descending, then none) |
+| `search` / `cancelSearch` / `searchState` | `sheet`, `text`, `caseSensitive`, `regex`, `column` | `active`, `done`, `truncated`, `error`, `scannedRows`, `hits`, `generation` |
+| `findHit` | `sheet`, `row`, `column`, `forward`, `includeFrom` | `index` (null if none), `row`, `column`, `hits`, `wrapped`, `pending` |
+| `continueReading` / `stopReading` | `sheet` | |
+| `copy` | `sheet`, `top`, `left`, `bottom`, `right` | `text` (TSV), `copiedRows`, `skippedRows` |
+| `filterOps` | | `op`, `label`, `takesValue` for each filter operator |
+
+## Probe results
 
 4-core cloud container, Release build, Chromium 153 (headless, Playwright
 1.63), Node.js 22. Times are seconds as the probe reports them.
@@ -110,7 +151,7 @@ memory checkpoint) and sorting by the first column:
   4.9 MiB brotli); DuckDB with its Parquet and JSON extensions is about
   88% of the code linked in (by the size of the static libraries).
 
-## Findings for the next phases
+## Findings from the probe
 
 - No change to the core's threading was needed; keep pthreads and serve
   the app cross-origin isolated (`coi-serviceworker` where headers cannot
@@ -124,5 +165,14 @@ memory checkpoint) and sorting by the first column:
   files and SQL means a second module (or dynamic linking) and moving
   `table_registry.cxx`'s registration behind it.
 - The bridge to a frontend should be a message-based API in the worker that
-  runs the module; the probe's `main()` and `wasm_probe_pre.js` show the
-  pieces (posting output, mounting the `File`).
+  runs the module; the probe's `main()` and `wasm_probe_pre.js` showed the
+  pieces (posting output, mounting the `File`), which `tableskim-wasm`
+  now uses.
+
+## Not done yet
+
+SQL, statistics, histograms, scatter plots, Group By, exports and editing
+(the core has them; the session and the app do not ask for them yet);
+deploying (a static host with the isolation headers, or a service worker
+that adds them), offline use and file handlers (PWA); loading DuckDB only
+when needed. Follow cannot work on a `File`, which is a snapshot.
