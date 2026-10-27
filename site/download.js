@@ -13,8 +13,9 @@
     var PATTERNS = {
         "windows-installer": /^tableskim-[\d.]+-Windows-[^-]+\.exe$/,
         "windows-zip": /^tableskim-[\d.]+-Windows-[^-]+\.zip$/,
-        "macos-dmg": /^tableskim-[\d.]+-Darwin-[^-]+\.dmg$/,
-        "macos-zip": /^tableskim-[\d.]+-Darwin-[^-]+\.zip$/,
+        // The Apple silicon build; Intel Macs get -Darwin-x86_64 ones.
+        "macos-dmg": /^tableskim-[\d.]+-Darwin-arm64\.dmg$/,
+        "macos-zip": /^tableskim-[\d.]+-Darwin-arm64\.zip$/,
         "linux-deb": /^tableskim_[\d.]+_.+\.deb$/,
         "linux-rpm": /^tableskim-[\d.]+-.+\.rpm$/,
         "linux-zip": /^tableskim-[\d.]+-Linux-[^-]+\.zip$/,

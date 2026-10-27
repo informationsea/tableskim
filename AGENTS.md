@@ -147,7 +147,9 @@ RPM package names include the build distribution from `/etc/os-release`
 (e.g. `tableskim_0.2.2_ubuntu24.04_amd64.deb`); `-DTABLESKIM_PACKAGE_OS_TAG=`
 overrides it. ZIP names do not, since the release builds them on Rocky
 Linux 8 for every distribution (e.g. `tableskim-0.2.2-Linux-x86_64.zip`,
-`tableskim-0.2.2-Linux-x11-x86_64.zip`).
+`tableskim-0.2.2-Linux-x11-x86_64.zip`). The release builds the macOS DMG
+and ZIP twice on an Apple silicon runner, for `arm64` and cross-compiled
+for `x86_64`; `site/download.js` offers the `arm64` ones.
 
 ## Architecture
 
