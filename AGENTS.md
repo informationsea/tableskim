@@ -101,6 +101,14 @@ ctest --preset debug -j 8            # test cases in parallel
   MSVC). CI and the release workflow use `msvc-release` so that ccache works
   (Visual Studio generators ignore compiler launchers); `package.bat` follows
   `TABLESKIM_PRESET`.
+- macOS builds target macOS 12 (`CMAKE_OSX_DEPLOYMENT_TARGET`, set before
+  `project()` in `CMakeLists.txt`), so APIs newer than that are unavailable
+  there: floating-point `std::from_chars` / `std::to_chars` need macOS 26 /
+  13.3, hence `parseDouble()` / `shortestDoubleText()` (`table_types.hxx`).
+  The `macos-x86_64-debug` / `macos-x86_64-release` presets build for Intel
+  Macs (`CMAKE_OSX_ARCHITECTURES`), on Apple silicon too, whose tests run
+  under Rosetta 2; `package.sh` follows `TABLESKIM_PRESET` like
+  `package.bat`, and the package is named after the target architecture.
 
 ### Demo / test data
 

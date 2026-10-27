@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.26)
 
+# macOS builds (Apple silicon and Intel alike) run on macOS 12 and later,
+# not only on the version they were built on. Set before project() so that
+# the dependencies get it too; a directory configured without it has it
+# cached empty, hence FORCE. MACOSX_DEPLOYMENT_TARGET or
+# -DCMAKE_OSX_DEPLOYMENT_TARGET=... overrides it.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version to run on" FORCE)
+endif()
+
 project(table-skim VERSION 0.3.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

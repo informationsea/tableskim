@@ -53,6 +53,28 @@
             }
         },
         {
+            "name": "macos-x86_64",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_OSX_ARCHITECTURES": "x86_64"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        },
+        {
+            "name": "macos-x86_64-debug",
+            "displayName": "Debug for Intel Macs (Ninja; tests run under Rosetta on Apple silicon)",
+            "inherits": ["macos-x86_64", "debug"]
+        },
+        {
+            "name": "macos-x86_64-release",
+            "displayName": "Release for Intel Macs (Ninja; tests run under Rosetta on Apple silicon)",
+            "inherits": ["macos-x86_64", "release"]
+        },
+        {
             "name": "make-debug",
             "displayName": "Debug (Unix Makefiles)",
             "inherits": "unix-base",
@@ -151,6 +173,14 @@
             "configurePreset": "asan"
         },
         {
+            "name": "macos-x86_64-debug",
+            "configurePreset": "macos-x86_64-debug"
+        },
+        {
+            "name": "macos-x86_64-release",
+            "configurePreset": "macos-x86_64-release"
+        },
+        {
             "name": "make-debug",
             "configurePreset": "make-debug"
         },
@@ -205,6 +235,16 @@
                 "UBSAN_OPTIONS": "print_stacktrace=1",
                 "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/lsan.supp"
             }
+        },
+        {
+            "name": "macos-x86_64-debug",
+            "inherits": "test-base",
+            "configurePreset": "macos-x86_64-debug"
+        },
+        {
+            "name": "macos-x86_64-release",
+            "inherits": "test-base",
+            "configurePreset": "macos-x86_64-release"
         },
         {
             "name": "make-debug",

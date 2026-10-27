@@ -180,6 +180,11 @@ The `asan` preset builds and tests a Debug build with AddressSanitizer and
 UndefinedBehaviorSanitizer (`cmake --preset asan`, `cmake --build --preset
 asan`, `ctest --preset asan`).
 
+macOS builds run on macOS 12 or later (`CMAKE_OSX_DEPLOYMENT_TARGET`). The
+`macos-x86_64-release` and `macos-x86_64-debug` presets build for Intel
+Macs, also on Apple silicon, where the tests run under Rosetta 2;
+`TABLESKIM_PRESET=macos-x86_64-release ./package.sh dmg` packages it.
+
 To build only the terminal UI (no FLTK, X11 or fontconfig needed, e.g. for
 a headless server), configure with `-DTABLESKIM_BUILD_GUI=OFF`; `tableskim`
 then always starts the terminal UI.
