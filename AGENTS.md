@@ -109,6 +109,13 @@ ctest --preset debug -j 8            # test cases in parallel
   Macs (`CMAKE_OSX_ARCHITECTURES`), on Apple silicon too, whose tests run
   under Rosetta 2; `package.sh` follows `TABLESKIM_PRESET` like
   `package.bat`, and the package is named after the target architecture.
+- `wasm-debug` / `wasm-release` build `tableskim-common` and the tests as
+  WebAssembly with Emscripten (`source <emsdk>/emsdk_env.sh` first; threads
+  and wasm exceptions for every object, no TUI, GUI or manual tool); ctest
+  runs the tests in Node.js. `tableskim-wasm-probe` and `web/probe/` time
+  the core in Node.js and browsers; see `src/wasm/README.md`. `size_t` is
+  32 bits there, and reads of a file are much dearer in a browser, so read
+  in large pieces.
 
 ### Demo / test data
 

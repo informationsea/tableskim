@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TableSkim WebAssembly probe</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; }
+  input[type=text] { width: 40em; max-width: 100%; }
+  pre { background: #f4f4f4; padding: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>TableSkim WebAssembly probe</h1>
+<p>Opens a file in the browser with the TableSkim core, reads it to the end,
+sorts it and runs the SQL query (for formats with SQL), timing each step.
+Nothing leaves the browser.</p>
+<p><input type="file" id="file"></p>
+<p><label>SQL (optional): <input type="text" id="sql"></label></p>
+<p><button id="run">Run</button> <span id="status"></span></p>
+<pre id="log"></pre>
+<script>
+  const log = document.getElementById('log');
+  const status = document.getElementById('status');
+  status.textContent = self.crossOriginIsolated ? '' : 'not cross-origin isolated: threads are unavailable';
+  document.getElementById('run').addEventListener('click', () =>
+  {
+    const file = document.getElementById('file').files[0];
+    if (!file)
+      return;
+    log.textContent = '';
+    status.textContent = 'running';
+    // One worker per run: the module exits after main() returns. The
+    // module is the worker's script (see src/wasm/wasm_probe_pre.js).
+    const worker = new Worker('tableskim-wasm-probe.js');
+    worker.onmessage = (event) =>
+    {
+      const message = event.data;
+      if (message.type === 'print')
+        log.textContent += message.text + '\n';
+      else if (message.type === 'exit')
+      {
+        status.textContent = 'exit ' + message.code;
+        worker.terminate();
+      }
+    };
+    worker.onerror = (event) =>
+    {
+      log.textContent += 'worker error: ' + event.message + '\n';
+      status.textContent = 'exit (worker error)';
+    };
+    worker.postMessage({ file, sql: document.getElementById('sql').value });
+  });
+</script>
+</body>
+</html>
