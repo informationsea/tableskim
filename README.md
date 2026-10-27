@@ -118,6 +118,17 @@ line (it exits with an error otherwise).
 | `-v`, `--verbose` | Enable verbose (debug) logging                            |
 | `-V`, `--version` | Show version information and exit                         |
 
+`--summary` and `--head N` print each file's columns with their types (and,
+with `--summary`, statistics) and its first rows to standard output as
+Markdown or JSON (`--format json`), and exit without a UI: a quick look at
+any table file from a script or an AI agent. See
+[Printing a summary](docs/en/getting-started.md#printing-a-summary).
+
+```sh
+tableskim --summary data.xlsx
+tableskim --head 20 --format json data.csv.gz
+```
+
 Files can also be opened from **File → Open...** (`Ctrl+O`).
 
 On macOS the command is the executable inside the app bundle; to put it on

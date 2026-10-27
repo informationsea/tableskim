@@ -318,6 +318,13 @@ read their header comments before changing anything in `src/common/`.
   quoted field only at the start of a field). `AppendResult::Changed` makes
   the UIs reopen the file; they take the file's stamp as read only when
   `caught_up` (no row being written is left).
+- `--summary` / `--head` (`runSummary()`, `table_summary.{hxx,cxx}`, called
+  from `main()` before a frontend is chosen) print each sheet's columns,
+  types, statistics and first rows as Markdown or JSON and exit. They read
+  the `SheetSource` directly on the main thread, without a `TableBook`,
+  streaming the rows into `ColumnStatsAccumulator`s (nothing but the first
+  rows is kept); pushdown sources use `columnValueCounts()` instead, unless
+  `--scan-rows` limits the rows.
 - Recent files (GUI: File > Open Recent) are kept by `RecentFiles`
   (`recent_files.{hxx,cxx}`) in `userDataDirectory()` like the SQL
   history, both written with `replaceFileContents()` (`file_util`); tests
