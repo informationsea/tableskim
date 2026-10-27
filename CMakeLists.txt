@@ -226,6 +226,53 @@ if(EMSCRIPTEN)
     )
     set_property(TARGET tableskim-wasm APPEND PROPERTY LINK_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js)
+
+    # The web app itself (web/: React, TypeScript, Vite), built with npm into
+    # <build>/web with the module next to it. AUTO builds it when npm is
+    # found, ON requires it; npm ci fetches its packages the first time.
+    set(TABLESKIM_WEB_APP AUTO CACHE STRING "Build the web app with npm (AUTO, ON or OFF; WebAssembly builds only)")
+    set_property(CACHE TABLESKIM_WEB_APP PROPERTY STRINGS AUTO ON OFF)
+    set(TABLESKIM_HAVE_WEB_APP FALSE)
+    if(NOT TABLESKIM_WEB_APP STREQUAL "OFF")
+        find_program(TABLESKIM_NPM npm)
+        if(TABLESKIM_NPM)
+            set(TABLESKIM_HAVE_WEB_APP TRUE)
+        elseif(TABLESKIM_WEB_APP STREQUAL "ON")
+            message(FATAL_ERROR "TABLESKIM_WEB_APP=ON needs npm (Node.js)")
+        else()
+            message(STATUS "Web app skipped: npm not found")
+        endif()
+    endif()
+    if(TABLESKIM_HAVE_WEB_APP)
+        set(TABLESKIM_WEB_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/web)
+        set(TABLESKIM_WEB_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/web)
+        add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web-packages.stamp
+            COMMAND ${TABLESKIM_NPM} ci --no-audit --no-fund
+            COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/web-packages.stamp
+            DEPENDS ${TABLESKIM_WEB_SOURCE_DIR}/package.json ${TABLESKIM_WEB_SOURCE_DIR}/package-lock.json
+            WORKING_DIRECTORY ${TABLESKIM_WEB_SOURCE_DIR}
+            COMMENT "Installing the web app's packages"
+            VERBATIM
+        )
+        file(GLOB_RECURSE TABLESKIM_WEB_SOURCES CONFIGURE_DEPENDS ${TABLESKIM_WEB_SOURCE_DIR}/src/*)
+        add_custom_command(
+            OUTPUT ${TABLESKIM_WEB_OUTPUT_DIR}/index.html
+            COMMAND ${CMAKE_COMMAND} -E env TABLESKIM_WASM_BUILD=${CMAKE_CURRENT_BINARY_DIR}
+                ${TABLESKIM_NPM} run build -- --outDir ${TABLESKIM_WEB_OUTPUT_DIR} --emptyOutDir
+            DEPENDS
+                ${CMAKE_CURRENT_BINARY_DIR}/web-packages.stamp
+                ${TABLESKIM_WEB_SOURCES}
+                ${TABLESKIM_WEB_SOURCE_DIR}/index.html
+                ${TABLESKIM_WEB_SOURCE_DIR}/vite.config.ts
+                ${TABLESKIM_WEB_SOURCE_DIR}/tsconfig.json
+                tableskim-wasm
+            WORKING_DIRECTORY ${TABLESKIM_WEB_SOURCE_DIR}
+            COMMENT "Building the web app"
+            VERBATIM
+        )
+        add_custom_target(tableskim-web ALL DEPENDS ${TABLESKIM_WEB_OUTPUT_DIR}/index.html)
+    endif()
 endif()
 
 set(TABLESKIM_TUI_SOURCES
@@ -587,11 +634,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_TUI_TESTS STREQUAL "OFF"
 endif()
 
 # End-to-end tests of the web app (web/tests/) in headless Chromium, with
-# Node.js and Playwright: WebAssembly builds only. AUTO adds them when
-# Playwright is found, ON requires it.
+# Node.js and Playwright: WebAssembly builds with the web app only. AUTO
+# adds them when Playwright is found, ON requires it.
 set(TABLESKIM_WEB_TESTS AUTO CACHE STRING "End-to-end tests of the web app (AUTO, ON or OFF; WebAssembly builds only)")
 set_property(CACHE TABLESKIM_WEB_TESTS PROPERTY STRINGS AUTO ON OFF)
-if(EMSCRIPTEN AND NOT TABLESKIM_WEB_TESTS STREQUAL "OFF")
+if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP AND NOT TABLESKIM_WEB_TESTS STREQUAL "OFF")
     find_program(TABLESKIM_NODE node)
     set(TABLESKIM_HAVE_PLAYWRIGHT FALSE)
     if(TABLESKIM_NODE)

@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+/* Colours as tokens, switched for dark mode below; Tailwind's utilities
+   (bg-surface, text-muted, border-line, ...) use them. */
+:root
+{
+    color-scheme: light;
+    --surface: #ffffff;
+    --fg: #1d2129;
+    --muted: #6b7280;
+    --chrome: #f3f4f6;
+    --line: #d9dce1;
+    --grid-line: #e7e9ed;
+    --header: #eef0f3;
+    --accent: #2563eb;
+    --selection: rgb(37 99 235 / 0.14);
+    --active: #dbe5fb;
+    --banner: #fff7db;
+    --danger: #b42318;
+    --danger-bg: #fdecea;
+    --loading: #c3c7ce;
+}
+
+@media (prefers-color-scheme: dark)
+{
+    :root
+    {
+        color-scheme: dark;
+        --surface: #17191d;
+        --fg: #e4e6ea;
+        --muted: #9aa0aa;
+        --chrome: #202328;
+        --line: #363a42;
+        --grid-line: #2a2d33;
+        --header: #24272d;
+        --accent: #6c9cff;
+        --selection: rgb(108 156 255 / 0.2);
+        --active: #2c3a57;
+        --banner: #3a3420;
+        --danger: #ff8a80;
+        --danger-bg: #3d2020;
+        --loading: #4a4e56;
+    }
+}
+
+@theme inline
+{
+    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --color-surface: var(--surface);
+    --color-fg: var(--fg);
+    --color-muted: var(--muted);
+    --color-chrome: var(--chrome);
+    --color-line: var(--line);
+    --color-grid-line: var(--grid-line);
+    --color-header: var(--header);
+    --color-accent: var(--accent);
+    --color-selection: var(--selection);
+    --color-active: var(--active);
+    --color-banner: var(--banner);
+    --color-danger: var(--danger);
+    --color-danger-bg: var(--danger-bg);
+    --color-loading: var(--loading);
+}
+
+@layer base
+{
+    html, body, #root
+    {
+        height: 100%;
+    }
+
+    body
+    {
+        background: var(--color-surface);
+        color: var(--color-fg);
+        font-size: 13px;
+        overflow: hidden; /* only the grid scrolls */
+    }
+}
+
+@layer components
+{
+    /* Buttons, selects and text fields of the toolbars. */
+    .control
+    {
+        border: 1px solid var(--color-line);
+        border-radius: 0.25rem;
+        background: var(--color-surface);
+        padding: 3px 8px;
+    }
+
+    .control:disabled
+    {
+        opacity: 0.5;
+    }
+
+    button.control:not(:disabled)
+    {
+        cursor: pointer;
+    }
+
+    button.control:not(:disabled):hover
+    {
+        border-color: var(--color-accent);
+    }
+
+    button.control[aria-pressed=true]
+    {
+        background: var(--color-active);
+        border-color: var(--color-accent);
+    }
+}

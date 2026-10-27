@@ -112,8 +112,10 @@ ctest --preset debug -j 8            # test cases in parallel
 - `wasm-debug` / `wasm-release` build `tableskim-common`, the tests and the
   web app's module as WebAssembly with Emscripten (`source
   <emsdk>/emsdk_env.sh` first; threads and wasm exceptions for every
-  object, no TUI, GUI or manual tool); ctest runs the tests in Node.js and
-  the web app's end-to-end tests. See `src/wasm/README.md`. `size_t` is
+  object, no TUI, GUI or manual tool) and, with npm, the web app into
+  `build/<preset>/web/` (`npm ci` and `npm run build` in `web/`, which
+  type-checks it); ctest runs the tests in Node.js and the web app's
+  end-to-end tests. See `src/wasm/README.md`. `size_t` is
   32 bits there, and reads of a file are much dearer in a browser, so read
   in large pieces.
 
@@ -215,15 +217,19 @@ read their header comments before changing anything in `src/common/`.
   double, bool, `Date`, `DateTime`); rows are delivered in immutable,
   shared `RowBlock`s. Avoid per-cell heap allocations and virtual calls.
   Rows may be ragged (different lengths).
-- The web app (`web/app/`, plain ES modules) runs the core in a Web Worker:
+- The web app (`web/`: React, TypeScript, Tailwind CSS, Vite; `npm run dev`
+  there) runs the core in a Web Worker:
   `tableskim-wasm` (`src/wasm/`) is that worker's script. Its `main()` is a
   session thread running `WebSession` (`web_session.{hxx,cxx}`, portable
   and tested natively too) on the JSON requests the page posts; the
   thread running the runtime only relays them, posts replies and events,
   and serves the files (WORKERFS mounts of the page's `File`s), as the
   core's threads read through it. Like the other UIs, it asks for rows,
-  gets `Loading` cells, and asks again on the model's events. Helpers it
-  shares with the TUI live in `src/common/` (e.g. `findSearchHit()` in
+  gets `Loading` cells, and asks again on the model's events
+  (`web/src/grid/controller.ts` keeps the grid's state outside React;
+  `Grid.tsx` draws the cells in view). The protocol's types are in
+  `web/src/protocol.ts`; keep them in step with `web_session.cxx`. Helpers
+  it shares with the TUI live in `src/common/` (e.g. `findSearchHit()` in
   `search_hits.{hxx,cxx}`).
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops
@@ -508,5 +514,6 @@ Match the existing code:
 - Keep the subject short (about 70 characters), without a trailing period.
 - If an agent wrote the commit, end the message with the trailers the tool
   provides for attribution (e.g. `Co-Authored-By:`), after a blank line.
-- Never commit `build/`, `.cache/`, `CMakeUserPresets.json`, or
-  `demo/.venv/`.
+- Never commit `build/`, `.cache/`, `CMakeUserPresets.json`,
+  `demo/.venv/`, `web/node_modules/` or `web/dist/`. Commit
+  `web/package-lock.json` with any change to `web/package.json`.

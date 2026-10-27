@@ -1,13 +1,13 @@
 # WebAssembly build and web app
 
 A browser-only TableSkim: the core (`tableskim-common`) built with
-Emscripten and run in a Web Worker, with a frontend of its own (`web/app/`),
+Emscripten and run in a Web Worker, with a frontend of its own (`web/`),
 as the GUI and the TUI share the core. The file never leaves the browser.
 
 - `tableskim-wasm` (`wasm_api.cxx`, `web_session.{hxx,cxx}`,
   `web_json.{hxx,cxx}`) is the module the web app runs in a worker.
-- `web/app/` is the app: plain ES modules (no build step), a virtual grid,
-  sheet tabs, sorting, filtering, searching, copying.
+- `web/` is the app (React, TypeScript, Tailwind CSS, built with Vite): a
+  virtual grid, sheet tabs, sorting, filtering, searching, copying.
 - `tableskim-wasm-probe` (`wasm_probe.cxx`, `web/probe/`) was the
   feasibility probe: it opens one file, reads it to the end, sorts it and
   runs an SQL query, timing each step, in Node.js, a browser or natively.
@@ -24,9 +24,13 @@ cmake --build --preset wasm-release
 ctest --preset wasm-release
 ```
 
-ctest runs `tableskim-tests` in Node.js and, when Node.js can load
-Playwright, the web app's end-to-end tests (`web/tests/app.test.cjs`) in
-headless Chromium (`TABLESKIM_WEB_TESTS`: `AUTO`, `ON` or `OFF`). By hand:
+When npm is found (`TABLESKIM_WEB_APP`: `AUTO`, `ON` or `OFF`), the build
+also runs `npm ci` (the first time, and after `package-lock.json`
+changes) and `npm run build` in `web/`, which type-checks the app and
+builds it with the module into `build/wasm-release/web/`. ctest runs
+`tableskim-tests` in Node.js and, when Node.js can load Playwright, the web
+app's end-to-end tests (`web/tests/app.test.cjs`) in headless Chromium
+(`TABLESKIM_WEB_TESTS`: `AUTO`, `ON` or `OFF`). By hand:
 
 ```sh
 LANG=C.UTF-8 TABLESKIM_WASM_BUILD=build/wasm-release node --test web/tests/app.test.cjs
@@ -36,17 +40,41 @@ Without a UTF-8 locale, Chromium drops a non-ASCII path given to a file
 input. `WebSession` itself is tested natively too
 (`tests/web_session_tests.cxx`).
 
-## Running the web app
+## Working on the web app
 
 ```sh
-node web/serve.mjs build/wasm-release    # http://127.0.0.1:8765/ (the probe: /probe/)
+cd web
+npm ci                  # once
+npm run dev             # http://localhost:5173/, reloads as the sources change
+npm run typecheck
+npm run build           # into web/dist/, with the module
+npm run preview         # serves web/dist/
 ```
 
-`web/serve.mjs` serves `web/app/` with the module from the build directory
-and the headers that make the page cross-origin isolated, which threads
-need (`SharedArrayBuffer`): `Cross-Origin-Opener-Policy: same-origin` and
-`Cross-Origin-Embedder-Policy: require-corp`. Any static server that sends
-them will do; the page says so when they are missing.
+The module comes from `../build/wasm-release` (`TABLESKIM_WASM_BUILD`
+names another build directory): `vite.config.ts` serves `tableskim-wasm.js`
+and `.wasm` as they are in development and copies them next to the app on
+build. They are not bundled: the module is the script of the worker that
+runs it, and Emscripten starts its threads from that same URL.
+
+The page must be cross-origin isolated, which threads need
+(`SharedArrayBuffer`): served with `Cross-Origin-Opener-Policy:
+same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, as
+`npm run dev`, `npm run preview` and `web/serve.mjs` do. Any static server
+that sends them will do; the page says so when they are missing. The app
+uses relative URLs, so it works from any directory of a host.
+
+`node web/serve.mjs build/wasm-release` serves the app CMake built (or
+`web/dist/`) at http://127.0.0.1:8765/ and the probe page at `/probe/`.
+
+Sources (`web/src/`): `protocol.ts` types the messages, `client.ts` sends
+them, `grid/controller.ts` is the virtual grid's state and behaviour
+(viewport, row cache, selection, keyboard, mouse) and `grid/Grid.tsx`
+draws it; `App.tsx` holds the app's state and `components/` the rest of
+the page. Colours are tokens in `index.css` (light and dark), used through
+Tailwind's utilities. The end-to-end tests find elements by the ids and
+classes the app gives them (`#file-input`, `.cell[data-row]`, `.header`,
+`#status-rows`, ...): keep them when changing the markup.
 
 The probe in Node.js sees the host file system under `/host`; in Chromium,
 `web/probe/run-browser.cjs` runs the probe page through Playwright:
@@ -85,10 +113,10 @@ LANG=C.UTF-8 node web/probe/run-browser.cjs build/wasm-release demo/data/normal.
 
 ## Protocol
 
-The page posts `{id, method, params}`; the reply is
-`{id, result}` or `{id, error}` (`web/app/client.js` wraps this in
-promises). Rows and columns are 0-based; `sheet` is the id a "sheet"
-request returned.
+The page posts `{id, method, params}`; the reply is `{id, result}` or
+`{id, error}` (`web/src/client.ts` wraps this in typed promises;
+`web/src/protocol.ts` has the types). Rows and columns are 0-based;
+`sheet` is the id a "sheet" request returned.
 
 | Method | Params | Result |
 | --- | --- | --- |

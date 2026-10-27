@@ -1,11 +1,14 @@
-// Serves the web app (web/app/ at /) and the probe page (web/probe/ at
+// Serves the built web app (at /) and the probe page (web/probe/ at
 // /probe/) with the module files of a WebAssembly build, adding the
 // headers that make the pages cross-origin isolated, which
 // SharedArrayBuffer (and so threads) needs:
-//   node web/serve.mjs <build dir> [port]
+//   node web/serve.mjs <build dir> [port] [app dir]
+// The app is the one CMake built into <build dir>/web, else web/dist
+// (npm run build). While working on the app, npm run dev serves it too.
+import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { basename, dirname, extname, join, normalize, sep } from 'node:path';
+import { basename, dirname, extname, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const webDir = dirname(fileURLToPath(import.meta.url));
@@ -13,7 +16,14 @@ const buildDir = process.argv[2];
 const port = Number(process.argv[3] ?? 8765);
 if (!buildDir)
 {
-    console.error('usage: node web/serve.mjs <build dir> [port]');
+    console.error('usage: node web/serve.mjs <build dir> [port] [app dir]');
+    process.exit(2);
+}
+const appDir = resolvePath(process.argv[4] ??
+    (existsSync(join(buildDir, 'web', 'index.html')) ? join(buildDir, 'web') : join(webDir, 'dist')));
+if (!existsSync(join(appDir, 'index.html')))
+{
+    console.error(`${appDir} holds no built app: run npm run build in web/`);
     process.exit(2);
 }
 
@@ -26,6 +36,7 @@ const BUILD_FILES = new Set([
 ]);
 const TYPES = {
     '.html': 'text/html; charset=utf-8',
+    '.svg': 'image/svg+xml',
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
     '.wasm': 'application/wasm',
@@ -36,7 +47,7 @@ function resolve(pathname)
 {
     if (BUILD_FILES.has(basename(pathname)))
         return join(buildDir, basename(pathname));
-    let root = join(webDir, 'app');
+    let root = appDir;
     let rest = pathname;
     if (pathname === '/probe' || pathname.startsWith('/probe/'))
     {
