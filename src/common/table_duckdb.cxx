@@ -448,7 +448,7 @@ namespace
                         duckdb::FlatVector::SetNull(result, i, true);
                         continue;
                     }
-                    const std::string_view trimmed = trimNumber({text[index].GetData(), text[index].GetSize()});
+                    const std::string_view trimmed = trimNumber(std::string_view(text[index].GetData(), text[index].GetSize()));
                     if (trimmed.empty())
                     {
                         duckdb::FlatVector::SetNull(result, i, true);
@@ -482,7 +482,7 @@ namespace
                 duckdb::UnaryExecutor::ExecuteWithNulls<duckdb::string_t, int64_t>(args.data[0], result, args.size(),
                     [](duckdb::string_t text, duckdb::ValidityMask &mask, duckdb::idx_t index)
                     {
-                        if (const auto value = parseTemporal({text.GetData(), text.GetSize()}))
+                        if (const auto value = parseTemporal(std::string_view(text.GetData(), text.GetSize())))
                             return value->micros;
                         mask.SetInvalid(index);
                         return int64_t{0};

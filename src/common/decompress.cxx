@@ -214,6 +214,9 @@ namespace
     private:
         static constexpr size_t kBufferSize = 256 * 1024;
 
+        // The file stream's own buffer; declared before the stream, which
+        // uses it until it is destroyed.
+        std::vector<char> file_buffer_ = std::vector<char>(kBufferSize);
         std::ifstream file_;
         std::unique_ptr<Decoder> decoder_;
         std::vector<char> in_ = std::vector<char>(kBufferSize);
@@ -281,8 +284,13 @@ namespace
 
     public:
         DecompressingBuffer(const std::filesystem::path &path, Compression compression)
-            : file_(path, std::ios::binary), decoder_(makeDecoder(compression))
+            : decoder_(makeDecoder(compression))
         {
+            // Read the file in large pieces: with the default buffer (4 KiB
+            // in libc++), refill() reads it in many small ones, each of which
+            // costs much more in a browser (WebAssembly reading a File).
+            file_.rdbuf()->pubsetbuf(file_buffer_.data(), static_cast<std::streamsize>(file_buffer_.size()));
+            file_.open(path, std::ios::binary);
             if (!file_)
                 throw std::runtime_error("Cannot open file: " + path.string());
             setg(out_.data(), out_.data(), out_.data());
