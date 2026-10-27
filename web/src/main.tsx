@@ -8,8 +8,7 @@ import './index.css';
 const client = new TableSkimClient(new URL(`${import.meta.env.BASE_URL}tableskim-wasm.js`, document.baseURI));
 
 const root = document.getElementById('root');
-if (!root)
-    throw new Error('no #root element');
+if (!root) throw new Error('no #root element');
 createRoot(root).render(
     <StrictMode>
         <App client={client} />

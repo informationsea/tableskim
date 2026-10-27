@@ -445,7 +445,10 @@ Match the existing code:
 - Use `spdlog` for logging and `CLI11` for command-line parsing.
 - Comments explain *why*, briefly; keep the comment density of the
   surrounding code. Comments and identifiers are in English.
-- No formatter config is committed; do not reformat unrelated code.
+- No formatter config is committed for the C++ code; do not reformat
+  unrelated code. The web app (`web/`) is the exception: Prettier formats
+  it and ESLint checks it (`npm run format`, `npm run lint`; ctest runs
+  both checks), so the brace style above does not apply there.
 
 ## Tests
 

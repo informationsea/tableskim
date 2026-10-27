@@ -1,8 +1,9 @@
-export function EmptyState({ title }: { title: string })
-{
+export function EmptyState({ title }: { title: string }) {
     return (
         <div id="empty" className="absolute inset-0 z-2 flex flex-col items-center justify-center p-4 text-center">
-            <p id="empty-title" className="my-1 max-w-xl text-base font-semibold">{title}</p>
+            <p id="empty-title" className="my-1 max-w-xl text-base font-semibold">
+                {title}
+            </p>
             <p className="my-1 max-w-xl text-muted">
                 CSV, TSV, Excel, Parquet, JSON, SQLite and DuckDB files, compressed or not. The file is read here in
                 your browser; it is not uploaded anywhere.
@@ -11,8 +12,7 @@ export function EmptyState({ title }: { title: string })
     );
 }
 
-export function DropOverlay()
-{
+export function DropOverlay() {
     return (
         <div
             id="drop-overlay"

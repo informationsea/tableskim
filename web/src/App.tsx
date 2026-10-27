@@ -24,32 +24,37 @@ type Phase =
     | { kind: 'failed'; name: string }
     | { kind: 'open' };
 
-function errorText(error: unknown)
-{
+function errorText(error: unknown) {
     return error instanceof Error ? error.message : String(error);
 }
 
-function emptyTitle(phase: Phase, info: SheetInfo | null)
-{
-    switch (phase.kind)
-    {
-    case 'starting': return 'Loading…';
-    case 'unsupported': return 'This page must be served cross-origin isolated';
-    case 'idle': return 'Open a file, or drop one here';
-    case 'opening': return `Opening ${phase.name}…`;
-    case 'failed': return `Cannot open ${phase.name}`;
-    case 'open':
-        if (!info || info.state === 'opening')
-            return `Opening ${info?.name ?? ''}…`;
-        if (info.state === 'error')
-            return `Cannot read ${info.name}`;
-        return `${info.name} is empty`;
+function emptyTitle(phase: Phase, info: SheetInfo | null) {
+    switch (phase.kind) {
+        case 'starting':
+            return 'Loading…';
+        case 'unsupported':
+            return 'This page must be served cross-origin isolated';
+        case 'idle':
+            return 'Open a file, or drop one here';
+        case 'opening':
+            return `Opening ${phase.name}…`;
+        case 'failed':
+            return `Cannot open ${phase.name}`;
+        case 'open':
+            if (!info || info.state === 'opening') return `Opening ${info?.name ?? ''}…`;
+            if (info.state === 'error') return `Cannot read ${info.name}`;
+            return `${info.name} is empty`;
     }
 }
 
-export function App({ client }: { client: TableSkimClient })
-{
-    const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
+// Threads need SharedArrayBuffer, which only a cross-origin isolated page has.
+const ISOLATED = self.crossOriginIsolated;
+const ISOLATION_MESSAGE =
+    'The engine needs SharedArrayBuffer: serve the page with the headers ' +
+    'Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.';
+
+export function App({ client }: { client: TableSkimClient }) {
+    const [phase, setPhase] = useState<Phase>({ kind: ISOLATED ? 'starting' : 'unsupported' });
     const [filterOps, setFilterOps] = useState<FilterOpInfo[]>([]);
     const [file, setFile] = useState<File | null>(null);
     const [book, setBook] = useState<BookInfo | null>(null);
@@ -58,7 +63,7 @@ export function App({ client }: { client: TableSkimClient })
     const [sheetKey, setSheetKey] = useState(0);
     const [dataVersion, setDataVersion] = useState(0);
     const [viewVersion, setViewVersion] = useState(0);
-    const [message, setMessage] = useState('');
+    const [message, setMessage] = useState(ISOLATED ? '' : ISOLATION_MESSAGE);
     const [filterOpen, setFilterOpen] = useState(false);
     const [cellStatus, setCellStatus] = useState('');
     const [search, setSearch] = useState({ text: '', caseSensitive: false, regex: false });
@@ -77,163 +82,145 @@ export function App({ client }: { client: TableSkimClient })
         pendingFind: null as { forward: boolean } | null,
     });
 
-    const showInfo = useCallback((next: SheetInfo) =>
-    {
+    const showInfo = useCallback((next: SheetInfo) => {
         flow.current.info = next;
         setInfo(next);
-        if (next.state === 'error')
-            setMessage(next.error ?? 'The sheet cannot be read.');
-        if (next.viewError)
-            setMessage(`The sort or filter failed: ${next.viewError}`);
-        if (next.view.filter?.conditions.length && next.capabilities.filter)
-            setFilterOpen(true);
+        if (next.state === 'error') setMessage(next.error ?? 'The sheet cannot be read.');
+        if (next.viewError) setMessage(`The sort or filter failed: ${next.viewError}`);
+        if (next.view.filter?.conditions.length && next.capabilities.filter) setFilterOpen(true);
     }, []);
 
     // Asks for the sheet's state again, one request at a time.
-    const refreshInfo = useCallback(async () =>
-    {
+    const refreshInfo = useCallback(async () => {
         const state = flow.current;
-        if (state.infoLoading)
-        {
+        if (state.infoLoading) {
             state.infoDirty = true;
             return;
         }
         const current = state.info;
-        if (!current)
-            return;
+        if (!current) return;
         const epoch = state.epoch;
         state.infoLoading = true;
-        try
-        {
-            do
-            {
+        try {
+            do {
                 state.infoDirty = false;
                 const next = await client.call('info', { sheet: current.sheet });
-                if (epoch !== state.epoch)
-                    return;
+                if (epoch !== state.epoch) return;
                 showInfo(next);
             } while (state.infoDirty);
-        }
-        catch (error)
-        {
+        } catch (error) {
             setMessage(errorText(error));
-        }
-        finally
-        {
+        } finally {
             state.infoLoading = false;
         }
     }, [client, showInfo]);
 
-    const resetSearch = useCallback(() =>
-    {
+    const resetSearch = useCallback(() => {
         flow.current.searchActive = false;
         flow.current.pendingFind = null;
         setSearchStatus('');
     }, []);
 
-    const selectSheet = useCallback(async (name: string) =>
-    {
-        const epoch = ++flow.current.epoch;
-        resetSearch();
-        try
-        {
-            const next = await client.call('sheet', { name });
-            if (epoch !== flow.current.epoch)
-                return;
-            showInfo(next);
-            setSheetKey((key) => key + 1);
-            grid.current?.focus();
-        }
-        catch (error)
-        {
-            setMessage(errorText(error));
-        }
-    }, [client, resetSearch, showInfo]);
+    const selectSheet = useCallback(
+        async (name: string) => {
+            const epoch = ++flow.current.epoch;
+            resetSearch();
+            try {
+                const next = await client.call('sheet', { name });
+                if (epoch !== flow.current.epoch) return;
+                showInfo(next);
+                setSheetKey((key) => key + 1);
+                grid.current?.focus();
+            } catch (error) {
+                setMessage(errorText(error));
+            }
+        },
+        [client, resetSearch, showInfo],
+    );
 
-    const openFile = useCallback(async (opened: File, header: HeaderMode = 'auto') =>
-    {
-        const epoch = ++flow.current.epoch;
-        flow.current.info = null;
-        resetSearch();
-        setFile(opened);
-        setBook(null);
-        setInfo(null);
-        setHeaderMode(header);
-        setMessage('');
-        setCellStatus('');
-        setPhase({ kind: 'opening', name: opened.name });
-        document.title = `${opened.name} – TableSkim`;
-        try
-        {
-            const next = await client.call('open', { file: opened, header });
-            if (epoch !== flow.current.epoch)
-                return;
-            setBook(next);
-            if (next.sheets.length === 0)
-                throw new Error('The file has no sheets.');
-            setPhase({ kind: 'open' });
-            await selectSheet(next.sheets[0]);
-        }
-        catch (error)
-        {
-            if (epoch !== flow.current.epoch)
-                return;
-            setPhase({ kind: 'failed', name: opened.name });
-            setMessage(errorText(error));
-        }
-    }, [client, resetSearch, selectSheet]);
+    const openFile = useCallback(
+        async (opened: File, header: HeaderMode = 'auto') => {
+            const epoch = ++flow.current.epoch;
+            flow.current.info = null;
+            resetSearch();
+            setFile(opened);
+            setBook(null);
+            setInfo(null);
+            setHeaderMode(header);
+            setMessage('');
+            setCellStatus('');
+            setPhase({ kind: 'opening', name: opened.name });
+            document.title = `${opened.name} – TableSkim`;
+            try {
+                const next = await client.call('open', { file: opened, header });
+                if (epoch !== flow.current.epoch) return;
+                setBook(next);
+                if (next.sheets.length === 0) throw new Error('The file has no sheets.');
+                setPhase({ kind: 'open' });
+                await selectSheet(next.sheets[0]);
+            } catch (error) {
+                if (epoch !== flow.current.epoch) return;
+                setPhase({ kind: 'failed', name: opened.name });
+                setMessage(errorText(error));
+            }
+        },
+        [client, resetSearch, selectSheet],
+    );
 
-    const showSearchState = useCallback(async () =>
-    {
+    // Shows how far the search is; returns its state.
+    const updateSearchStatus = useCallback(async () => {
         const current = flow.current.info;
-        if (!current || !flow.current.searchActive)
-            return;
+        if (!current || !flow.current.searchActive) return null;
         const state = await client.call('searchState', { sheet: current.sheet });
-        if (state.error)
-            setSearchStatus(state.error);
-        else if (!state.done)
-            setSearchStatus(`${state.hits.toLocaleString()} hits so far…`);
-        else if (state.hits === 0)
-            setSearchStatus('No hits');
-        else
-            setSearchStatus(`${state.hits.toLocaleString()}${state.truncated ? '+' : ''} hits`);
-        const pending = flow.current.pendingFind;
-        if (pending && (state.hits > 0 || state.done))
-        {
-            flow.current.pendingFind = null;
-            if (state.hits > 0)
-                await findHit(pending.forward, true);
-        }
-    // findHit and showSearchState call each other; both only read refs, so
-    // the findHit of an earlier render does as well as the latest.
+        if (state.error) setSearchStatus(state.error);
+        else if (!state.done) setSearchStatus(`${state.hits.toLocaleString()} hits so far…`);
+        else if (state.hits === 0) setSearchStatus('No hits');
+        else setSearchStatus(`${state.hits.toLocaleString()}${state.truncated ? '+' : ''} hits`);
+        return state;
     }, [client]);
 
     // Moves to the next (or previous) hit from the cursor; includeFrom
     // counts a hit at the cursor itself.
-    const findHit = async (forward: boolean, includeFrom = false) =>
-    {
-        const current = flow.current.info;
-        const cursor = grid.current?.cursor();
-        if (!current || !cursor || !flow.current.searchActive)
-            return;
-        const hit = await client.call('findHit', { sheet: current.sheet, row: cursor.row, column: cursor.column, forward, includeFrom });
-        if (hit.index !== null)
-        {
-            flow.current.pendingFind = null;
-            grid.current?.select({ row: hit.row, column: hit.column });
-        }
-        else if (hit.pending)
-            flow.current.pendingFind = { forward }; // tried again as the search goes on
-        await showSearchState();
-    };
+    const findHit = useCallback(
+        async (forward: boolean, includeFrom = false) => {
+            const current = flow.current.info;
+            const cursor = grid.current?.cursor();
+            if (!current || !cursor || !flow.current.searchActive) return;
+            const hit = await client.call('findHit', {
+                sheet: current.sheet,
+                row: cursor.row,
+                column: cursor.column,
+                forward,
+                includeFrom,
+            });
+            if (hit.index !== null) {
+                flow.current.pendingFind = null;
+                grid.current?.select({ row: hit.row, column: hit.column });
+            } else if (hit.pending) flow.current.pendingFind = { forward }; // tried again as the search goes on
+            await updateSearchStatus();
+        },
+        [client, updateSearchStatus],
+    );
 
-    const startSearch = async () =>
-    {
+    // The search went on: show it, and move to the hit that was asked for
+    // before the search had found one.
+    const searchProgressed = useCallback(async () => {
+        try {
+            const state = await updateSearchStatus();
+            const pending = flow.current.pendingFind;
+            if (state && pending && (state.hits > 0 || state.done)) {
+                flow.current.pendingFind = null;
+                if (state.hits > 0) await findHit(pending.forward, true);
+            }
+        } catch (error) {
+            setSearchStatus(errorText(error));
+        }
+    }, [findHit, updateSearchStatus]);
+
+    const startSearch = async () => {
         const current = flow.current.info;
-        if (!current || !search.text)
-            return;
-        try
-        {
+        if (!current || !search.text) return;
+        try {
             await client.call('search', {
                 sheet: current.sheet,
                 text: search.text,
@@ -242,63 +229,47 @@ export function App({ client }: { client: TableSkimClient })
             });
             flow.current.searchActive = true;
             await findHit(true, true);
-        }
-        catch (error)
-        {
+        } catch (error) {
             setSearchStatus(errorText(error));
         }
     };
 
-    const changeSearch = (change: Partial<typeof search>) =>
-    {
+    const changeSearch = (change: Partial<typeof search>) => {
         // A changed query or option is a new search.
         const current = flow.current.info;
-        if (flow.current.searchActive && current)
-            client.call('cancelSearch', { sheet: current.sheet }).catch(() => {});
+        if (flow.current.searchActive && current) client.call('cancelSearch', { sheet: current.sheet }).catch(() => {});
         resetSearch();
         setSearch((previous) => ({ ...previous, ...change }));
     };
 
-    const sortBy = async (column: number) =>
-    {
+    const sortBy = async (column: number) => {
         const current = flow.current.info;
-        if (!current?.capabilities.sort)
-            return;
-        try
-        {
+        if (!current?.capabilities.sort) return;
+        try {
             const reply = await client.call('sortCycle', { sheet: current.sheet, column });
-            if (flow.current.info?.sheet === current.sheet)
-            {
+            if (flow.current.info?.sheet === current.sheet) {
                 showInfo({ ...flow.current.info, view: reply.view });
-                refreshInfo();
+                void refreshInfo();
             }
-        }
-        catch (error)
-        {
+        } catch (error) {
             setMessage(errorText(error));
         }
     };
 
     // Applies a filter with the current sort.
-    const setFilter = async (filter: Filter | null) =>
-    {
+    const setFilter = async (filter: Filter | null) => {
         const current = flow.current.info;
-        if (!current)
-            return;
-        try
-        {
+        if (!current) return;
+        try {
             await client.call('setView', { sheet: current.sheet, sort: current.view.sort, filter });
             setMessage('');
-            refreshInfo();
-        }
-        catch (error)
-        {
+            void refreshInfo();
+        } catch (error) {
             setMessage(errorText(error));
         }
     };
 
-    const showCell = (cell: Cell, range: Range) =>
-    {
+    const showCell = (cell: Cell, range: Range) => {
         const name = flow.current.info?.columns[cell.column]?.name ?? '';
         let text = `Row ${(cell.row + 1).toLocaleString()}, ${name}`;
         if (range.bottom > range.top || range.right > range.left)
@@ -306,137 +277,128 @@ export function App({ client }: { client: TableSkimClient })
         setCellStatus(text);
     };
 
-    const copy = async (range: Range) =>
-    {
+    const copy = async (range: Range) => {
         const current = flow.current.info;
-        if (!current)
-            return;
-        if (range.bottom - range.top + 1 > MAX_COPY_ROWS)
-        {
+        if (!current) return;
+        if (range.bottom - range.top + 1 > MAX_COPY_ROWS) {
             setMessage(`Select at most ${MAX_COPY_ROWS.toLocaleString()} rows to copy.`);
             return;
         }
-        try
-        {
+        try {
             const copied = await client.call('copy', { sheet: current.sheet, ...range });
             await navigator.clipboard.writeText(copied.text);
-            setCellStatus(copied.skippedRows > 0
-                ? `Copied ${copied.copiedRows} rows; ${copied.skippedRows} not loaded yet were left out`
-                : `Copied ${copied.copiedRows.toLocaleString()} rows`);
-        }
-        catch (error)
-        {
+            setCellStatus(
+                copied.skippedRows > 0
+                    ? `Copied ${copied.copiedRows} rows; ${copied.skippedRows} not loaded yet were left out`
+                    : `Copied ${copied.copiedRows.toLocaleString()} rows`,
+            );
+        } catch (error) {
             setMessage(`Cannot copy: ${errorText(error)}`);
         }
     };
 
-    const fetchRows = useCallback((first: number, last: number, firstColumn: number, lastColumn: number) =>
-    {
+    // Continues reading past a memory checkpoint, or ends the table there.
+    const readOn = async (go: boolean) => {
         const current = flow.current.info;
-        if (!current)
-            return Promise.reject(new Error('no sheet'));
-        const epoch = flow.current.epoch;
-        return client.call('rows', { sheet: current.sheet, first, last, firstColumn, lastColumn }).then((rows) =>
-        {
-            if (epoch !== flow.current.epoch)
-                throw new Error('stale');
-            return rows;
-        });
-    }, [client]);
+        if (!current) return;
+        try {
+            await client.call(go ? 'continueReading' : 'stopReading', { sheet: current.sheet });
+            await refreshInfo();
+        } catch (error) {
+            setMessage(errorText(error));
+        }
+    };
+
+    const fetchRows = useCallback(
+        (first: number, last: number, firstColumn: number, lastColumn: number) => {
+            const current = flow.current.info;
+            if (!current) return Promise.reject(new Error('no sheet'));
+            const epoch = flow.current.epoch;
+            return client.call('rows', { sheet: current.sheet, first, last, firstColumn, lastColumn }).then((rows) => {
+                if (epoch !== flow.current.epoch) throw new Error('stale');
+                return rows;
+            });
+        },
+        [client],
+    );
 
     // Start: the engine, then the filter operators it offers.
-    useEffect(() =>
-    {
-        if (!self.crossOriginIsolated)
-        {
-            setPhase({ kind: 'unsupported' });
-            setMessage('The engine needs SharedArrayBuffer: serve the page with the headers ' +
-                'Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.');
-            return;
-        }
-        client.onFatalError = (text) => setMessage(`The engine stopped: ${text}. Reload the page to start again.`);
+    useEffect(() => {
+        if (!ISOLATED) return;
+        const unsubscribe = client.subscribeErrors((text) =>
+            setMessage(`The engine stopped: ${text}. Reload the page to start again.`),
+        );
         let cancelled = false;
-        client.ready.then(() => client.call('filterOps', {})).then((ops) =>
-        {
-            if (cancelled)
-                return;
-            setFilterOps(ops);
-            setPhase((current) => (current.kind === 'starting' ? { kind: 'idle' } : current));
-            document.body.dataset.ready = 'true';
-        }, (error: unknown) => setMessage(errorText(error)));
-        return () =>
-        {
+        client.ready
+            .then(() => client.call('filterOps', {}))
+            .then(
+                (ops) => {
+                    if (cancelled) return;
+                    setFilterOps(ops);
+                    setPhase((current) => (current.kind === 'starting' ? { kind: 'idle' } : current));
+                    document.body.dataset.ready = 'true';
+                },
+                (error: unknown) => setMessage(errorText(error)),
+            );
+        return () => {
             cancelled = true;
+            unsubscribe();
         };
     }, [client]);
 
     // The model's events: look again at what changed.
-    useEffect(() => client.subscribe((events) =>
-    {
-        const current = flow.current.info;
-        const bits = current && events.get(current.sheet);
-        if (!bits)
-            return;
-        if (bits & Events.VIEW)
-            setViewVersion((version) => version + 1);
-        else if (bits & Events.ROWS)
-            setDataVersion((version) => version + 1);
-        if (bits & (Events.STATE | Events.ROW_COUNT | Events.VIEW | Events.CHECKPOINT))
-            refreshInfo();
-        if (bits & (Events.SEARCH | Events.VIEW))
-            showSearchState();
-    }), [client, refreshInfo, showSearchState]);
+    useEffect(
+        () =>
+            client.subscribe((events) => {
+                const current = flow.current.info;
+                const bits = current && events.get(current.sheet);
+                if (!bits) return;
+                if (bits & Events.VIEW) setViewVersion((version) => version + 1);
+                else if (bits & Events.ROWS) setDataVersion((version) => version + 1);
+                if (bits & (Events.STATE | Events.ROW_COUNT | Events.VIEW | Events.CHECKPOINT)) void refreshInfo();
+                if (bits & (Events.SEARCH | Events.VIEW)) void searchProgressed();
+            }),
+        [client, refreshInfo, searchProgressed],
+    );
 
     // Ctrl+F and Ctrl+O, and dropping a file anywhere.
-    useEffect(() =>
-    {
+    useEffect(() => {
         let depth = 0;
-        const keyDown = (event: KeyboardEvent) =>
-        {
+        const keyDown = (event: KeyboardEvent) => {
             const ctrl = event.ctrlKey || event.metaKey;
-            if (ctrl && event.key.toLowerCase() === 'f' && searchInput.current && !searchInput.current.disabled)
-            {
+            if (ctrl && event.key.toLowerCase() === 'f' && searchInput.current && !searchInput.current.disabled) {
                 event.preventDefault();
                 searchInput.current.focus();
                 searchInput.current.select();
-            }
-            else if (ctrl && event.key.toLowerCase() === 'o')
-            {
+            } else if (ctrl && event.key.toLowerCase() === 'o') {
                 event.preventDefault();
                 document.getElementById('file-input')?.click();
             }
         };
-        const dragEnter = (event: DragEvent) =>
-        {
-            if (event.dataTransfer?.types.includes('Files'))
-            {
+        const dragEnter = (event: DragEvent) => {
+            if (event.dataTransfer?.types.includes('Files')) {
                 depth++;
                 setDragging(true);
             }
         };
-        const dragLeave = () =>
-        {
+        const dragLeave = () => {
             depth = Math.max(0, depth - 1);
-            if (depth === 0)
-                setDragging(false);
+            if (depth === 0) setDragging(false);
         };
         const dragOver = (event: DragEvent) => event.preventDefault();
-        const drop = (event: DragEvent) =>
-        {
+        const drop = (event: DragEvent) => {
             event.preventDefault();
             depth = 0;
             setDragging(false);
             const dropped = event.dataTransfer?.files[0];
-            if (dropped)
-                openFile(dropped);
+            if (dropped) void openFile(dropped);
         };
         document.addEventListener('keydown', keyDown);
         window.addEventListener('dragenter', dragEnter);
         window.addEventListener('dragleave', dragLeave);
         window.addEventListener('dragover', dragOver);
         window.addEventListener('drop', drop);
-        return () =>
-        {
+        return () => {
             document.removeEventListener('keydown', keyDown);
             window.removeEventListener('dragenter', dragEnter);
             window.removeEventListener('dragleave', dragLeave);
@@ -454,10 +416,10 @@ export function App({ client }: { client: TableSkimClient })
     return (
         <div className="flex h-full flex-col">
             <Toolbar
-                onOpen={(opened) => openFile(opened)}
+                onOpen={(opened) => void openFile(opened)}
                 showHeaderMode={!!book?.usesHeaderOption}
                 headerMode={headerMode}
-                onHeaderMode={(mode) => file && openFile(file, mode)}
+                onHeaderMode={(mode) => file && void openFile(file, mode)}
                 filterEnabled={!!info?.capabilities.filter}
                 filterOpen={filterOpen}
                 onToggleFilter={() => setFilterOpen((open) => !open)}
@@ -466,21 +428,30 @@ export function App({ client }: { client: TableSkimClient })
                     enabled: !!info?.capabilities.search,
                     status: searchStatus,
                     onChange: changeSearch,
-                    onFind: (forward) => (flow.current.searchActive ? findHit(forward) : startSearch()),
+                    onFind: (forward) => void (flow.current.searchActive ? findHit(forward) : startSearch()),
                     onLeave: () => grid.current?.focus(),
                     inputRef: searchInput,
                 }}
             />
             {filterOpen && info && (
-                <FilterBar columns={info.columns} filter={info.view.filter} ops={filterOps} onChange={setFilter} />
+                <FilterBar
+                    columns={info.columns}
+                    filter={info.view.filter}
+                    ops={filterOps}
+                    onChange={(filter) => void setFilter(filter)}
+                />
             )}
             <CheckpointBanner
                 checkpoint={info?.checkpoint ?? null}
-                onContinue={() => info && client.call('continueReading', { sheet: info.sheet }).then(refreshInfo)}
-                onStop={() => info && client.call('stopReading', { sheet: info.sheet }).then(refreshInfo)}
+                onContinue={() => void readOn(true)}
+                onStop={() => void readOn(false)}
             />
             <MessageBanner message={message} />
-            <SheetTabs sheets={book?.sheets ?? []} current={info?.name ?? null} onSelect={selectSheet} />
+            <SheetTabs
+                sheets={book?.sheets ?? []}
+                current={info?.name ?? null}
+                onSelect={(name) => void selectSheet(name)}
+            />
             <main className="relative min-h-0 flex-1">
                 <Grid
                     ref={grid}
@@ -489,9 +460,9 @@ export function App({ client }: { client: TableSkimClient })
                     dataVersion={dataVersion}
                     viewVersion={viewVersion}
                     fetchRows={fetchRows}
-                    onSort={sortBy}
+                    onSort={(column) => void sortBy(column)}
                     onSelect={showCell}
-                    onCopy={copy}
+                    onCopy={(range) => void copy(range)}
                 />
                 {!showGrid && <EmptyState title={emptyTitle(phase, info)} />}
                 {dragging && <DropOverlay />}

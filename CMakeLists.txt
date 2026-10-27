@@ -633,6 +633,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_TUI_TESTS STREQUAL "OFF"
     endif()
 endif()
 
+# The web app's lint (ESLint) and formatting (Prettier) checks.
+if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP)
+    add_test(NAME tableskim-web-lint COMMAND ${TABLESKIM_NPM} run lint
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web)
+    add_test(NAME tableskim-web-format COMMAND ${TABLESKIM_NPM} run format:check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web)
+endif()
+
 # End-to-end tests of the web app (web/tests/) in headless Chromium, with
 # Node.js and Playwright: WebAssembly builds with the web app only. AUTO
 # adds them when Playwright is found, ON requires it.

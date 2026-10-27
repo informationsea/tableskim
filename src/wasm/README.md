@@ -47,9 +47,18 @@ cd web
 npm ci                  # once
 npm run dev             # http://localhost:5173/, reloads as the sources change
 npm run typecheck
+npm run lint            # ESLint
+npm run format          # Prettier (format:check only checks)
 npm run build           # into web/dist/, with the module
 npm run preview         # serves web/dist/
 ```
+
+The web app's code follows Prettier (`.prettierrc.json`: 4 spaces, 120
+columns, Tailwind classes sorted by its plugin), not the C++ code's
+Allman braces; ESLint (`eslint.config.js`) checks types, the React hooks
+rules and promises left unhandled. ctest runs both checks
+(`tableskim-web-lint`, `tableskim-web-format`). TypeScript stays on 6.0,
+the last version with the API typescript-eslint uses (7 is native).
 
 The module comes from `../build/wasm-release` (`TABLESKIM_WASM_BUILD`
 names another build directory): `vite.config.ts` serves `tableskim-wasm.js`

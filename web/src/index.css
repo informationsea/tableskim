@@ -1,9 +1,8 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Colours as tokens, switched for dark mode below; Tailwind's utilities
    (bg-surface, text-muted, border-line, ...) use them. */
-:root
-{
+:root {
     color-scheme: light;
     --surface: #ffffff;
     --fg: #1d2129;
@@ -21,10 +20,8 @@
     --loading: #c3c7ce;
 }
 
-@media (prefers-color-scheme: dark)
-{
-    :root
-    {
+@media (prefers-color-scheme: dark) {
+    :root {
         color-scheme: dark;
         --surface: #17191d;
         --fg: #e4e6ea;
@@ -43,9 +40,8 @@
     }
 }
 
-@theme inline
-{
-    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+@theme inline {
+    --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
     --color-surface: var(--surface);
     --color-fg: var(--fg);
     --color-muted: var(--muted);
@@ -62,15 +58,14 @@
     --color-loading: var(--loading);
 }
 
-@layer base
-{
-    html, body, #root
-    {
+@layer base {
+    html,
+    body,
+    #root {
         height: 100%;
     }
 
-    body
-    {
+    body {
         background: var(--color-surface);
         color: var(--color-fg);
         font-size: 13px;
@@ -78,34 +73,28 @@
     }
 }
 
-@layer components
-{
+@layer components {
     /* Buttons, selects and text fields of the toolbars. */
-    .control
-    {
+    .control {
         border: 1px solid var(--color-line);
         border-radius: 0.25rem;
         background: var(--color-surface);
         padding: 3px 8px;
     }
 
-    .control:disabled
-    {
+    .control:disabled {
         opacity: 0.5;
     }
 
-    button.control:not(:disabled)
-    {
+    button.control:not(:disabled) {
         cursor: pointer;
     }
 
-    button.control:not(:disabled):hover
-    {
+    button.control:not(:disabled):hover {
         border-color: var(--color-accent);
     }
 
-    button.control[aria-pressed=true]
-    {
+    button.control[aria-pressed='true'] {
         background: var(--color-active);
         border-color: var(--color-accent);
     }

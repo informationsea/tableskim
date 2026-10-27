@@ -14,15 +14,14 @@ import { fileURLToPath } from 'node:url';
 const webDir = dirname(fileURLToPath(import.meta.url));
 const buildDir = process.argv[2];
 const port = Number(process.argv[3] ?? 8765);
-if (!buildDir)
-{
+if (!buildDir) {
     console.error('usage: node web/serve.mjs <build dir> [port] [app dir]');
     process.exit(2);
 }
-const appDir = resolvePath(process.argv[4] ??
-    (existsSync(join(buildDir, 'web', 'index.html')) ? join(buildDir, 'web') : join(webDir, 'dist')));
-if (!existsSync(join(appDir, 'index.html')))
-{
+const appDir = resolvePath(
+    process.argv[4] ?? (existsSync(join(buildDir, 'web', 'index.html')) ? join(buildDir, 'web') : join(webDir, 'dist')),
+);
+if (!existsSync(join(appDir, 'index.html'))) {
     console.error(`${appDir} holds no built app: run npm run build in web/`);
     process.exit(2);
 }
@@ -43,30 +42,23 @@ const TYPES = {
 };
 
 // The file for a URL path, or null.
-function resolve(pathname)
-{
-    if (BUILD_FILES.has(basename(pathname)))
-        return join(buildDir, basename(pathname));
+function resolve(pathname) {
+    if (BUILD_FILES.has(basename(pathname))) return join(buildDir, basename(pathname));
     let root = appDir;
     let rest = pathname;
-    if (pathname === '/probe' || pathname.startsWith('/probe/'))
-    {
+    if (pathname === '/probe' || pathname.startsWith('/probe/')) {
         root = join(webDir, 'probe');
         rest = pathname.slice('/probe'.length);
     }
-    if (rest === '' || rest.endsWith('/'))
-        rest += 'index.html';
+    if (rest === '' || rest.endsWith('/')) rest += 'index.html';
     const file = normalize(join(root, decodeURIComponent(rest)));
     return file.startsWith(root + sep) ? file : null;
 }
 
-createServer(async (request, response) =>
-{
+createServer(async (request, response) => {
     const file = resolve(new URL(request.url, 'http://localhost').pathname);
-    try
-    {
-        if (!file)
-            throw Object.assign(new Error('outside the served directories'), { code: 'ENOENT' });
+    try {
+        if (!file) throw Object.assign(new Error('outside the served directories'), { code: 'ENOENT' });
         const body = await readFile(file);
         response.writeHead(200, {
             'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream',
@@ -75,9 +67,7 @@ createServer(async (request, response) =>
             'Cross-Origin-Embedder-Policy': 'require-corp',
         });
         response.end(body);
-    }
-    catch (error)
-    {
+    } catch (error) {
         response.writeHead(error.code === 'ENOENT' || error.code === 'EISDIR' ? 404 : 500).end();
     }
 }).listen(port, '127.0.0.1', () => console.log(`http://127.0.0.1:${port}/`));

@@ -1,7 +1,6 @@
 import type { Ref } from 'react';
 
-export interface SearchBoxProps
-{
+export interface SearchBoxProps {
     text: string;
     caseSensitive: boolean;
     regex: boolean;
@@ -14,8 +13,17 @@ export interface SearchBoxProps
     inputRef?: Ref<HTMLInputElement>;
 }
 
-export function SearchBox({ text, caseSensitive, regex, enabled, status, onChange, onFind, onLeave, inputRef }: SearchBoxProps)
-{
+export function SearchBox({
+    text,
+    caseSensitive,
+    regex,
+    enabled,
+    status,
+    onChange,
+    onFind,
+    onLeave,
+    inputRef,
+}: SearchBoxProps) {
     return (
         <form
             id="search-form"
@@ -33,15 +41,11 @@ export function SearchBox({ text, caseSensitive, regex, enabled, status, onChang
                 disabled={!enabled}
                 value={text}
                 onChange={(event) => onChange({ text: event.target.value })}
-                onKeyDown={(event) =>
-                {
-                    if (event.key === 'Enter')
-                    {
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
                         event.preventDefault();
                         onFind(!event.shiftKey);
-                    }
-                    else if (event.key === 'Escape')
-                        onLeave();
+                    } else if (event.key === 'Escape') onLeave();
                 }}
             />
             <label className="flex items-center gap-0.5 font-mono" title="Match case">
@@ -62,15 +66,29 @@ export function SearchBox({ text, caseSensitive, regex, enabled, status, onChang
                 />
                 .*
             </label>
-            <button type="button" id="search-prev" className="control" title="Previous hit (Shift+Enter)" disabled={!enabled}
-                    onClick={() => onFind(false)}>
+            <button
+                type="button"
+                id="search-prev"
+                className="control"
+                title="Previous hit (Shift+Enter)"
+                disabled={!enabled}
+                onClick={() => onFind(false)}
+            >
                 ↑
             </button>
-            <button type="button" id="search-next" className="control" title="Next hit (Enter)" disabled={!enabled}
-                    onClick={() => onFind(true)}>
+            <button
+                type="button"
+                id="search-next"
+                className="control"
+                title="Next hit (Enter)"
+                disabled={!enabled}
+                onClick={() => onFind(true)}
+            >
                 ↓
             </button>
-            <span id="search-status" className="text-muted">{status}</span>
+            <span id="search-status" className="text-muted">
+                {status}
+            </span>
         </form>
     );
 }

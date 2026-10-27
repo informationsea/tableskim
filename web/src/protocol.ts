@@ -14,8 +14,7 @@ export const Events = {
 
 export type HeaderMode = 'auto' | 'yes' | 'no';
 
-export interface BookInfo
-{
+export interface BookInfo {
     sheets: string[];
     usesHeaderOption: boolean;
     isTextFormat: boolean;
@@ -23,39 +22,33 @@ export interface BookInfo
     textEncoding: string | null;
 }
 
-export interface Column
-{
+export interface Column {
     name: string;
     mark: string; // "#" numbers, "@" dates, "?" booleans, "" otherwise
 }
 
-export interface SortKey
-{
+export interface SortKey {
     column: number;
     ascending: boolean;
 }
 
-export interface Condition
-{
+export interface Condition {
     column: number;
     op: string;
     value: string;
 }
 
-export interface Filter
-{
+export interface Filter {
     combine: 'and' | 'or';
     conditions: Condition[];
 }
 
-export interface View
-{
+export interface View {
     sort: SortKey[];
     filter: Filter | null;
 }
 
-export interface SheetInfo
-{
+export interface SheetInfo {
     sheet: number;
     name: string;
     state: 'opening' | 'ready' | 'error';
@@ -81,8 +74,7 @@ export interface SheetInfo
  */
 export type CellKind = 'n' | 's' | 'e' | 'l' | 'o' | 'x';
 
-export interface RowsReply
-{
+export interface RowsReply {
     first: number;
     firstColumn: number;
     rows: string[][];
@@ -91,8 +83,7 @@ export interface RowsReply
     end: boolean; // the table ends after these rows
 }
 
-export interface SearchState
-{
+export interface SearchState {
     active: boolean;
     done: boolean;
     truncated: boolean;
@@ -102,8 +93,7 @@ export interface SearchState
     generation: number;
 }
 
-export interface HitReply
-{
+export interface HitReply {
     index: number | null;
     row: number;
     column: number;
@@ -112,15 +102,13 @@ export interface HitReply
     pending: boolean; // none found yet, but the search goes on
 }
 
-export interface CopyReply
-{
+export interface CopyReply {
     text: string;
     copiedRows: number;
     skippedRows: number;
 }
 
-export interface FilterOpInfo
-{
+export interface FilterOpInfo {
     op: string;
     label: string;
     takesValue: boolean;
@@ -130,8 +118,7 @@ type Empty = Record<string, never>;
 type SheetParams = { sheet: number };
 
 /** Each method's parameters and result. */
-export interface Methods
-{
+export interface Methods {
     open: { params: { file: File; header?: HeaderMode; encoding?: string }; result: BookInfo };
     close: { params: Empty; result: Empty };
     sheet: { params: { name: string }; result: SheetInfo };

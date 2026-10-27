@@ -17,39 +17,34 @@ const ISOLATION_HEADERS = {
     'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
-function moduleFile(name: string): string
-{
+function moduleFile(name: string): string {
     const file = path.join(wasmBuild, name);
     if (!existsSync(file))
-        throw new Error(`${file} not found: build tableskim-wasm (cmake --build --preset wasm-release) ` +
-                        'or point TABLESKIM_WASM_BUILD at its build directory');
+        throw new Error(
+            `${file} not found: build tableskim-wasm (cmake --build --preset wasm-release) ` +
+                'or point TABLESKIM_WASM_BUILD at its build directory',
+        );
     return file;
 }
 
 // The WebAssembly module is not bundled: it is the script of the worker
 // that runs it, and Emscripten starts its threads from that same URL. It
 // is served as it is in development and copied next to the app on build.
-function tableskimWasm(): Plugin
-{
+function tableskimWasm(): Plugin {
     return {
         name: 'tableskim-wasm',
-        configureServer(server)
-        {
-            server.middlewares.use((request, response, next) =>
-            {
+        configureServer(server) {
+            server.middlewares.use((request, response, next) => {
                 const name = path.posix.basename(new URL(request.url ?? '/', 'http://localhost').pathname);
-                if (!MODULE_FILES.includes(name))
-                    return next();
+                if (!MODULE_FILES.includes(name)) return next();
                 // The worker needs the headers too, or it is not isolated:
                 // this answers before Vite's own middleware adds them.
-                for (const [header, value] of Object.entries(ISOLATION_HEADERS))
-                    response.setHeader(header, value);
+                for (const [header, value] of Object.entries(ISOLATION_HEADERS)) response.setHeader(header, value);
                 response.setHeader('Content-Type', name.endsWith('.wasm') ? 'application/wasm' : 'text/javascript');
                 createReadStream(moduleFile(name)).pipe(response);
             });
         },
-        generateBundle()
-        {
+        generateBundle() {
             for (const name of MODULE_FILES)
                 this.emitFile({ type: 'asset', fileName: name, source: readFileSync(moduleFile(name)) });
         },

@@ -2,8 +2,7 @@ import { useRef } from 'react';
 import type { HeaderMode } from '../protocol';
 import { SearchBox, type SearchBoxProps } from './SearchBox';
 
-interface ToolbarProps
-{
+interface ToolbarProps {
     onOpen: (file: File) => void;
     showHeaderMode: boolean;
     headerMode: HeaderMode;
@@ -14,9 +13,16 @@ interface ToolbarProps
     search: SearchBoxProps;
 }
 
-export function Toolbar({ onOpen, showHeaderMode, headerMode, onHeaderMode, filterEnabled, filterOpen,
-                          onToggleFilter, search }: ToolbarProps)
-{
+export function Toolbar({
+    onOpen,
+    showHeaderMode,
+    headerMode,
+    onHeaderMode,
+    filterEnabled,
+    filterOpen,
+    onToggleFilter,
+    search,
+}: ToolbarProps) {
     const input = useRef<HTMLInputElement>(null);
     return (
         <header className="flex flex-wrap items-center gap-2 border-b border-line bg-chrome px-2.5 py-1.5">
@@ -29,11 +35,9 @@ export function Toolbar({ onOpen, showHeaderMode, headerMode, onHeaderMode, filt
                 id="file-input"
                 ref={input}
                 hidden
-                onChange={(event) =>
-                {
+                onChange={(event) => {
                     const file = event.target.files?.[0];
-                    if (file)
-                        onOpen(file);
+                    if (file) onOpen(file);
                     event.target.value = '';
                 }}
             />
