@@ -2,7 +2,9 @@ name: Pages
 
 # Publishes the introduction page (site/) and the user manual (docs/,
 # converted by tableskim-html-manual) to GitHub Pages when they change on
-# main. The repository's Pages source must be set to "GitHub Actions".
+# main, and after a release, since the download page links to the latest
+# release's files, filled in when the site is built. The repository's Pages
+# source must be set to "GitHub Actions".
 on:
   push:
     branches:
@@ -15,7 +17,16 @@ on:
       - src/tools/html_manual.cxx
       - src/images/icon.png
       - tools/build-site.sh
+      - tools/fill-download-pages.py
       - .github/workflows/pages.yml
+  # A release made by the Release workflow (with GITHUB_TOKEN) triggers no
+  # release event, so its completion is waited for instead; the release
+  # events cover releases made or changed by hand.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  release:
+    types: [published, edited, deleted]
   workflow_dispatch:
 
 permissions:
@@ -29,11 +40,18 @@ concurrency:
 
 jobs:
   build:
+    # The Release workflow also runs for a tag that fails, or by hand
+    # without releasing anything.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/${{ github.repository }}/releases/latest" > "$RUNNER_TEMP/release.json"
       - name: Build the site
-        run: tools/build-site.sh _site
+        run: tools/build-site.sh _site "$RUNNER_TEMP/release.json"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
