@@ -4,9 +4,12 @@
 // The page posts requests {id, method, params} and gets back
 //   {type: 'ready'}                  once requests can be answered,
 //   {type: 'reply', json}            the reply to a request, as JSON text,
-//   {type: 'events', json}           {sheet id: WebSession::Event bits}.
+//   {type: 'events', json}           {sheet id: WebSession::Event bits},
+//   {type: 'file', id, data}         the answer to "readFile".
 // An "open" request carries the File itself (params.file): it is mounted
 // here, read in place by WORKERFS, and the session gets its path.
+// "readFile" ({path}, a file the session wrote, such as an export) is
+// answered here, with the file's bytes as a transferred ArrayBuffer.
 if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
 {
     var tskStarted = false;
@@ -17,6 +20,19 @@ if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
     var tskSend = function (message)
     {
         var params = message.params || {};
+        if (message.method === 'readFile')
+        {
+            try
+            {
+                var data = FS.readFile(params.path);
+                postMessage({ type: 'file', id: message.id, data: data.buffer }, [data.buffer]);
+            }
+            catch (e)
+            {
+                postMessage({ type: 'reply', json: JSON.stringify({ id: message.id, error: 'cannot read ' + params.path }) });
+            }
+            return;
+        }
         if (message.method === 'open' && params.file)
         {
             var dir = '/input/' + (++tskMounts);

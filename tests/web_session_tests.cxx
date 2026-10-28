@@ -1,6 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "test_helpers.hxx"
@@ -253,4 +257,298 @@ TEST_CASE("WebSession shows each sheet of a workbook and reopens with header opt
     const auto &ops = *filter_ops.array();
     CHECK(ops.size() == 14);
     CHECK(*ops[0]["op"].string() == "contains");
+}
+
+namespace
+{
+    std::string sheetParams(int sheet, const std::string &rest = "")
+    {
+        return "{\"sheet\":" + std::to_string(sheet) + (rest.empty() ? "" : "," + rest) + "}";
+    }
+
+    int openSheet(Client &client, const std::string &file, const std::string &name)
+    {
+        client.result("open", "{\"path\":\"" + path(file) + "\"}");
+        const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"" + name + "\"}")["sheet"].number());
+        client.readyInfo(id);
+        return id;
+    }
+
+    // The state of a background computation once it is done.
+    JsonValue waitDone(Client &client, const std::string &method, const std::string &params)
+    {
+        JsonValue state;
+        REQUIRE(waitFor([&]
+                        { state = client.result(method, params); return state["done"].boolean() == true; }));
+        return state;
+    }
+
+    std::string statsValue(const JsonValue &state, const std::string &label)
+    {
+        for (const JsonValue &line : *state["lines"].array())
+        {
+            if (*line["label"].string() == label)
+                return *line["value"].string();
+        }
+        return "<none>";
+    }
+
+    // Applies the conditions a filter request returned as the view's filter.
+    void applyConditions(Client &client, int sheet, const JsonValue &conditions)
+    {
+        JsonWriter json;
+        json.beginObject().key("combine").value("and").key("conditions").beginArray();
+        for (const JsonValue &condition : *conditions["conditions"].array())
+        {
+            json.beginObject()
+                .key("column")
+                .value(*condition["column"].number())
+                .key("op")
+                .value(*condition["op"].string())
+                .key("value")
+                .value(*condition["value"].string())
+                .endObject();
+        }
+        json.endArray().endObject();
+        client.result("setView", sheetParams(sheet, "\"sort\":[],\"filter\":" + json.text()));
+    }
+
+    std::string readFile(const std::string &file)
+    {
+        std::ifstream in(file, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    }
+}
+
+TEST_CASE("WebSession runs SQL and completes it")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    client.result("open", "{\"path\":\"" + path("demo.sqlite3") + "\"}");
+
+    const JsonValue tables = client.result("sqlSchema");
+    bool found = false;
+    for (const JsonValue &table : *tables.array())
+        found = found || *table["name"].string() == "normal";
+    CHECK(found);
+    const JsonValue completion = client.result("completeSql", "{\"sql\":\"SELECT * FROM nor\",\"cursor\":17}");
+    CHECK(completion["begin"].number() == 14);
+    CHECK(*(*completion["candidates"].array())[0].string() == "normal");
+
+    const JsonValue ran =
+        client.result("sql", "{\"sql\":\"SELECT City, count(*) AS n FROM normal GROUP BY City ORDER BY n DESC, City\"}");
+    const std::string result_sheet = *ran["sheet"].string();
+    bool listed = false;
+    for (const JsonValue &name : *ran["sheets"].array())
+        listed = listed || *name.string() == result_sheet;
+    CHECK(listed);
+    const int first = static_cast<int>(*client.result("sheet", "{\"name\":\"" + result_sheet + "\"}")["sheet"].number());
+    client.readyInfo(first);
+    const JsonValue rows = client.rows(first, 0, 0);
+    CHECK(cell(rows, 0, 0) == "Fukuoka");
+    CHECK(cell(rows, 0, 1) == "9");
+
+    CHECK(client.call("sql", "{\"sql\":\"SELECT nonsense FROM nowhere\"}")["error"].string());
+
+    // Another query replaces the result sheet: its old model is gone.
+    client.result("sql", "{\"sql\":\"SELECT 1 AS one\"}");
+    CHECK(client.call("info", sheetParams(first))["error"].string());
+    const int second = static_cast<int>(*client.result("sheet", "{\"name\":\"" + result_sheet + "\"}")["sheet"].number());
+    client.readyInfo(second);
+    CHECK(cell(client.rows(second, 0, 0), 0, 0) == "1");
+}
+
+TEST_CASE("WebSession computes statistics, histograms and scatter plots")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    const int id = openSheet(client, "normal.csv", "normal.csv");
+
+    SECTION("statistics")
+    {
+        client.result("startStats", sheetParams(id, "\"column\":3"));
+        const JsonValue stats = waitDone(client, "statsState", sheetParams(id));
+        CHECK(stats["column"].number() == 3);
+        CHECK(statsValue(stats, "Rows") == "54");
+        CHECK(statsValue(stats, "Min") == "20");
+        CHECK_FALSE((*stats["top"].array()).empty());
+    }
+
+    SECTION("a histogram and the filter of a bin")
+    {
+        client.result("startHistogram", sheetParams(id, "\"column\":3,\"bins\":10"));
+        const JsonValue state = waitDone(client, "histogramState", sheetParams(id));
+        const JsonValue &histogram = state["histogram"];
+        CHECK(*histogram["kind"].string() == "number");
+        const auto &bins = *histogram["bins"].array();
+        REQUIRE(bins.size() > 1);
+        size_t total = 0;
+        for (const JsonValue &bin : bins)
+            total += static_cast<size_t>(*bin["count"].number());
+        CHECK(total == 53);
+        const auto first_count = static_cast<size_t>(*bins[0]["count"].number());
+        applyConditions(client, id, client.result("histogramFilter", sheetParams(id, "\"bin\":0")));
+        CHECK(*client.readyInfo(id)["rows"].number() == first_count);
+    }
+
+    SECTION("the most frequent values of a text column and the filter of one")
+    {
+        client.result("startHistogram", sheetParams(id, "\"column\":4"));
+        const JsonValue state = waitDone(client, "histogramState", sheetParams(id));
+        CHECK(*state["histogram"]["kind"].string() == "none");
+        const auto &top = *state["histogram"]["top"].array();
+        REQUIRE_FALSE(top.empty());
+        const auto count = static_cast<size_t>(*top[0]["count"].number());
+        applyConditions(client, id, client.result("histogramFilter", sheetParams(id, "\"bin\":0")));
+        CHECK(*client.readyInfo(id)["rows"].number() == count);
+        CHECK(client.call("histogramFilter", sheetParams(id, "\"bin\":99"))["error"].string());
+    }
+
+    SECTION("a scatter plot, a cell's filter and a categorical X")
+    {
+        client.result("startScatter", sheetParams(id, "\"x\":3,\"y\":6"));
+        JsonValue plot = waitDone(client, "scatterState", sheetParams(id, "\"points\":true"));
+        CHECK(*plot["plottable"].boolean());
+        const auto pairs = static_cast<size_t>(*plot["pairs"].number());
+        CHECK(pairs > 40);
+        CHECK(plot["points"].array()->size() == 3 * pairs);
+        const auto y_bins = plot["yAxis"]["edges"].array()->size() - 1;
+        const auto &counts = *plot["counts"].array();
+        size_t total = 0;
+        size_t busiest = 0;
+        for (size_t i = 0; i < counts.size(); ++i)
+        {
+            total += static_cast<size_t>(*counts[i].number());
+            if (*counts[i].number() > *counts[busiest].number())
+                busiest = i;
+        }
+        CHECK(total == pairs);
+        applyConditions(client, id,
+                        client.result("scatterFilter", sheetParams(id, "\"xBin\":" + std::to_string(busiest / y_bins) +
+                                                                           ",\"yBin\":" + std::to_string(busiest % y_bins))));
+        CHECK(*client.readyInfo(id)["rows"].number() == *counts[busiest].number());
+
+        client.result("setView", sheetParams(id, "\"sort\":[],\"filter\":null"));
+        client.readyInfo(id);
+        client.result("startScatter", sheetParams(id, "\"x\":3,\"y\":6"));
+        plot = waitDone(client, "scatterState", sheetParams(id, "\"points\":true"));
+        // A rectangle around every point keeps every pair.
+        const auto &points = *plot["points"].array();
+        double low[2] = {*points[0].number(), *points[1].number()};
+        double high[2] = {low[0], low[1]};
+        for (size_t i = 0; i + 2 < points.size(); i += 3)
+        {
+            for (size_t axis = 0; axis < 2; ++axis)
+            {
+                low[axis] = std::min(low[axis], *points[i + axis].number());
+                high[axis] = std::max(high[axis], *points[i + axis].number());
+            }
+        }
+        applyConditions(client, id,
+                        client.result("scatterFilter", sheetParams(id, "\"xLow\":" + std::to_string(low[0] - 1) +
+                                                                           ",\"xHigh\":" + std::to_string(high[0] + 1) +
+                                                                           ",\"yLow\":" + std::to_string(low[1] - 1) +
+                                                                           ",\"yHigh\":" + std::to_string(high[1] + 1))));
+        CHECK(*client.readyInfo(id)["rows"].number() == pairs);
+
+        client.result("setView", sheetParams(id, "\"sort\":[],\"filter\":null"));
+        client.readyInfo(id);
+        client.result("startScatter", sheetParams(id, "\"x\":4,\"y\":3"));
+        plot = waitDone(client, "scatterState", sheetParams(id));
+        CHECK_FALSE(plot["categories"].array()->empty());
+        CHECK(plot["boxes"].array()->size() == plot["categories"].array()->size());
+        CHECK(plot["points"].array()->empty()); // not asked for
+    }
+}
+
+TEST_CASE("WebSession exports a view and groups it as jobs")
+{
+    std::atomic<unsigned> session_events = 0;
+    WebSession session([&](int sheet, unsigned bits)
+                       {
+                           if (sheet == WebSession::SESSION)
+                               session_events |= bits;
+                       });
+    Client client(session);
+    const int id = openSheet(client, "normal.csv", "normal.csv");
+    client.result("setView", sheetParams(id, "\"sort\":[],\"filter\":{\"conditions\":[{\"column\":4,\"op\":\"equals\",\"value\":\"Osaka\"}]}"));
+    client.readyInfo(id);
+
+    SECTION("CSV without hidden columns")
+    {
+        client.result("startExport", sheetParams(id, "\"format\":\"csv\",\"hidden\":[1,2]"));
+        const JsonValue job = waitDone(client, "jobState", "{}");
+        CHECK(*job["error"].string() == "");
+        CHECK(*job["fileName"].string() == "normal-export.csv");
+        CHECK((session_events & WebSession::JOB) != 0);
+        const std::string text = readFile(*job["file"].string());
+        CHECK(text.starts_with("ID,Age,City,"));
+        CHECK(std::count(text.begin(), text.end(), '\n') == 5);
+        // A new job takes the old one's file away.
+        client.result("startExport", sheetParams(id, "\"format\":\"excel\""));
+        const JsonValue excel = waitDone(client, "jobState", "{}");
+        CHECK_FALSE(std::filesystem::exists(*job["file"].string()));
+        CHECK(readFile(*excel["file"].string()).starts_with("PK"));
+        client.result("cancelJob");
+        CHECK_FALSE(std::filesystem::exists(*excel["file"].string()));
+    }
+
+    SECTION("Group By")
+    {
+        client.result("setView", sheetParams(id, "\"sort\":[],\"filter\":null"));
+        client.readyInfo(id);
+        const JsonValue names = client.result("aggregates");
+        CHECK(*(*names.array())[0].string() == "count");
+        client.result("startGroupBy", sheetParams(id, "\"keys\":[4],\"values\":[3],\"aggregates\":[\"mean\"]"));
+        const JsonValue job = waitDone(client, "jobState", "{}");
+        CHECK(*job["error"].string() == "");
+        REQUIRE(job["sheet"].string());
+        const int grouped = static_cast<int>(*client.result("sheet", "{\"name\":\"" + *job["sheet"].string() + "\"}")["sheet"].number());
+        const JsonValue info = client.readyInfo(grouped);
+        CHECK(*info["rows"].number() == 12);
+        CHECK(*(*info["columns"].array())[2]["name"].string() == "Age mean");
+    }
+
+    SECTION("only one job at a time")
+    {
+        client.result("startExport", sheetParams(id, "\"format\":\"parquet\""));
+        const JsonValue second = client.call("startGroupBy", sheetParams(id, "\"keys\":[4]"));
+        // The export may already be done, in which case the Group By starts.
+        if (second["error"].string())
+            CHECK(second["error"].string()->find("running") != std::string::npos);
+        waitDone(client, "jobState", "{}");
+    }
+}
+
+TEST_CASE("WebSession formats columns and goes to cells")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    const int id = openSheet(client, "normal.csv", "normal.csv");
+
+    CHECK(client.result("dateStyles").array()->size() == 6);
+    client.result("setFormat", sheetParams(id, "\"column\":6,\"thousands\":true,\"decimals\":0"));
+    client.result("setFormat", sheetParams(id, "\"column\":7,\"date\":\"slash\""));
+    const JsonValue rows = client.rows(id, 0, 0);
+    CHECK(cell(rows, 0, 6) == "941,752");
+    CHECK(cell(rows, 0, 7) == "1986/08/02");
+    const JsonValue info = client.result("info", sheetParams(id));
+    CHECK(*(*info["columns"].array())[6]["format"]["thousands"].boolean());
+    CHECK(*(*info["columns"].array())[7]["format"]["date"].string() == "slash");
+    CHECK(*(*info["columns"].array())[3]["kind"].string() == "number");
+    // Copies keep the values.
+    client.rows(id, 0, 0);
+    CHECK(*client.result("copy", sheetParams(id, "\"top\":0,\"left\":6,\"bottom\":0,\"right\":6"))["text"].string() == "941751.65");
+
+    const JsonValue city = client.result("cellFilter", sheetParams(id, "\"row\":0,\"column\":4,\"equal\":false"));
+    const auto &conditions = *city["conditions"].array();
+    REQUIRE(conditions.size() == 1);
+    CHECK(*conditions[0]["op"].string() == "notEquals");
+    CHECK(*conditions[0]["value"].string() == "Osaka");
+
+    const JsonValue cell_b3 = client.result("goTo", sheetParams(id, "\"text\":\"B3\""));
+    CHECK(cell_b3["row"].number() == 2);
+    CHECK(cell_b3["column"].number() == 1);
+    CHECK(client.result("goTo", sheetParams(id, "\"text\":\"City\""))["row"].isNull());
+    CHECK(client.result("goTo", sheetParams(id, "\"text\":\"ZZZ999999\""))["error"].string());
 }
