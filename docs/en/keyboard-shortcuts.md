@@ -2,6 +2,9 @@
 
 [← Contents](README.md)
 
+The web app's keys are listed in
+[Using the Web App](web.md#keyboard-shortcuts).
+
 ## GUI
 
 On macOS, use `Cmd` instead of `Ctrl`.

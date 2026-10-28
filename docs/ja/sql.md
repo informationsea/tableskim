@@ -6,6 +6,7 @@ TableSkim は **DuckDB**、**SQLite**、**Parquet**、**JSON** ファイルに S
 
 - GUI：**Edit → Run SQL...**（`Ctrl+E`）で SQL ウィンドウを開きます。
 - ターミナル UI：`:` で画面下部に SQL プロンプトを開きます。
+- Web アプリ：**SQL** ボタンでページ下部に SQL パネルを開きます（[SQL の実行](web.md#sql-の実行) を参照）。
 
 ![SQL ウィンドウと結果のシート](../images/gui-sql-result.png)
 

@@ -216,6 +216,11 @@ chart as shown, with its axis titles, to a file:
 The type follows the extension you type, or the type chosen in the file
 dialog. Resize the window first to change the size of the image.
 
+In the [web app](web.md#histograms-and-scatter-plots), **Save PNG** and
+**Save SVG** in the chart dialogs do the same; the browser saves the file
+into its downloads. The points of a scatter plot are separate shapes in
+its SVG.
+
 ## In the terminal UI
 
 The terminal UI has the same tools, drawn with characters:

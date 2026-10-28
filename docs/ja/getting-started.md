@@ -26,6 +26,8 @@ macOS 版は開発元の証明書で署名していないため、初回は macO
 xattr -dr com.apple.quarantine /Applications/TableSkim.app
 ```
 
+**Web アプリ** は `tableskim-<version>-web.zip` です。Web サーバーに置く静的なファイルのフォルダで、開いた人のブラウザの中で TableSkim が動きます。[Web アプリの使い方](web.md#設置) を参照してください。
+
 自分でビルドする場合は [README](../../README.md#building) の *Building*
 の節を参照してください。
 

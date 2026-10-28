@@ -35,6 +35,10 @@ terminal:
 xattr -dr com.apple.quarantine /Applications/TableSkim.app
 ```
 
+The **web app** is `tableskim-<version>-web.zip`: a folder of static files
+to put on a web server, which runs TableSkim in the browser of anyone who
+opens it. See [Using the Web App](web.md#setting-it-up).
+
 To build TableSkim yourself, see the *Building* section of the
 [README](../../README.md#building).
 
