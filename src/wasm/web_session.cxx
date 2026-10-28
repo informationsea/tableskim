@@ -880,6 +880,8 @@ void WebSession::open(const Params &params, JsonWriter &result)
         if (!options.encoding)
             throw std::invalid_argument("unknown encoding: " + *encoding);
     }
+    if (const auto skip = params["skipMetaLines"].boolean())
+        options.skip_meta_lines = *skip;
     path_ = utf8Path(params.text("path"));
     book_ = TableBook::open(path_, options);
     result.beginObject().key("sheets");
@@ -888,6 +890,8 @@ void WebSession::open(const Params &params, JsonWriter &result)
         .value(book_->usesHeaderOption())
         .key("isTextFormat")
         .value(book_->isTextFormat())
+        .key("skipsMetaLines")
+        .value(book_->skipsMetaLines())
         .key("supportsSql")
         .value(book_->supportsSql())
         .key("textEncoding");

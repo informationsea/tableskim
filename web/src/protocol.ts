@@ -21,10 +21,21 @@ export const SESSION = 0;
 
 export type HeaderMode = 'auto' | 'yes' | 'no';
 
+/** The encodings of text files, as textEncodingName() in text_encoding.cxx names them. */
+export const TEXT_ENCODINGS = ['UTF-8', 'UTF-16LE', 'UTF-16BE', 'Shift_JIS (CP932)'] as const;
+
+/** How a file is read; each option left out is the core's default. */
+export interface OpenOptions {
+    header?: HeaderMode;
+    encoding?: string; // text files: one of TEXT_ENCODINGS; detected if left out
+    skipMetaLines?: boolean; // text files: drop lines starting with "##"; only VCF files if left out
+}
+
 export interface BookInfo {
     sheets: string[];
     usesHeaderOption: boolean;
     isTextFormat: boolean;
+    skipsMetaLines: boolean;
     supportsSql: boolean;
     textEncoding: string | null;
 }
@@ -264,7 +275,7 @@ type SheetParams = { sheet: number };
 
 /** Each method's parameters and result. */
 export interface Methods {
-    open: { params: { file: File; header?: HeaderMode; encoding?: string }; result: BookInfo };
+    open: { params: OpenOptions & { file: File }; result: BookInfo };
     close: { params: Empty; result: Empty };
     sheet: { params: { name: string }; result: SheetInfo };
     info: { params: SheetParams; result: SheetInfo };

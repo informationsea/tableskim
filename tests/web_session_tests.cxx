@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <tuple>
+#include <utility>
 
 #include "test_helpers.hxx"
 #include "web_json.hxx"
@@ -71,18 +73,23 @@ namespace
         return *(*(*rows["rows"].array())[row].array())[column].string();
     }
 
-    std::string path(const std::string &name)
+    // JSON-escaped; the paths have no quotes or control characters on the
+    // systems the tests run on, but Windows paths use backslashes.
+    std::string jsonPath(const std::string &text)
     {
-        // JSON-escaped; the demo directory has no quotes or backslashes on
-        // the systems the tests run on, but Windows paths use backslashes.
         std::string escaped;
-        for (const char c : DEMO + "/" + name)
+        for (const char c : text)
         {
             if (c == '\\' || c == '"')
                 escaped += '\\';
             escaped += c;
         }
         return escaped;
+    }
+
+    std::string path(const std::string &name)
+    {
+        return jsonPath(DEMO + "/" + name);
     }
 }
 
@@ -305,6 +312,68 @@ TEST_CASE("WebSession shows each sheet of a workbook and reopens with header opt
     const auto &ops = *filter_ops.array();
     CHECK(ops.size() == 14);
     CHECK(*ops[0]["op"].string() == "contains");
+}
+
+TEST_CASE("WebSession opens a text file with the encoding and ## option asked for")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    const auto firstRow = [&](const std::string &params)
+    {
+        client.result("open", params);
+        const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"cp932-sample.csv\"}")["sheet"].number());
+        return client.rows(id, 0, 0);
+    };
+
+    SECTION("encoding")
+    {
+        JsonValue opened = client.result("open", "{\"path\":\"" + path("cp932-sample.csv") + "\"}");
+        CHECK(*opened["isTextFormat"].boolean());
+        CHECK_FALSE(*opened["skipsMetaLines"].boolean());
+        // The name the reply gives is accepted back.
+        const std::string detected = *opened["textEncoding"].string();
+        CHECK(detected == "Shift_JIS (CP932)");
+        CHECK(cell(firstRow("{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"" + detected + "\"}"), 0, 1) ==
+              "表示,ソフト");
+
+        opened = client.result("open", "{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"UTF-8\"}");
+        CHECK(*opened["textEncoding"].string() == "UTF-8");
+        CHECK(cell(firstRow("{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"UTF-8\"}"), 0, 1) !=
+              "表示,ソフト");
+
+        CHECK(client.call("open", "{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"EBCDIC\"}")["error"].string());
+    }
+
+    SECTION("## lines")
+    {
+        const auto file = std::filesystem::temp_directory_path() / "tableskim-test-web-meta.csv";
+        {
+            std::ofstream out(file, std::ios::binary);
+            out << "##meta\na,b\n1,2\n";
+        }
+        const std::string file_path = jsonPath(file.generic_string());
+        const auto open = [&](const std::string &extra)
+        {
+            const JsonValue opened = client.result("open", "{\"path\":\"" + file_path + "\",\"header\":\"yes\"" + extra + "}");
+            const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"tableskim-test-web-meta.csv\"}")["sheet"].number());
+            return std::pair{*opened["skipsMetaLines"].boolean(), client.readyInfo(id)};
+        };
+
+        // Not a VCF file: kept unless asked.
+        auto [skips, info] = open("");
+        CHECK_FALSE(skips);
+        CHECK(*(*info["columns"].array())[0]["name"].string() == "##meta");
+
+        std::tie(skips, info) = open(",\"skipMetaLines\":true");
+        CHECK(skips);
+        CHECK(*(*info["columns"].array())[0]["name"].string() == "a");
+        CHECK(*info["rows"].number() == 1);
+
+        std::tie(skips, info) = open(",\"skipMetaLines\":false");
+        CHECK_FALSE(skips);
+        client.result("close");
+        std::filesystem::remove(file);
+    }
 }
 
 namespace

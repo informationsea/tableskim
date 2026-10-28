@@ -27,7 +27,7 @@ import {
     Events,
     type Filter,
     type FilterOpInfo,
-    type HeaderMode,
+    type OpenOptions,
     type SheetInfo,
     type SortKey,
 } from './protocol';
@@ -86,7 +86,10 @@ export function App({ client }: { client: TableSkimClient }) {
     const [file, setFile] = useState<File | null>(null);
     const [fileEpoch, setFileEpoch] = useState(0);
     const [book, setBook] = useState<BookInfo | null>(null);
-    const [headerMode, setHeaderMode] = useState<HeaderMode>('auto');
+    const [openOptions, setOpenOptions] = useState<OpenOptions>({});
+    // The book last opened from the file, kept while another option fails to
+    // open it, so that the options stay to choose another.
+    const [optionsBook, setOptionsBook] = useState<BookInfo | null>(null);
     const [info, setInfo] = useState<SheetInfo | null>(null);
     const [sheetKey, setSheetKey] = useState(0);
     const [dataVersion, setDataVersion] = useState(0);
@@ -193,7 +196,7 @@ export function App({ client }: { client: TableSkimClient }) {
 
     const openFile = useCallback(
         // again: the same file with another option, whose SQL result is made again
-        async (opened: File, header: HeaderMode = 'auto', again = false) => {
+        async (opened: File, options: OpenOptions = {}, again = false) => {
             const epoch = ++flow.current.epoch;
             flow.current.fileEpoch++;
             setFileEpoch(flow.current.fileEpoch);
@@ -202,7 +205,8 @@ export function App({ client }: { client: TableSkimClient }) {
             setFile(opened);
             setBook(null);
             setInfo(null);
-            setHeaderMode(header);
+            setOpenOptions(options);
+            if (!again) setOptionsBook(null);
             setMessage('');
             setCellStatus('');
             setDialog(null);
@@ -213,7 +217,7 @@ export function App({ client }: { client: TableSkimClient }) {
             setPhase({ kind: 'opening', name: opened.name });
             document.title = `${opened.name} – TableSkim`;
             try {
-                const next = await client.call('open', { file: opened, header });
+                const next = await client.call('open', { ...options, file: opened });
                 if (epoch !== flow.current.epoch) return;
                 if (again && flow.current.lastSql && next.supportsSql) {
                     // The result's view died with the book.
@@ -225,6 +229,7 @@ export function App({ client }: { client: TableSkimClient }) {
                     if (epoch !== flow.current.epoch) return;
                 }
                 setBook(next);
+                setOptionsBook(next);
                 if (next.sheets.length === 0) throw new Error('The file has no sheets.');
                 setPhase({ kind: 'open' });
                 await selectSheet(next.sheets[0]);
@@ -670,9 +675,9 @@ export function App({ client }: { client: TableSkimClient }) {
         <div className="flex h-full flex-col">
             <Toolbar
                 onOpen={(opened) => void openFile(opened)}
-                showHeaderMode={!!book?.usesHeaderOption}
-                headerMode={headerMode}
-                onHeaderMode={(mode) => file && void openFile(file, mode, true)}
+                book={optionsBook}
+                options={openOptions}
+                onOptions={(options) => file && void openFile(file, options, true)}
                 tools={tools}
                 search={{
                     ...search,

@@ -677,6 +677,37 @@ describe('the web app', () => {
         await page.context().close();
     });
 
+    test('reads a text file in the encoding chosen', async () => {
+        const page = await newPage();
+        await open(page, demo('cp932-sample.csv'));
+        await waitForText(cell(page, 0, 1), '表示,ソフト');
+        assert.equal(await page.locator('#encoding').inputValue(), 'Shift_JIS (CP932)');
+        await page.selectOption('#encoding', 'UTF-8');
+        await waitForText(page.locator('#status-file'), '(UTF-8)');
+        assert.notEqual(await cell(page, 0, 1).textContent(), '表示,ソフト');
+        await page.selectOption('#encoding', 'Shift_JIS (CP932)');
+        await waitForText(page.locator('#status-file'), '(Shift_JIS (CP932))');
+        await waitForText(cell(page, 0, 1), '表示,ソフト');
+        await page.context().close();
+    });
+
+    test('skips lines starting with ## on request', async () => {
+        const page = await newPage();
+        await page.setInputFiles('#file-input', {
+            name: 'meta.csv',
+            mimeType: 'text/csv',
+            buffer: Buffer.from('##meta\nname,value\nx,1\n'),
+        });
+        await page.waitForSelector('.cell:not(.k-l)');
+        assert.equal(await page.locator('#skip-meta-lines').isChecked(), false);
+        await page.locator('#skip-meta-lines').check();
+        await waitForText(page.locator('.header[data-column="0"]'), 'name');
+        await waitForText(cell(page, 0, 0), 'x');
+        await waitForText(page.locator('#status-rows'), '1 rows');
+        assert.equal(await page.locator('#skip-meta-lines').isChecked(), true);
+        await page.context().close();
+    });
+
     test('goes to the end of a larger file with the keyboard', async () => {
         const page = await newPage();
         await open(page, demo('large.tsv.gz'));
