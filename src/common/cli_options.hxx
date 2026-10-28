@@ -24,6 +24,9 @@ struct CommandLineOptions
     std::string log_file;           // UTF-8; empty: GUI logs to stderr, TUI nowhere
     // Encoding of the text files given here; unset: detected.
     std::optional<TextEncoding> encoding;
+    // Whether the first row of a CSV / TSV or Excel sheet given here holds
+    // the column names; unset: guessed.
+    std::optional<bool> header;
     std::vector<std::string> files; // UTF-8
 
     // --summary / --head: print the files' columns, statistics and first
@@ -33,10 +36,6 @@ struct CommandLineOptions
     SummaryFormat summary_format = SummaryFormat::Markdown;
     std::vector<std::string> sheets;  // empty: every sheet
     std::optional<size_t> scan_rows; // statistics over the first rows only
-    // Whether the first row of a CSV / TSV or Excel sheet holds the column
-    // names; unset: guessed (the UIs ask instead).
-    std::optional<bool> header;
-
     bool printsSummary() const { return summary || head.has_value(); }
 };
 

@@ -61,6 +61,8 @@ namespace gui_test
     public:
         Window();
         explicit Window(const std::filesystem::path &path);
+        // With View > First Row chosen before the file is opened.
+        Window(const std::filesystem::path &path, OpenOptions::Header first_row);
         ~Window();
         Window(const Window &) = delete;
         Window &operator=(const Window &) = delete;

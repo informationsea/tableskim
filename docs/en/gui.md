@@ -488,7 +488,7 @@ The **View** menu:
 | Item                              | Effect                                                         |
 | --------------------------------- | -------------------------------------------------------------- |
 | Use monospace font                | Show cells in a monospace font                                 |
-| Use first row as header           | Take column names from the first row (CSV / TSV / Excel)       |
+| First Row                         | Auto (header if it looks like one), Header or Data (CSV / TSV / Excel) |
 | Skip lines starting with ##       | Drop `##` lines of text files (on by default for VCF)          |
 | Text Encoding                     | UTF-8, UTF-16LE, UTF-16BE or Shift_JIS (CP932), for CSV / TSV  |
 | Show All Columns                  | Show hidden columns again                                      |

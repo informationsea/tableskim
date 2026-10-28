@@ -84,8 +84,9 @@ background while the window stays responsive.
   keep reading or to show only the rows read so far
 - Ragged rows, dates, merged cells and non-ASCII (e.g. Japanese) text and
   file names
-- Option to use the first row of CSV / TSV and Excel files as a header
-  (Parquet and databases have their own column names), monospace font, and
+- The first row of CSV / TSV and Excel files is taken as a header when it
+  looks like one, or as chosen (Parquet and databases have their own column
+  names), monospace font, and
   several FLTK themes
 - A user manual in English and Japanese, built in (**Help → User Manual**,
   `F1`) and installed as HTML for web browsers; see also [docs/](docs/README.md)
@@ -151,8 +152,8 @@ drawn over the screen). Press `?` for the key list. Main keys: arrows or
 freeze the columns up to the cursor, `Enter` to show a whole cell in the
 sidebar, `S` for the statistics of the cursor's column, `B` for its
 histogram, `y` to copy the
-selection as TSV, `w` to export the sheet as shown, `Tab` to switch sheets, `s` for the sidebar, `H` to use
-the first row as header (CSV / TSV and Excel), `E` to switch the text
+selection as TSV, `w` to export the sheet as shown, `Tab` to switch sheets, `s` for the sidebar, `H` to switch
+the first row between the guess and header / data (CSV / TSV and Excel), `E` to switch the text
 encoding, `r` to revert, `q` to quit.
 
 Copying uses the OSC 52 escape sequence, so it works over SSH; the terminal

@@ -338,7 +338,7 @@ reloaded. Press `T` again to stop following.
 
 | Key | Action                                                                |
 | --- | --------------------------------------------------------------------- |
-| `H` | Use the first row as header (CSV / TSV / Excel)                        |
+| `H` | First row: switch between the guess and header / data (CSV / TSV / Excel) |
 | `#` | Skip lines starting with `##` (on by default for VCF)                  |
 | `E` | Switch the text encoding: UTF-8, UTF-16LE, UTF-16BE, Shift_JIS (CP932) |
 | `r` | Revert (reload the file)                                               |

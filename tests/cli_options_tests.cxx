@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+
 #include "cli_options.hxx"
 
 namespace
@@ -23,6 +26,27 @@ namespace
         };
     }
 } // namespace
+
+TEST_CASE("configureLogging sends console logs to stderr", "[cli][regression]")
+{
+    struct RestoreLogger
+    {
+        std::shared_ptr<spdlog::logger> previous = spdlog::default_logger();
+        ~RestoreLogger()
+        {
+            spdlog::drop("tableskim");
+            spdlog::set_default_logger(previous);
+        }
+    } restore;
+    CommandLineOptions options;
+    options.summary = true;
+    options.verbose = true;
+    std::string error;
+    REQUIRE(configureLogging(options, options.verbose, &error));
+    const auto logger = spdlog::default_logger();
+    REQUIRE(logger->sinks().size() == 1);
+    CHECK(std::dynamic_pointer_cast<spdlog::sinks::stderr_color_sink_mt>(logger->sinks().front()));
+}
 
 TEST_CASE("parseCommandLine reads the shared options", "[cli]")
 {
@@ -99,6 +123,13 @@ TEST_CASE("parseCommandLine reads the summary options", "[cli]")
         CHECK(options.scan_rows == 1000u);
         CHECK(options.header == false);
         CHECK(options.files == std::vector<std::string>{"a.csv"});
+    }
+
+    SECTION("--header applies to the UIs too")
+    {
+        REQUIRE_FALSE(parse({"--header", "yes", "a.csv"}, options));
+        CHECK_FALSE(options.printsSummary());
+        CHECK(options.header == true);
     }
 
     SECTION("--head with sheets")

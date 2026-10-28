@@ -79,7 +79,7 @@ namespace
         {"F", "Clear the filter"},
         {"y, c", "Copy the selection (tab-separated)"},
         {"s", "Show / hide the sidebar"},
-        {"H", "Use the first row as header (CSV / TSV / Excel)"},
+        {"H", "First row: switch between the guess and header / data (CSV / TSV / Excel)"},
         {"#", "Skip lines starting with ## (on by default for VCF)"},
         {"E", "Next text encoding: UTF-8, UTF-16LE, UTF-16BE, Shift_JIS (CP932)"},
         {":", "Run SQL (DuckDB / SQLite / Parquet / JSON); a SELECT is shown as a sheet"},
@@ -262,9 +262,10 @@ bool TuiApp::open(const std::string &path, std::string *error)
     std::shared_ptr<TableBook> book;
     try
     {
-        // Like Excel (and the GUI), the first row is data unless H is toggled.
+        // The first row is the header if it looks like one (text only, each
+        // value different), unless H or --header says otherwise.
         OpenOptions options;
-        options.header = first_row_as_header_ ? OpenOptions::Header::Yes : OpenOptions::Header::No;
+        options.header = first_row_;
         options.skip_meta_lines = skip_meta_lines_;
         options.encoding = text_encoding_;
         book = TableBook::open(utf8Path(path), options);
@@ -621,25 +622,51 @@ bool TuiApp::headerOptionAvailable() const
     return !book_ || book_->usesHeaderOption();
 }
 
-void TuiApp::setFirstRowAsHeader(bool enabled)
+void TuiApp::setFirstRow(OpenOptions::Header first_row)
 {
     if (!headerOptionAvailable())
     {
         setStatus("This file has its own column names", true);
         return;
     }
-    first_row_as_header_ = enabled;
-    if (!path_.empty())
+    const OpenOptions::Header old = first_row_;
+    first_row_ = first_row;
+    if (path_.empty())
+        return;
+    const std::string path = path_;
+    if (!open(path))
     {
-        const std::string path = path_;
-        if (!open(path))
-        {
-            // The shown file still uses the old setting (open() reported why).
-            first_row_as_header_ = !enabled;
-            return;
-        }
+        // The shown file still uses the old setting (open() reported why).
+        first_row_ = old;
+        return;
     }
-    setStatus(enabled ? "First row is the header" : "First row is data");
+    // The sheet is read after this, so the guess is not known yet.
+    switch (first_row_)
+    {
+    case OpenOptions::Header::Auto:
+        setStatus("First row: header if it looks like one (H: switch)");
+        break;
+    case OpenOptions::Header::Yes:
+        setStatus("First row is the header (H: guess again)");
+        break;
+    case OpenOptions::Header::No:
+        setStatus("First row is data (H: guess again)");
+        break;
+    }
+}
+
+// Switches between the guess and the other choice, judged by the sheet
+// shown: whether its first row is the header.
+void TuiApp::toggleFirstRow()
+{
+    if (first_row_ != OpenOptions::Header::Auto)
+    {
+        setFirstRow(OpenOptions::Header::Auto);
+        return;
+    }
+    const TuiTableView *view = currentView();
+    const bool header = view && view->model() && view->model()->hasHeader();
+    setFirstRow(header ? OpenOptions::Header::No : OpenOptions::Header::Yes);
 }
 
 bool TuiApp::skipMetaLinesAvailable() const
@@ -733,7 +760,7 @@ void TuiApp::startConversion()
         setStatus("Converting the saved file: the unsaved changes are not converted");
     // Convert what is shown: the same header, ## and encoding choices.
     OpenOptions options;
-    options.header = first_row_as_header_ ? OpenOptions::Header::Yes : OpenOptions::Header::No;
+    options.header = first_row_;
     options.skip_meta_lines = book_->skipsMetaLines();
     options.encoding = book_->textEncoding();
     converting_ = true;
@@ -1787,7 +1814,7 @@ bool TuiApp::handleEvent(Event event)
     if (event == Event::H)
     {
         if (!refuseReopen())
-            checkUnsaved([this] { setFirstRowAsHeader(!first_row_as_header_); });
+            checkUnsaved([this] { toggleFirstRow(); });
         return true;
     }
     if (event == Event::Character('#'))
@@ -2663,7 +2690,8 @@ Element TuiApp::renderStatusBar()
                 right.push_back(text("│ " + search + " "));
         }
     }
-    if (first_row_as_header_ && headerOptionAvailable())
+    if (TuiTableView *header_view = currentView();
+        header_view && header_view->model() && header_view->model()->hasHeader() && headerOptionAvailable())
         right.push_back(text("│ header "));
     if (sql_running_)
         right.push_back(text("│ running SQL "));
