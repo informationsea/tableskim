@@ -48,7 +48,7 @@ export function ContentPane({ client, info, cell, monospace }: ContentPaneProps)
                 {shown?.kind === 'x' && <p className="text-danger">The cell cannot be read.</p>}
                 <div
                     id="content-text"
-                    className={`break-words whitespace-pre-wrap select-text${monospace ? 'font-mono' : ''}`}
+                    className={'break-words whitespace-pre-wrap select-text' + (monospace ? ' font-mono' : '')}
                 >
                     {shown && shown.kind !== 'l' ? shown.text : ''}
                 </div>

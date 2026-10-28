@@ -108,10 +108,12 @@ export function FilterPane({ info, ops, onApply, adding, cursorColumn }: FilterP
 
     useEffect(() => {
         if (focusRow.current === null) return;
+        // The row may not be drawn yet: then on a later render.
         const input = valueInputs.current.get(focusRow.current);
+        if (!input) return;
         focusRow.current = null;
-        input?.focus();
-        input?.scrollIntoView({ block: 'nearest' });
+        input.focus();
+        input.scrollIntoView({ block: 'nearest' });
     });
 
     const change = (id: number, part: Partial<Condition>) =>

@@ -144,7 +144,8 @@ export function Grid({
                 <div
                     key={`${row}:${column}`}
                     className={
-                        `${CELL} ${KIND_CLASSES[kind] ?? ''}${edge}${monospace ? 'font-mono' : ''}` +
+                        `${CELL} ${KIND_CLASSES[kind] ?? ''}${edge}` +
+                        (monospace ? ' font-mono' : '') +
                         // The hit's colour is opaque, so it replaces the surface.
                         (pinned ? (hit && !selected ? ' z-1' : ' z-1 bg-surface') : '') +
                         // A frozen cell covers the cells scrolled under it: the

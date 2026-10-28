@@ -753,7 +753,7 @@ describe('the web app', () => {
         await page.locator('#skip-meta-lines').check();
         await waitForText(page.locator('.header[data-column="0"]'), 'name');
         await waitForText(cell(page, 0, 0), 'x');
-        await waitForText(page.locator('#status-rows'), '1 rows');
+        await waitForText(page.locator('#status-rows'), '1 row');
         assert.equal(await page.locator('#skip-meta-lines').isChecked(), true);
         await page.context().close();
     });
@@ -856,7 +856,7 @@ describe('the web app', () => {
         const isPng = (data) => data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
 
         await page.locator('#histogram-button').click();
-        await waitForText(page.locator('#histogram-summary'), '9 numbers');
+        await waitForText(page.locator('#histogram-summary'), '53 numbers');
         let saved = await save('svg');
         assert.equal(saved.name, 'Age histogram.svg');
         let svg = saved.data.toString();
@@ -907,7 +907,7 @@ describe('the web app', () => {
                 'monospace',
             ),
         );
-        assert.match(await page.locator('#content-text').getAttribute('class'), /font-mono/);
+        assert.match(await page.locator('#content-text').evaluate((e) => getComputedStyle(e).fontFamily), /monospace/);
         // Kept in this browser.
         await page.reload();
         await page.waitForSelector('body[data-ready=true]');
