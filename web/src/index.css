@@ -22,6 +22,7 @@
        dark) for counts; validated with the dataviz palette checks. */
     --series: #2a78d6;
     --series-hover: #5598e7;
+    --fit: #eb6834; /* the regression line: the next categorical slot */
     --chart-grid: #e1e0d9;
     --chart-axis: #c3c2b7;
     --seq-1: #86b6ef;
@@ -50,6 +51,7 @@
         --loading: #4a4e56;
         --series: #3987e5;
         --series-hover: #6da7ec;
+        --fit: #d95926;
         --chart-grid: #2c2c2a;
         --chart-axis: #383835;
         /* Few rows sit near the dark surface, many stand out. */
@@ -79,6 +81,7 @@
     --color-loading: var(--loading);
     --color-series: var(--series);
     --color-series-hover: var(--series-hover);
+    --color-fit: var(--fit);
     --color-chart-grid: var(--chart-grid);
     --color-chart-axis: var(--chart-axis);
 }

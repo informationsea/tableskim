@@ -1248,7 +1248,16 @@ void WebSession::scatterState(const Params &params, JsonWriter &result)
         .value(scatterStatsText(plot))
         .key("pairs")
         .value(plot.pairs)
-        .key("xAxis");
+        .key("fit");
+    // The least-squares line, drawn as the GUI does: not for categories, nor
+    // without a correlation (a constant Y).
+    const auto slope = plot.stats.slope();
+    const auto intercept = plot.stats.intercept();
+    if (slope && intercept && plot.stats.correlation() && !plot.categorical())
+        result.beginObject().key("slope").value(*slope).key("intercept").value(*intercept).endObject();
+    else
+        result.null();
+    result.key("xAxis");
     writeAxis(result, plot.x_axis, plot.x_bins);
     result.key("yAxis");
     writeAxis(result, plot.y_axis, plot.y_bins);

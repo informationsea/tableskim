@@ -220,6 +220,7 @@ export interface ScatterState {
     summary: string;
     statsText: string;
     pairs: number;
+    fit: { slope: number; intercept: number } | null; // y = intercept + slope * x; none for categories
     xAxis: ScatterAxis;
     yAxis: ScatterAxis;
     counts: number[]; // by X bin (or category), then Y bin

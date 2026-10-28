@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -412,6 +413,25 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
         const auto pairs = static_cast<size_t>(*plot["pairs"].number());
         CHECK(pairs > 40);
         CHECK(plot["points"].array()->size() == 3 * pairs);
+        {
+            // Every pair is a point here: the line fits them.
+            const auto &all = *plot["points"].array();
+            double sx = 0, sy = 0, sxx = 0, sxy = 0;
+            for (size_t i = 0; i + 2 < all.size(); i += 3)
+            {
+                const double x = *all[i].number();
+                const double y = *all[i + 1].number();
+                sx += x;
+                sy += y;
+                sxx += x * x;
+                sxy += x * y;
+            }
+            const double n = static_cast<double>(pairs);
+            const double slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+            REQUIRE(plot["fit"]["slope"].number());
+            CHECK(*plot["fit"]["slope"].number() == Catch::Approx(slope));
+            CHECK(*plot["fit"]["intercept"].number() == Catch::Approx((sy - slope * sx) / n));
+        }
         const auto y_bins = plot["yAxis"]["edges"].array()->size() - 1;
         const auto &counts = *plot["counts"].array();
         size_t total = 0;
@@ -458,6 +478,7 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
         CHECK_FALSE(plot["categories"].array()->empty());
         CHECK(plot["boxes"].array()->size() == plot["categories"].array()->size());
         CHECK(plot["points"].array()->empty()); // not asked for
+        CHECK(plot["fit"].isNull()); // categories have no line
     }
 }
 

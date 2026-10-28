@@ -252,7 +252,13 @@ describe('the web app', () => {
         await cell(page, 0, 3).click();
         await page.locator('#scatter-button').click();
         await waitForText(page.locator('#scatter-summary'), '53 rows plotted');
+        // The regression line is drawn by default and can be turned off.
+        await page.locator('#scatter-chart[data-fit=true]').waitFor();
+        await page.locator('#scatter-fit').uncheck();
+        await page.locator('#scatter-chart:not([data-fit])').waitFor();
+        await page.locator('#scatter-fit').check();
         await page.locator('#scatter-density').click();
+        await page.locator('#scatter-chart[data-fit=true]').waitFor();
         // Around the whole plot: every row plotted is kept.
         const box = await page.locator('#scatter-chart').boundingBox();
         await page.mouse.move(box.x + 66, box.y + 14);
@@ -266,6 +272,7 @@ describe('the web app', () => {
         await page.selectOption('#scatter-x', '4');
         await page.locator('#scatter-boxes:not([disabled])').click();
         await waitForText(page.locator('#scatter-summary'), 'Click a box');
+        assert.equal(await page.locator('#scatter-fit').isDisabled(), true, 'no line for categories');
         await page.context().close();
     });
 

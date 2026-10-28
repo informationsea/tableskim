@@ -14,6 +14,7 @@ export type ScatterPick =
 interface ScatterChartProps {
     state: ScatterState;
     mode: ScatterMode;
+    fit: boolean; // draw the regression line
     onPick: (pick: ScatterPick) => void;
 }
 
@@ -63,7 +64,7 @@ function shade(count: number, most: number): number {
 
 const numberText = (value: number) => value.toLocaleString(undefined, { maximumSignificantDigits: 6 });
 
-export function ScatterChart({ state, mode, onPick }: ScatterChartProps) {
+export function ScatterChart({ state, mode, fit, onPick }: ScatterChartProps) {
     const box = useRef<HTMLDivElement>(null);
     const canvas = useRef<HTMLCanvasElement>(null);
     const [width, setWidth] = useState(600);
@@ -104,6 +105,7 @@ export function ScatterChart({ state, mode, onPick }: ScatterChartProps) {
         return result;
     }, [state.points, categorical]);
     const most = Math.max(0, ...state.counts);
+    const line = fit && mode !== 'boxes' && !categorical ? state.fit : null;
 
     const columnSpan = (xi: number): [number, number] =>
         categorical ? [xi - CELL_WIDTH / 2, xi + CELL_WIDTH / 2] : [state.xAxis.edges[xi], state.xAxis.edges[xi + 1]];
@@ -218,6 +220,16 @@ export function ScatterChart({ state, mode, onPick }: ScatterChartProps) {
             }
             context.globalAlpha = 1;
         }
+        if (line) {
+            // Across the plotted range, over the marks.
+            context.strokeStyle = color('--fit');
+            context.lineWidth = 2;
+            context.lineCap = 'round';
+            context.beginPath();
+            context.moveTo(toX(xLow), toY(line.intercept + line.slope * xLow));
+            context.lineTo(toX(xHigh), toY(line.intercept + line.slope * xHigh));
+            context.stroke();
+        }
         context.restore();
 
         if (legend && most > 0) {
@@ -303,6 +315,7 @@ export function ScatterChart({ state, mode, onPick }: ScatterChartProps) {
                 role="img"
                 aria-label={state.summary}
                 className="block cursor-crosshair"
+                data-fit={line ? 'true' : undefined}
                 style={{ width, height: HEIGHT }}
                 onPointerDown={(event) => {
                     if (event.button !== 0) return;

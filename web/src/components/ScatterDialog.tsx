@@ -23,6 +23,7 @@ interface ScatterDialogProps {
 export function ScatterDialog({ client, info, column, hidden, onFilter, onGoToRow, onClose }: ScatterDialogProps) {
     const [axes, setAxes] = useState<{ x: number; y: number } | null>(null);
     const [mode, setMode] = useState<ScatterMode>('points');
+    const [fit, setFit] = useState(true);
     const [state, setState] = useState<ScatterState | null>(null);
     const [error, setError] = useState('');
     const sheet = info.sheet;
@@ -143,6 +144,18 @@ export function ScatterDialog({ client, info, column, hidden, onFilter, onGoToRo
                         </button>
                     ))}
                 </span>
+                <label className="flex items-center gap-1" title="The least-squares line over every row plotted">
+                    <input
+                        type="checkbox"
+                        id="scatter-fit"
+                        checked={fit}
+                        disabled={!shown?.fit || shownMode === 'boxes'}
+                        onChange={(event) => setFit(event.target.checked)}
+                    />
+                    {/* The line's key: its colour beside the label, not on it. */}
+                    <span className="inline-block h-0.5 w-4 rounded-full bg-fit" aria-hidden="true" />
+                    Regression line
+                </label>
                 <span id="scatter-progress" className="text-muted">
                     {progress}
                 </span>
@@ -160,7 +173,7 @@ export function ScatterDialog({ client, info, column, hidden, onFilter, onGoToRo
                         </p>
                     )}
                     {shown.plottable && (
-                        <ScatterChart state={shown} mode={shownMode} onPick={(picked) => void pick(picked)} />
+                        <ScatterChart state={shown} mode={shownMode} fit={fit} onPick={(picked) => void pick(picked)} />
                     )}
                 </>
             )}

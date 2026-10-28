@@ -198,7 +198,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `startHistogram` / `histogramState` | `sheet`, `column`, `bins` (2 to 200) | `active`, `done`, `counting`, `column`, `scannedRows`, `histogram` (`kind`, `summary`, `bins`: `label`, `range`, `count`; `top` without bins) |
 | `histogramFilter` | `sheet`, `bin` (a frequent value's index without bins) | `conditions` |
 | `defaultScatter` | `sheet`, `column`, `hidden` | `x`, `y`: the columns to start with |
-| `startScatter` / `scatterState` | `sheet`, `x`, `y`; `points` (state: send them) | `done`, `plottable`, `summary`, `statsText`, `pairs`, `xAxis` / `yAxis` (`kind`, `ticks`, `edges`, `binRanges`), `counts` (by X bin, then Y bin), `categories`, `boxes`, `boxTexts`, `points` (x, y, view row, ...) |
+| `startScatter` / `scatterState` | `sheet`, `x`, `y`; `points` (state: send them) | `done`, `plottable`, `summary`, `statsText`, `pairs`, `fit` (`slope`, `intercept` of the regression line; null for categories), `xAxis` / `yAxis` (`kind`, `ticks`, `edges`, `binRanges`), `counts` (by X bin, then Y bin), `categories`, `boxes`, `boxTexts`, `points` (x, y, view row, ...) |
 | `scatterFilter` | `sheet` and `xBin`, `yBin`; or `category`; or `xLow`, `xHigh`, `yLow`, `yHigh` | `conditions` |
 | `exportFormats` | | `format`, `label`, `extension` of each |
 | `startExport` | `sheet`, `format` (`csv`, `tsv`, `excel`, `parquet`), `hidden` | (a job) |
