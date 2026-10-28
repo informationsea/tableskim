@@ -759,6 +759,7 @@ const std::map<std::string_view, WebSession::Method> &WebSession::methods()
         {"scatterFilter", &WebSession::scatterFilter},
         {"exportFormats", &WebSession::exportFormats},
         {"startExport", &WebSession::startExport},
+        {"startConvert", &WebSession::startConvert},
         {"aggregates", &WebSession::aggregates},
         {"startGroupBy", &WebSession::startGroupBy},
         {"jobState", &WebSession::jobState},
@@ -885,6 +886,7 @@ void WebSession::open(const Params &params, JsonWriter &result)
         options.skip_meta_lines = *skip;
     path_ = utf8Path(params.text("path"));
     book_ = TableBook::open(path_, options);
+    options_ = options;
     result.beginObject().key("sheets");
     writeSheetNames(result);
     result.key("usesHeaderOption")
@@ -1485,6 +1487,55 @@ void WebSession::startExport(const Params &params, JsonWriter &result)
     result.beginObject().endObject();
 }
 
+// Converts the open text file to Parquet or DuckDB, read with the options
+// it was opened with, as the GUI's Convert to Parquet / DuckDB... does.
+void WebSession::startConvert(const Params &params, JsonWriter &result)
+{
+    if (job_ && !job_->done)
+        throw std::invalid_argument("another export or Group By is running");
+    if (!book_ || !book_->isTextFormat())
+        throw std::invalid_argument("only text files (CSV, TSV, ...) can be converted");
+    const std::string &name = params.text("format");
+    std::optional<ExportFormat> format;
+    if (name == "parquet")
+        format = ExportFormat::Parquet;
+    else if (name == "duckdb")
+        format = ExportFormat::DuckDb;
+    else
+        throw std::invalid_argument("unknown format: " + name);
+    stopJob();
+    std::filesystem::create_directories(scratch_);
+
+    job_ = std::make_unique<Job>();
+    Job &job = *job_;
+    job.kind = "convert";
+    job.file = scratch_ / ("convert-" + std::to_string(next_export_++) + exportFormatExtension(*format));
+    job.file_name = utf8String(defaultExportPath(path_, *format).filename());
+    job.thread = std::jthread([this, &job, source = path_, options = options_, format = *format](std::stop_token stop)
+                              {
+        std::string error;
+        try
+        {
+            if (!exportTextFile(source, job.file, format, options, stop, [&](size_t rows)
+                                {
+                                    job.rows = rows;
+                                    sink_(SESSION, JOB);
+                                }))
+                error = "stopped";
+        }
+        catch (const std::exception &e)
+        {
+            error = e.what();
+        }
+        {
+            std::lock_guard lock(job.mutex);
+            job.error = error;
+        }
+        job.done = true;
+        sink_(SESSION, JOB); });
+    result.beginObject().endObject();
+}
+
 void WebSession::aggregates(const Params &, JsonWriter &result)
 {
     result.beginArray();
@@ -1575,7 +1626,7 @@ void WebSession::jobState(const Params &, JsonWriter &result)
     if (done)
     {
         result.key("error").value(job.error);
-        if (job.error.empty() && job.kind == "export")
+        if (job.error.empty() && !job.file.empty())
         {
             std::error_code ec;
             const auto size = std::filesystem::file_size(job.file, ec);

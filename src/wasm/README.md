@@ -11,10 +11,10 @@ as the GUI and the TUI share the core. The file never leaves the browser.
   and frozen columns, display formats, Go To, column statistics,
   histograms and scatter plots (points, density, box plots; saved as PNG
   or SVG), Group By, SQL (with completion and a history), exporting the
-  view, a sidebar (the whole cell, the filter, statistics), a monospace font and, for
-  text files, the character encoding and skipping `##` lines. What the
-  native UIs have and it lacks: editing, Follow and converting a text
-  file to Parquet or DuckDB.
+  view, a sidebar (the whole cell, the filter, statistics), a monospace
+  font and, for text files, the character encoding, skipping `##` lines
+  and converting to Parquet or DuckDB. What the native UIs have and it
+  lacks: editing and Follow.
 - `tableskim-wasm-probe` (`wasm_probe.cxx`, `web/probe/`) was the
   feasibility probe: it opens one file, reads it to the end, sorts it and
   runs an SQL query, timing each step, in Node.js, a browser or natively.
@@ -219,9 +219,10 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `scatterFilter` | `sheet` and `xBin`, `yBin`; or `category`; or `xLow`, `xHigh`, `yLow`, `yHigh` | `conditions` |
 | `exportFormats` | | `format`, `label`, `extension` of each |
 | `startExport` | `sheet`, `format` (`csv`, `tsv`, `excel`, `parquet`), `hidden` | (a job) |
+| `startConvert` | `format` (`parquet`, `duckdb`): the open text file, read with the options it was opened with | (a job, `kind` `convert`) |
 | `aggregates` | | the aggregates' names |
 | `startGroupBy` | `sheet`, `keys`, `values` (columns), `aggregates` (names) | (a job) |
-| `jobState` | | `kind` (`export`, `groupBy` or null), `done`, `rows`, `error`; an export's `file`, `fileName`, `size`; a Group By's `sheet`, `sheets` |
+| `jobState` | | `kind` (`export`, `convert`, `groupBy` or null), `done`, `rows`, `error`; an export's or a conversion's `file`, `fileName`, `size`; a Group By's `sheet`, `sheets` |
 | `cancelJob` | | (stops the job; removes an export's file) |
 
 Statistics, histograms and scatter plots run on the book's worker and

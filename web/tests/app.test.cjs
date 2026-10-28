@@ -717,6 +717,30 @@ describe('the web app', () => {
         await page.context().close();
     });
 
+    test('converts a text file to Parquet and DuckDB', async () => {
+        const page = await newPage();
+        await open(page, demo('demo.sqlite3'));
+        assert.equal(await page.locator('#convert-button').isDisabled(), true);
+        await open(page, demo('cp932-sample.csv'));
+        await page.locator('#convert-button').click();
+        const convert = async () => {
+            const [download] = await Promise.all([
+                page.waitForEvent('download'),
+                page.locator('#convert-start').click(),
+            ]);
+            return { name: download.suggestedFilename(), data: fs.readFileSync(await download.path()) };
+        };
+        let saved = await convert();
+        assert.equal(saved.name, 'cp932-sample.parquet');
+        assert.equal(saved.data.subarray(0, 4).toString(), 'PAR1');
+        await waitForText(page.locator('#convert-status'), 'Saved cp932-sample.parquet');
+        await page.locator('#convert-dialog input[value=duckdb]').check();
+        saved = await convert();
+        assert.equal(saved.name, 'cp932-sample.duckdb');
+        assert.equal(saved.data.subarray(8, 12).toString(), 'DUCK');
+        await page.context().close();
+    });
+
     test('skips lines starting with ## on request', async () => {
         const page = await newPage();
         await page.setInputFiles('#file-input', {

@@ -238,14 +238,14 @@ read their header comments before changing anything in `src/common/`.
   it shares with the TUI live in `src/common/` (e.g. `findSearchHit()` in
   `search_hits.{hxx,cxx}`). It connects the native features through
   `WebSession` (statistics, histograms, scatter plots, Group By, SQL,
-  exports, formats; the protocol table is in `src/wasm/README.md`):
+  exports, text-file conversion, formats; the protocol table is in `src/wasm/README.md`):
   filters come from the core's helpers (`histogramBinConditions()`,
   `densityCellConditions()`, ...) so they keep the rows shown, and exports
   and Group By run as a job on a thread of the session's (`jobState`). An
   export is written to the worker's memory, read by the page
   (`TableSkimClient.readFile()`) and removed. Hidden and frozen columns are
   the page's (`GridController.setLayout()`), sent with `copy`, exports and
-  Group By. Not there yet: editing, Follow, text-file conversion.
+  Group By. Not there yet: editing and Follow.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops
   back with `ftxui::App::Post` plus `PostEvent(Event::Custom)`, since a

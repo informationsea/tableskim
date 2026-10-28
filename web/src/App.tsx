@@ -14,6 +14,7 @@ import { HistogramDialog } from './components/HistogramDialog';
 import { Menu, type MenuItem } from './components/Menu';
 import { ScatterDialog } from './components/ScatterDialog';
 import { ContentPane } from './components/ContentPane';
+import { ConvertDialog } from './components/ConvertDialog';
 import { SheetTabs } from './components/SheetTabs';
 import { Sidebar, SIDEBAR_MIN_WIDTH, type SidebarTab } from './components/Sidebar';
 import { SqlPanel } from './components/SqlPanel';
@@ -47,7 +48,7 @@ type Phase =
     | { kind: 'failed'; name: string }
     | { kind: 'open' };
 
-type DialogKind = 'histogram' | 'scatter' | 'export' | 'groupBy' | 'format' | 'goTo';
+type DialogKind = 'histogram' | 'scatter' | 'export' | 'convert' | 'groupBy' | 'format' | 'goTo';
 
 // Hidden and frozen columns: part of what a sheet shows, kept here.
 interface Layout {
@@ -709,6 +710,10 @@ export function App({ client }: { client: TableSkimClient }) {
         },
         sheetTool('export-button', 'Export', 'Save the view as CSV, TSV, Excel or Parquet', 'export'),
         {
+            ...sheetTool('convert-button', 'Convert', 'Convert the whole text file to Parquet or DuckDB', 'convert'),
+            enabled: showGrid && !!book?.isTextFormat,
+        },
+        {
             id: 'sidebar-toggle',
             label: 'Sidebar',
             title: 'Show or hide the sidebar: the whole cell (Enter or a double click) and statistics',
@@ -869,6 +874,9 @@ export function App({ client }: { client: TableSkimClient }) {
                             onGoToRow={goToRow}
                             onClose={closeDialog}
                         />
+                    )}
+                    {dialog.kind === 'convert' && file && (
+                        <ConvertDialog client={client} fileName={file.name} onClose={closeDialog} />
                     )}
                     {dialog.kind === 'export' && (
                         <ExportDialog

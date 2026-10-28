@@ -755,3 +755,40 @@ TEST_CASE("WebSession gives a cell's whole value")
     client.result("close");
     std::filesystem::remove(file);
 }
+
+TEST_CASE("WebSession converts a text file to Parquet and DuckDB as it was opened")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    CHECK(client.call("startConvert", "{\"format\":\"parquet\"}")["error"].string());
+    client.result("open", "{\"path\":\"" + path("demo.sqlite3") + "\"}");
+    CHECK(client.call("startConvert", "{\"format\":\"parquet\"}")["error"].string()->find("text files") != std::string::npos);
+
+    client.result("open", "{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"Shift_JIS (CP932)\"}");
+    CHECK(client.call("startConvert", "{\"format\":\"xlsx\"}")["error"].string());
+    for (const auto &[format, extension] : {std::pair{"parquet", ".parquet"}, std::pair{"duckdb", ".duckdb"}})
+    {
+        INFO(format);
+        client.result("startConvert", "{\"format\":\"" + std::string(format) + "\"}");
+        const JsonValue job = waitDone(client, "jobState", "{}");
+        CHECK(*job["kind"].string() == "convert");
+        REQUIRE(*job["error"].string() == "");
+        CHECK(*job["fileName"].string() == "cp932-sample" + std::string(extension));
+        CHECK(*job["size"].number() > 0);
+        CHECK(*job["rows"].number() > 0);
+
+        // The converted file reads back with the text decoded as it was shown.
+        const std::filesystem::path converted = *job["file"].string();
+        const auto copy = std::filesystem::temp_directory_path() / ("tableskim-test-web-converted" + std::string(extension));
+        std::filesystem::copy_file(converted, copy, std::filesystem::copy_options::overwrite_existing);
+        WebSession reader([](int, unsigned) {});
+        Client read_client(reader);
+        const JsonValue opened = read_client.result("open", "{\"path\":\"" + jsonPath(copy.generic_string()) + "\"}");
+        const std::string sheet_name = *(*opened["sheets"].array())[0].string();
+        const int id = static_cast<int>(*read_client.result("sheet", "{\"name\":\"" + sheet_name + "\"}")["sheet"].number());
+        CHECK(cell(read_client.rows(id, 0, 0), 0, 1) == "表示,ソフト");
+        read_client.result("close");
+        std::filesystem::remove(copy);
+    }
+    client.result("cancelJob");
+}

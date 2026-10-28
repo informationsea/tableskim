@@ -253,15 +253,15 @@ export interface ExportFormatInfo {
     extension: string;
 }
 
-/** An export or a Group By, run in the background. */
+/** An export, a conversion or a Group By, run in the background. */
 export type JobState =
     | { kind: null }
     | {
-          kind: 'export' | 'groupBy';
+          kind: 'export' | 'convert' | 'groupBy';
           done: boolean;
           rows: number;
           error?: string; // once done: empty if it worked
-          file?: string; // export: read it with TableSkimClient.readFile()
+          file?: string; // export, convert: read it with TableSkimClient.readFile()
           fileName?: string;
           size?: number;
           sheet?: string; // groupBy: the result sheet
@@ -343,6 +343,8 @@ export interface Methods {
     };
     exportFormats: { params: Empty; result: ExportFormatInfo[] };
     startExport: { params: SheetParams & { format: ExportFormat; hidden?: number[] }; result: Empty };
+    // The open text file, as it was opened (encoding, header, ## lines).
+    startConvert: { params: { format: 'parquet' | 'duckdb' }; result: Empty };
     aggregates: { params: Empty; result: string[] };
     startGroupBy: {
         params: SheetParams & { keys: number[]; values: number[]; aggregates: string[] };
