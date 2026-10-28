@@ -34,6 +34,8 @@ import {
 
 // Copying more rows than this would build a huge string in the worker.
 const MAX_COPY_ROWS = 100000;
+// WebSession limits one rows reply to this many columns.
+const MAX_ROW_COLUMNS = 500;
 
 type Phase =
     | { kind: 'starting' }
@@ -82,6 +84,7 @@ export function App({ client }: { client: TableSkimClient }) {
     const [phase, setPhase] = useState<Phase>({ kind: ISOLATED ? 'starting' : 'unsupported' });
     const [filterOps, setFilterOps] = useState<FilterOpInfo[]>([]);
     const [file, setFile] = useState<File | null>(null);
+    const [fileEpoch, setFileEpoch] = useState(0);
     const [book, setBook] = useState<BookInfo | null>(null);
     const [headerMode, setHeaderMode] = useState<HeaderMode>('auto');
     const [info, setInfo] = useState<SheetInfo | null>(null);
@@ -111,6 +114,7 @@ export function App({ client }: { client: TableSkimClient }) {
         infoDirty: false,
         searchActive: false,
         pendingFind: null as { forward: boolean } | null,
+        fileEpoch: 0, // SQL results belong to the file on which they were started
         lastSql: '', // run again after the file is opened again
     });
 
@@ -185,6 +189,8 @@ export function App({ client }: { client: TableSkimClient }) {
         // again: the same file with another option, whose SQL result is made again
         async (opened: File, header: HeaderMode = 'auto', again = false) => {
             const epoch = ++flow.current.epoch;
+            flow.current.fileEpoch++;
+            setFileEpoch(flow.current.fileEpoch);
             flow.current.info = null;
             resetSearch();
             setFile(opened);
@@ -478,9 +484,28 @@ export function App({ client }: { client: TableSkimClient }) {
             const current = flow.current.info;
             if (!current) return Promise.reject(new Error('no sheet'));
             const epoch = flow.current.epoch;
-            return client.call('rows', { sheet: current.sheet, first, last, firstColumn, lastColumn }).then((rows) => {
+            const requests = [];
+            for (let column = firstColumn; column <= lastColumn; column += MAX_ROW_COLUMNS)
+                requests.push(
+                    client.call('rows', {
+                        sheet: current.sheet,
+                        first,
+                        last,
+                        firstColumn: column,
+                        lastColumn: Math.min(lastColumn, column + MAX_ROW_COLUMNS - 1),
+                    }),
+                );
+            return Promise.all(requests).then((replies) => {
                 if (epoch !== flow.current.epoch) throw new Error('stale');
-                return rows;
+                const count = Math.min(...replies.map((reply) => reply.rows.length));
+                return {
+                    first,
+                    firstColumn,
+                    rows: Array.from({ length: count }, (_, row) => replies.flatMap((reply) => reply.rows[row])),
+                    kinds: Array.from({ length: count }, (_, row) => replies.map((reply) => reply.kinds[row]).join('')),
+                    loading: replies.some((reply) => reply.loading),
+                    end: replies.some((reply) => reply.end),
+                };
             });
         },
         [client],
@@ -698,6 +723,7 @@ export function App({ client }: { client: TableSkimClient }) {
                 <SqlPanel
                     client={client}
                     onResult={(sheet, sheets, sql) => {
+                        if (fileEpoch !== flow.current.fileEpoch) return;
                         flow.current.lastSql = sql;
                         void showResult(sheet, sheets);
                     }}

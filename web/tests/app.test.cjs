@@ -28,7 +28,7 @@ async function startServer(...options) {
 
 before(async () => {
     ({ child: server, url: baseUrl } = await startServer());
-    browser = await chromium.launch();
+    browser = await chromium.launch({ executablePath: process.env.TABLESKIM_CHROMIUM });
 });
 
 after(async () => {
@@ -56,6 +56,185 @@ const cell = (page, row, column) => page.locator(`.cell[data-row="${row}"][data-
 async function waitForText(locator, text) {
     await locator.filter({ hasText: text }).first().waitFor();
 }
+
+// A deterministic worker for frontend regressions: SQL replies are held,
+// and row replies enforce the same 500-column limit as WebSession.
+async function regressionPage() {
+    const context = await browser.newContext();
+    await context.addInitScript(() => {
+        window.Worker = class {
+            constructor() {
+                window.regressionWorker = this;
+                this.requests = [];
+                this.columns = 600;
+                this.view = { sort: [], filter: null };
+                this.sheet = 1;
+                setTimeout(() => this.onmessage({ data: { type: 'ready' } }), 0);
+            }
+            reply(request, result) {
+                queueMicrotask(() =>
+                    this.onmessage({ data: { type: 'reply', json: JSON.stringify({ id: request.id, result }) } }),
+                );
+            }
+            info() {
+                return {
+                    sheet: this.sheet,
+                    name: this.name,
+                    state: 'ready',
+                    rows: 1,
+                    rowsExact: true,
+                    displayRows: 1,
+                    rowsText: '1 rows',
+                    hasHeader: true,
+                    columns: Array.from({ length: this.columns }, (_, i) => ({
+                        name: `c${i}`,
+                        mark: '',
+                        kind: 'text',
+                        format: null,
+                    })),
+                    capabilities: { sort: true, filter: true, search: true },
+                    view: this.view,
+                    pending: false,
+                    filterText: '',
+                    checkpoint: null,
+                    readingStopped: false,
+                };
+            }
+            releaseSql() {
+                this.reply(this.sql, { sheet: 'SQL Result', sheets: ['wide', 'narrow', 'SQL Result'] });
+                this.sql = null;
+                this.postMessage(this.waitingOpen);
+            }
+            postMessage(request) {
+                this.requests.push(request);
+                const { method, params } = request;
+                if (method === 'filterOps')
+                    return this.reply(request, [{ op: 'equals', label: 'Equals', takesValue: true }]);
+                if (method === 'sql') {
+                    this.sql = request;
+                    return;
+                }
+                if (method === 'open') {
+                    if (this.sql) {
+                        this.waitingOpen = request;
+                        return;
+                    }
+                    this.sheet++;
+                    this.columns = params.file.name === 'second.csv' ? 2 : 600;
+                    this.name = 'wide';
+                    return this.reply(request, {
+                        sheets: ['wide', 'narrow'],
+                        supportsSql: true,
+                        usesHeaderOption: false,
+                        isTextFormat: false,
+                        textEncoding: null,
+                    });
+                }
+                if (method === 'sheet') {
+                    this.name = params.name;
+                    if (params.name === 'narrow') {
+                        this.columns = 2;
+                        this.sheet++;
+                    }
+                    return this.reply(request, this.info());
+                }
+                if (method === 'info') return this.reply(request, this.info());
+                if (method === 'setView') {
+                    this.view = { sort: params.sort, filter: params.filter };
+                    this.reply(request, { view: this.view });
+                    queueMicrotask(() =>
+                        this.onmessage({ data: { type: 'events', json: JSON.stringify({ [this.sheet]: 4 }) } }),
+                    );
+                    return;
+                }
+                if (method === 'rows') {
+                    const count = Math.min(500, params.lastColumn - params.firstColumn + 1);
+                    return this.reply(request, {
+                        first: params.first,
+                        firstColumn: params.firstColumn,
+                        rows:
+                            params.first === 0
+                                ? [Array.from({ length: count }, (_, i) => `value-${params.firstColumn + i}`)]
+                                : [],
+                        kinds: params.first === 0 ? ['s'.repeat(count)] : [],
+                        loading: false,
+                        end: true,
+                    });
+                }
+                throw new Error(`unexpected request: ${method}`);
+            }
+        };
+    });
+    const page = await context.newPage();
+    await page.goto(baseUrl);
+    await page.waitForSelector('body[data-ready=true]');
+    await page.setInputFiles('#file-input', {
+        name: 'first.sqlite',
+        mimeType: 'application/octet-stream',
+        buffer: Buffer.from('test'),
+    });
+    await waitForText(cell(page, 0, 0), 'value-0');
+    return page;
+}
+
+describe('frontend regressions', () => {
+    test('ignores SQL results from a file that was replaced', async () => {
+        const page = await regressionPage();
+        await page.locator('#sql-toggle').click();
+        await page.fill('#sql-editor', 'SELECT 1');
+        await page.locator('#sql-run').click();
+        await page.waitForFunction(() => !!window.regressionWorker.sql);
+        await page.setInputFiles('#file-input', {
+            name: 'second.csv',
+            mimeType: 'text/csv',
+            buffer: Buffer.from('x\n1'),
+        });
+        await page.waitForFunction(() => !!window.regressionWorker.waitingOpen);
+        await page.evaluate(() => window.regressionWorker.releaseSql());
+        await waitForText(cell(page, 0, 0), 'value-0');
+        await waitForText(page.locator('#status-rows'), '1 rows');
+        assert.equal(
+            await page.evaluate(() =>
+                window.regressionWorker.requests.some((r) => r.method === 'sheet' && r.params.name === 'SQL Result'),
+            ),
+            false,
+        );
+        await page.context().close();
+    });
+
+    test('fetches columns past 500 while keeping a column frozen', async () => {
+        const page = await regressionPage();
+        await page.locator('.header[data-column="0"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Freeze Up to This Column').click();
+        await cell(page, 0, 0).click();
+        await page.keyboard.press('Control+ArrowRight');
+        await waitForText(cell(page, 0, 599), 'value-599');
+        await waitForText(cell(page, 0, 0), 'value-0');
+        assert.equal(
+            await page.evaluate(() =>
+                window.regressionWorker.requests
+                    .filter((r) => r.method === 'rows')
+                    .every((r) => r.params.lastColumn - r.params.firstColumn < 500),
+            ),
+            true,
+        );
+        await page.context().close();
+    });
+
+    test('filters the displayed column after switching to a narrower sheet', async () => {
+        const page = await regressionPage();
+        await page.locator('#filter-toggle').click();
+        await page.selectOption('#filter-column', '599');
+        await page.locator('#tabs button', { hasText: 'narrow' }).click();
+        await page.waitForFunction(() => document.querySelectorAll('#filter-column option').length === 2);
+        assert.equal(await page.locator('#filter-column').inputValue(), '1');
+        await page.fill('#filter-value', 'value-1');
+        await page.locator('#filter-form button[type=submit]').click();
+        await page.waitForFunction(() => !!window.regressionWorker.view.filter);
+        assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.conditions[0].column), 1);
+        await page.context().close();
+    });
+});
 
 describe('the web app', () => {
     test('shows a CSV file and its row count', async () => {

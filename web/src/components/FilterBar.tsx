@@ -12,6 +12,7 @@ export function FilterBar({ columns, filter, ops, onChange }: FilterBarProps) {
     const [column, setColumn] = useState(0);
     const [op, setOp] = useState(ops[0]?.op ?? 'contains');
     const [value, setValue] = useState('');
+    const selectedColumn = Math.min(column, Math.max(0, columns.length - 1));
     const conditions = filter?.conditions ?? [];
     const combine = filter?.combine ?? 'and';
     const takesValue = ops.find((entry) => entry.op === op)?.takesValue ?? true;
@@ -63,14 +64,14 @@ export function FilterBar({ columns, filter, ops, onChange }: FilterBarProps) {
                 autoComplete="off"
                 onSubmit={(event) => {
                     event.preventDefault();
-                    update([...conditions, { column, op, value }]);
+                    update([...conditions, { column: selectedColumn, op, value }]);
                 }}
             >
                 <select
                     id="filter-column"
                     className="control max-w-48"
                     aria-label="Column"
-                    value={Math.min(column, Math.max(0, columns.length - 1))}
+                    value={selectedColumn}
                     onChange={(event) => setColumn(Number(event.target.value))}
                 >
                     {columns.map((entry, index) => (
