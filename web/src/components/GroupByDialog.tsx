@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TableSkimClient } from '../client';
 import { columnLabel, errorText, usePolled } from '../hooks';
 import { Events, type JobState, SESSION, type SheetInfo } from '../protocol';
 import { Dialog } from './Dialog';
+import type { CheckpointBannerProps } from './Banners';
 
 interface GroupByDialogProps {
     client: TableSkimClient;
@@ -11,12 +12,13 @@ interface GroupByDialogProps {
     hidden: number[];
     onDone: (sheet: string, sheets: string[]) => void;
     onClose: () => void;
+    checkpoint?: CheckpointBannerProps;
 }
 
 const DEFAULT_AGGREGATES = ['count', 'mean'];
 
 /** Groups the rows of the view by key columns into a result sheet. */
-export function GroupByDialog({ client, info, column, hidden, onDone, onClose }: GroupByDialogProps) {
+export function GroupByDialog({ client, info, column, hidden, onDone, onClose, checkpoint }: GroupByDialogProps) {
     const [aggregates, setAggregates] = useState<string[]>([]);
     const [keys, setKeys] = useState<number[]>([column]);
     const [values, setValues] = useState<number[]>([]);
@@ -24,14 +26,20 @@ export function GroupByDialog({ client, info, column, hidden, onDone, onClose }:
     const [running, setRunning] = useState(false);
     const [job, setJob] = useState<JobState | null>(null);
     const [error, setError] = useState('');
+    const mounted = useRef(false);
+
+    // The dialog owns the job, including while its start reply is pending.
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            void client.call('cancelJob', {}).catch(() => {});
+        };
+    }, [client]);
 
     useEffect(() => {
         client.call('aggregates', {}).then(setAggregates, (failure: unknown) => setError(errorText(failure)));
     }, [client]);
-
-    // Closing the dialog stops a Group By still running, as nothing would
-    // add its result.
-    useEffect(() => () => void client.call('cancelJob', {}).catch(() => {}), [client]);
 
     usePolled(
         client,
@@ -40,10 +48,12 @@ export function GroupByDialog({ client, info, column, hidden, onDone, onClose }:
         async () => {
             if (!running) return;
             const state = await client.call('jobState', {});
+            if (!mounted.current) return;
             setJob(state);
             if (state.kind !== 'groupBy' || !state.done) return;
             setRunning(false);
             await client.call('cancelJob', {});
+            if (!mounted.current) return;
             if (state.error) setError(state.error);
             else if (state.sheet && state.sheets) onDone(state.sheet, state.sheets);
         },
@@ -57,6 +67,7 @@ export function GroupByDialog({ client, info, column, hidden, onDone, onClose }:
         setError('');
         try {
             await client.call('startGroupBy', { sheet: info.sheet, keys, values, aggregates: chosen });
+            if (!mounted.current) return;
             setJob(null);
             setRunning(true);
         } catch (failure) {
@@ -70,6 +81,7 @@ export function GroupByDialog({ client, info, column, hidden, onDone, onClose }:
             id="group-by-dialog"
             title="Group By"
             onClose={onClose}
+            checkpoint={checkpoint}
             footer={
                 <>
                     <button

@@ -59,6 +59,50 @@ class OpenAndQuitTest(TuiTestCase):
         self.assertEqual(tui.wait_exit(), 0)
 
 
+class ChartNarrowingTest(TuiTestCase):
+    def test_chart_only_filter_can_be_cleared_without_adding_a_condition(self):
+        path = self.temp_file("numbers.csv", "value\n1\n2\n3\n4\n")
+        tui = self.run_tui(path)
+        tui.wait_text("5 rows")
+        tui.send("H")
+        tui.wait_text("4 rows")
+        tui.send("B")
+        tui.wait_text("4 numbers")
+        tui.send("enter")
+        tui.wait_text("1 number")
+        tui.send("esc")
+        tui.wait_for(lambda text: "Histogram:" not in text)
+        tui.send("f")
+        tui.wait_text("Additional narrowing:")
+        self.assertNotIn("contains", tui.text())
+        tui.send("\x18", "enter")
+        tui.wait_text("4 rows × 1 cols")
+        self.assertNotIn("filter:", status(tui))
+
+    def test_chart_narrowing_keeps_or_and_can_be_cleared_separately(self):
+        path = self.temp_file("numbers.csv", "value\n1\n2\n3\n4\n")
+        tui = self.run_tui(path)
+        tui.wait_text("5 rows")
+        tui.send("H")
+        tui.wait_text("4 rows")
+        tui.send("f")
+        tui.wait_text("Ctrl+N: add")
+        tui.send("1", "ctrl+n", "3", "up", "up", " ", "down", "enter")
+        tui.wait_text("2 rows of 4")
+        tui.send("B")
+        tui.wait_text("2 numbers")
+        tui.send("enter")
+        tui.wait_text("1 number")
+        tui.send("esc")
+        tui.wait_for(lambda text: "Histogram:" not in text)
+        tui.send("f")
+        tui.wait_text("Additional narrowing:")
+        tui.wait_text("Match: any condition (OR)")
+        tui.send("\x18", "enter")  # Ctrl+X clears only chart narrowing
+        tui.wait_text("2 rows of 4")
+        self.assertNotIn("Additional narrowing:", tui.text())
+
+
 class HiddenColumnsTest(TuiTestCase):
     def test_histogram_columns_skip_hidden_ones(self):
         tui = self.run_tui(self.demo("normal.csv"))

@@ -5,6 +5,7 @@ import { errorText, usePolled } from '../hooks';
 import { type Condition, Events, type HistogramState, type SheetInfo } from '../protocol';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
+import type { CheckpointBannerProps } from './Banners';
 
 interface HistogramDialogProps {
     client: TableSkimClient;
@@ -12,12 +13,20 @@ interface HistogramDialogProps {
     column: number;
     onFilter: (conditions: Condition[]) => void;
     onClose: () => void;
+    checkpoint?: CheckpointBannerProps;
 }
 
 const DEFAULT_BINS = 30;
 
 /** A column's histogram over the rows of the view; a bar's click filters to it. */
-export function HistogramDialog({ client, info, column: initialColumn, onFilter, onClose }: HistogramDialogProps) {
+export function HistogramDialog({
+    client,
+    info,
+    column: initialColumn,
+    onFilter,
+    onClose,
+    checkpoint,
+}: HistogramDialogProps) {
     const [column, setColumn] = useState(initialColumn);
     const [bins, setBins] = useState(DEFAULT_BINS);
     const [state, setState] = useState<HistogramState | null>(null);
@@ -67,7 +76,7 @@ export function HistogramDialog({ client, info, column: initialColumn, onFilter,
             : histogram.top.map((top) => ({ label: top.value, range: top.value, count: top.count }))
         : [];
     return (
-        <Dialog id="histogram-dialog" title="Histogram" wide onClose={onClose}>
+        <Dialog id="histogram-dialog" title="Histogram" wide onClose={onClose} checkpoint={checkpoint}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-1">
                     Column

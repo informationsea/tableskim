@@ -149,10 +149,14 @@ namespace
         Filter filter;
         if (const std::string *combine = value["combine"].string(); combine && *combine == "or")
             filter.combine = Filter::Combine::Or;
-        if (const auto *conditions = value["conditions"].array())
+        for (const auto key : {"conditions", "narrowing"})
         {
-            for (const JsonValue &condition : *conditions)
-                filter.conditions.push_back(parseCondition(condition));
+            auto &target = std::string_view(key) == "conditions" ? filter.conditions : filter.narrowing;
+            if (const auto *conditions = value[key].array())
+            {
+                for (const JsonValue &condition : *conditions)
+                    target.push_back(parseCondition(condition));
+            }
         }
         return filter;
     }
@@ -176,21 +180,22 @@ namespace
         {
             json.beginObject()
                 .key("combine")
-                .value(spec.filter->combine == Filter::Combine::Or ? "or" : "and")
-                .key("conditions")
-                .beginArray();
-            for (const FilterCondition &condition : spec.filter->conditions)
+                .value(spec.filter->combine == Filter::Combine::Or ? "or" : "and");
+            for (const auto key : {"conditions", "narrowing"})
             {
-                json.beginObject()
-                    .key("column")
-                    .value(condition.column)
-                    .key("op")
-                    .value(opName(condition.op))
-                    .key("value")
-                    .value(condition.value)
-                    .endObject();
+                json.key(key).beginArray();
+                const auto &conditions = std::string_view(key) == "conditions" ? spec.filter->conditions : spec.filter->narrowing;
+                for (const FilterCondition &condition : conditions)
+                {
+                    json.beginObject()
+                        .key("column").value(condition.column)
+                        .key("op").value(opName(condition.op))
+                        .key("value").value(condition.value)
+                        .endObject();
+                }
+                json.endArray();
             }
-            json.endArray().endObject();
+            json.endObject();
         }
         json.endObject();
     }
@@ -953,6 +958,13 @@ void WebSession::setView(const Params &params, JsonWriter &result)
                 spec.filter->conditions.end())
                 spec.filter->conditions.push_back(parsed);
         }
+    }
+    if (const auto *added = params["addNarrowing"].array())
+    {
+        std::vector<FilterCondition> conditions;
+        for (const JsonValue &condition : *added)
+            conditions.push_back(parseCondition(condition));
+        addNarrowingConditions(spec, std::move(conditions));
     }
     if (spec.filter)
     {

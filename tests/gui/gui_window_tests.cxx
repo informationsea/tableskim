@@ -260,3 +260,37 @@ TEST_CASE("GUI: edits are saved and the file is read again")
         const CellRef cell = reopened->model()->peek(1, 0);
         return cell.state == CellState::Ready && formatCell(*cell.value) == "42"; }));
 }
+
+TEST_CASE("GUI: filter editing preserves chart narrowing and clears it separately", "[regression]")
+{
+    Window window(kDemoData / "normal.parquet");
+    auto *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 54));
+    ViewSpec spec{.filter = Filter{.combine = Filter::Combine::Or,
+                                  .conditions = {{0, FilterOp::Equals, "1"}, {0, FilterOp::Equals, "3"}},
+                                  .narrowing = {{0, FilterOp::GreaterEqual, "2"}}}};
+    view->model()->setView(spec);
+    REQUIRE(window.waitForRows(view, 1));
+    window->show_filter();
+    window->filter_pane->update();
+    REQUIRE(pressButton(*window->main_window, "Apply"));
+    CHECK(waitFor([&] { return view->model()->view() == spec; }));
+    REQUIRE(pressButton(*window->main_window, "Additional narrowing (1) - Clear"));
+    REQUIRE(window.waitForRows(view, 2));
+    CHECK(view->model()->view().filter->combine == Filter::Combine::Or);
+    CHECK(view->model()->view().filter->conditions == spec.filter->conditions);
+    CHECK(view->model()->view().filter->narrowing.empty());
+
+    spec.filter->conditions.clear();
+    spec.filter->narrowing = {{0, FilterOp::Equals, "2"}};
+    view->model()->setView(spec);
+    REQUIRE(window.waitForRows(view, 1));
+    window->filter_pane->update();
+    window->show_filter();
+    REQUIRE(pressButton(*window->main_window, "Apply"));
+    CHECK(view->model()->requestedView().filter->conditions.empty());
+    CHECK(view->model()->requestedView().filter->narrowing == spec.filter->narrowing);
+    REQUIRE(pressButton(*window->main_window, "Clear"));
+    REQUIRE(window.waitForRows(view, 54));
+    CHECK_FALSE(view->model()->view().filtered());
+}

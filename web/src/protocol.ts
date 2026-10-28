@@ -61,6 +61,7 @@ export interface Condition {
 export interface Filter {
     combine: 'and' | 'or';
     conditions: Condition[];
+    narrowing?: Condition[]; // chart selections, ANDed with the editable filter
 }
 
 export interface View {
@@ -270,9 +271,14 @@ export interface Methods {
         result: RowsReply;
     };
     // Changes the view asked for last; parameters left out keep its parts,
-    // and addConditions joins its filter (an AND filter if there is none).
+    // addConditions joins its editable filter; addNarrowing always restricts it.
     setView: {
-        params: SheetParams & { sort?: SortKey[]; filter?: Filter | null; addConditions?: Condition[] };
+        params: SheetParams & {
+            sort?: SortKey[];
+            filter?: Filter | null;
+            addConditions?: Condition[];
+            addNarrowing?: Condition[];
+        };
         result: { view: View };
     };
     sortCycle: { params: SheetParams & { column: number }; result: { view: View } };

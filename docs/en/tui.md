@@ -194,6 +194,11 @@ the file order.
 
 ## Filtering
 
+Chart selections are kept as **Additional narrowing**, ANDed with the editable
+conditions even in OR mode. In the filter editor, `Ctrl+X` removes only this
+additional narrowing; the existing clear-filter command (`F` on the sheet or
+chart) removes both. Further chart selections narrow the remaining rows again.
+
 ### Quick filters
 
 On a cell, `=` keeps only the rows with the same value in that column, and
@@ -215,6 +220,7 @@ Filter pane.
 | `Ctrl+N`      | Add a condition                                               |
 | `Ctrl+D`      | Delete the condition                                          |
 | `Ctrl+U`      | Clear the value                                               |
+| `Ctrl+X`      | Clear additional chart narrowing                              |
 | `Enter`       | Apply the filter (on "Add condition": add a condition)        |
 | `Esc`         | Close without applying                                        |
 

@@ -599,3 +599,35 @@ TEST_CASE("WebSession formats columns and goes to cells")
     CHECK(client.result("goTo", sheetParams(id, "\"text\":\"City\""))["row"].isNull());
     CHECK(client.result("goTo", sheetParams(id, "\"text\":\"ZZZ999999\""))["error"].string());
 }
+
+TEST_CASE("WebSession preserves chart narrowing independently of OR conditions")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    client.result("open", "{\"path\":\"" + path("normal.csv") + "\",\"header\":\"yes\"}");
+    const auto sheet = client.result("sheet", "{\"name\":\"normal.csv\"}");
+    const int id = static_cast<int>(*sheet["sheet"].number());
+    client.readyInfo(id);
+    const std::string filter = R"({"combine":"or","conditions":[{"column":0,"op":"equals","value":"1"},{"column":0,"op":"equals","value":"3"}],"narrowing":[{"column":0,"op":"greaterEqual","value":"2"}]})";
+    client.result("setView", sheetParams(id, "\"sort\":[],\"filter\":" + filter));
+    const auto info = client.readyInfo(id);
+    CHECK(*info["rows"].number() == 1);
+    CHECK(*info["view"]["filter"]["combine"].string() == "or");
+    REQUIRE(info["view"]["filter"]["conditions"].array()->size() == 2);
+    REQUIRE(info["view"]["filter"]["narrowing"].array()->size() == 1);
+    CHECK(cell(client.rows(id, 0, 0), 0, 0) == "3");
+    // A chart selection must extend the latest requested view, including a
+    // sort that may still be applying, and deduplicate repeated conditions.
+    client.result("setView", sheetParams(id, R"("sort":[{"column":0,"ascending":false}])"));
+    const auto added = client.result("setView", sheetParams(id, R"("addNarrowing":[{"column":0,"op":"less","value":"4"},{"column":0,"op":"less","value":"4"}])"));
+    CHECK(added["view"]["sort"].array()->size() == 1);
+    CHECK(*added["view"]["filter"]["combine"].string() == "or");
+    CHECK(added["view"]["filter"]["conditions"].array()->size() == 2);
+    CHECK(added["view"]["filter"]["narrowing"].array()->size() == 2);
+    CHECK(*client.readyInfo(id)["rows"].number() == 1);
+    client.result("setView", sheetParams(id, R"("sort":[],"filter":{"combine":"or","conditions":[],"narrowing":[{"column":0,"op":"equals","value":"2"}]})"));
+    CHECK(*client.readyInfo(id)["rows"].number() == 1);
+    CHECK(cell(client.rows(id, 0, 0), 0, 0) == "2");
+    const auto invalid = client.call("setView", sheetParams(id, R"("filter":{"narrowing":[{"column":0,"op":"matches","value":"("}]})"));
+    REQUIRE(invalid["error"].string());
+}

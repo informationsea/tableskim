@@ -736,16 +736,22 @@ namespace
 
     std::string whereClause(const std::vector<Column> &columns, const std::optional<Filter> &filter)
     {
-        if (!filter || filter->conditions.empty())
+        if (!filter || filter->empty())
             return {};
         const char *combine = filter->combine == Filter::Combine::And ? " AND " : " OR ";
-        std::string sql = " WHERE ";
+        std::string sql = " WHERE (";
+        if (filter->conditions.empty())
+            sql += "TRUE";
         for (size_t i = 0; i < filter->conditions.size(); ++i)
         {
             if (i > 0)
                 sql += combine;
-            sql += conditionExpression(columns, filter->conditions[i]);
+            const auto &condition = filter->conditions[i];
+            sql += conditionExpression(columns, condition);
         }
+        sql += ")";
+        for (const auto &condition : filter->narrowing)
+            sql += " AND (" + conditionExpression(columns, condition) + ")";
         return sql;
     }
 

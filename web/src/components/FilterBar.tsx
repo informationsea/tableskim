@@ -15,9 +15,12 @@ export function FilterBar({ columns, filter, ops, onChange }: FilterBarProps) {
     const selectedColumn = Math.min(column, Math.max(0, columns.length - 1));
     const conditions = filter?.conditions ?? [];
     const combine = filter?.combine ?? 'and';
+    const narrowing = filter?.narrowing ?? [];
     const takesValue = ops.find((entry) => entry.op === op)?.takesValue ?? true;
     const update = (next: Condition[], nextCombine = combine) =>
-        onChange(next.length > 0 ? { combine: nextCombine, conditions: next } : null);
+        onChange(
+            next.length > 0 || narrowing.length > 0 ? { combine: nextCombine, conditions: next, narrowing } : null,
+        );
 
     return (
         <section
@@ -58,6 +61,27 @@ export function FilterBar({ columns, filter, ops, onChange }: FilterBarProps) {
                     );
                 })}
             </ul>
+            {narrowing.length > 0 && (
+                <span
+                    id="filter-narrowing"
+                    className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5"
+                    title={narrowing
+                        .map(
+                            (c) =>
+                                `${columns[c.column]?.name ?? c.column} ${ops.find((o) => o.op === c.op)?.label ?? c.op} ${c.value}`,
+                        )
+                        .join(' AND ')}
+                >
+                    Additional narrowing ({narrowing.length})
+                    <button
+                        type="button"
+                        aria-label="Clear additional narrowing"
+                        onClick={() => onChange(conditions.length > 0 ? { combine, conditions, narrowing: [] } : null)}
+                    >
+                        ×
+                    </button>
+                </span>
+            )}
             <form
                 id="filter-form"
                 className="flex min-w-0 flex-wrap gap-1"
