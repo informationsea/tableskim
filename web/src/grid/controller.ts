@@ -43,11 +43,20 @@ export interface Viewport {
     columnShift: number; // pixels of firstColumn left of the body
 }
 
+/** A right click: on a header (row null) or a cell. */
+export interface ContextTarget {
+    row: number | null;
+    column: number;
+    x: number;
+    y: number;
+}
+
 export interface GridCallbacks {
     fetchRows: (first: number, last: number, firstColumn: number, lastColumn: number) => Promise<RowsReply>;
     onSort: (column: number) => void;
     onSelect: (cell: Cell, range: Range) => void;
     onCopy: (range: Range) => void;
+    onContextMenu: (target: ContextTarget) => void;
 }
 
 interface CachedRow {
@@ -64,6 +73,10 @@ export class GridController {
     filteredColumns = new Set<number>();
     rowCount = 0;
     rowNumberWidth = 56;
+    // Hidden columns are drawn 0 pixels wide; the first `frozen` columns
+    // stay in view, right of the row numbers.
+    hidden = new Set<number>();
+    frozen = 0;
     cursor: Cell = { row: 0, column: 0 };
     anchor: Cell = { row: 0, column: 0 };
 
@@ -148,6 +161,39 @@ export class GridController {
         this.redraw();
     }
 
+    /** Hidden and frozen columns: part of the view, kept by the app. */
+    setLayout(hidden: Set<number>, frozen: number) {
+        this.hidden = hidden;
+        this.frozen = Math.min(frozen, this.columns.length);
+        if (this.hidden.has(this.cursor.column)) {
+            const column = this.visibleColumn(this.cursor.column, 1) ?? this.visibleColumn(this.cursor.column, -1);
+            if (column !== null) {
+                this.cursor = { ...this.cursor, column };
+                this.anchor = { ...this.anchor, column };
+            }
+        }
+        this.updateExtent();
+        this.redraw();
+    }
+
+    /** The column's width as drawn. */
+    width(column: number): number {
+        return this.hidden.has(column) ? 0 : (this.widths[column] ?? 0);
+    }
+
+    frozenWidth(): number {
+        let width = 0;
+        for (let column = 0; column < this.frozen; column++) width += this.width(column);
+        return width;
+    }
+
+    // The first column from `column` on (step 1) or back (step -1) that is
+    // not hidden.
+    private visibleColumn(column: number, step: 1 | -1): number | null {
+        for (let c = column; c >= 0 && c < this.columns.length; c += step) if (!this.hidden.has(c)) return c;
+        return null;
+    }
+
     /** The cached rows may be out of date (rows loaded, cells changed). */
     dataChanged() {
         this.generation++;
@@ -179,7 +225,12 @@ export class GridController {
     /** Moves the cursor (and, unless extending, the anchor) and scrolls to it. */
     select(cell: Cell, extend = false) {
         const row = Math.max(0, Math.min(cell.row, Math.max(0, this.rowCount - 1)));
-        const column = Math.max(0, Math.min(cell.column, Math.max(0, this.columns.length - 1)));
+        let column = Math.max(0, Math.min(cell.column, Math.max(0, this.columns.length - 1)));
+        if (this.hidden.has(column))
+            column =
+                this.visibleColumn(column, cell.column < this.cursor.column ? -1 : 1) ??
+                this.visibleColumn(column, cell.column < this.cursor.column ? 1 : -1) ??
+                column;
         this.cursor = { row, column };
         if (!extend) this.anchor = { row, column };
         this.followEnd = false;
@@ -205,12 +256,13 @@ export class GridController {
             const target = cell.row < view.firstRow + 1 ? cell.row : cell.row - bodyRows + 2;
             scroller.scrollTop = this.rowToScrollTop(Math.max(0, target));
         }
+        if (cell.column < this.frozen) return; // always in view
         let x = 0;
-        for (let i = 0; i < cell.column; i++) x += this.widths[i];
-        const visibleWidth = view.width - this.rowNumberWidth;
+        for (let i = this.frozen; i < cell.column; i++) x += this.width(i);
+        const visibleWidth = view.width - this.rowNumberWidth - this.frozenWidth();
         if (x < scroller.scrollLeft) scroller.scrollLeft = x;
-        else if (x + this.widths[cell.column] > scroller.scrollLeft + visibleWidth)
-            scroller.scrollLeft = x + this.widths[cell.column] - visibleWidth;
+        else if (x + this.width(cell.column) > scroller.scrollLeft + visibleWidth)
+            scroller.scrollLeft = x + this.width(cell.column) - visibleWidth;
     }
 
     private fitWidth(text: string, header: boolean): number {
@@ -249,15 +301,16 @@ export class GridController {
             this.rowCount - 1,
             firstRow + Math.ceil((height - HEADER_HEIGHT + rowShift) / ROW_HEIGHT),
         );
+        // The columns scrolled past the frozen ones.
         let x = 0;
-        let firstColumn = 0;
-        while (firstColumn < this.columns.length - 1 && x + this.widths[firstColumn] <= scrollLeft)
-            x += this.widths[firstColumn++];
+        let firstColumn = Math.min(this.frozen, Math.max(0, this.columns.length - 1));
+        while (firstColumn < this.columns.length - 1 && x + this.width(firstColumn) <= scrollLeft)
+            x += this.width(firstColumn++);
         const columnShift = scrollLeft - x;
         let lastColumn = firstColumn;
-        let right = (this.widths[firstColumn] ?? 0) - columnShift;
-        while (lastColumn < this.columns.length - 1 && right < width - this.rowNumberWidth)
-            right += this.widths[++lastColumn];
+        let right = this.width(firstColumn) - columnShift;
+        const room = width - this.rowNumberWidth - this.frozenWidth();
+        while (lastColumn < this.columns.length - 1 && right < room) right += this.width(++lastColumn);
         return { width, height, firstRow, lastRow, rowShift, firstColumn, lastColumn, columnShift };
     }
 
@@ -269,7 +322,8 @@ export class GridController {
     updateExtent() {
         const scroller = this.scroller;
         if (!scroller || !this.layer || !this.spacer) return;
-        const totalWidth = this.rowNumberWidth + this.widths.reduce((sum, width) => sum + width, 0);
+        let totalWidth = this.rowNumberWidth;
+        for (let column = 0; column < this.columns.length; column++) totalWidth += this.width(column);
         const height = scroller.clientHeight;
         this.spacer.style.width = `${totalWidth}px`;
         this.spacer.style.height = `${HEADER_HEIGHT + this.contentHeight()}px`;
@@ -289,19 +343,21 @@ export class GridController {
     /** Asks for the rows in view (and some around) unless they are cached. */
     fetchIfNeeded(view: Viewport) {
         if (this.fetching || view.lastRow < view.firstRow || this.columns.length === 0) return;
+        // Frozen columns are fetched with the ones in view.
+        const leftColumn = this.frozen > 0 ? 0 : view.firstColumn;
         let needed = false;
         for (let row = view.firstRow; row <= view.lastRow && !needed; row++) {
             const cached = this.cache.get(row);
             needed =
                 !cached ||
                 cached.generation < this.generation ||
-                cached.firstColumn > view.firstColumn ||
+                cached.firstColumn > leftColumn ||
                 cached.firstColumn + cached.kinds.length - 1 < Math.min(view.lastColumn, this.columns.length - 1);
         }
         if (!needed) return;
         const first = Math.max(0, view.firstRow - ROW_MARGIN);
         const last = view.lastRow + ROW_MARGIN;
-        const firstColumn = Math.max(0, view.firstColumn - COLUMN_MARGIN);
+        const firstColumn = Math.max(0, leftColumn - COLUMN_MARGIN);
         const lastColumn = Math.min(this.columns.length - 1, view.lastColumn + COLUMN_MARGIN);
         const generation = this.generation;
         this.fetching = true;
@@ -357,6 +413,7 @@ export class GridController {
     }
 
     mouseDown(event: MouseEvent) {
+        if (event.button !== 0) return; // a right click opens a menu: see contextMenu()
         const target = event.target as HTMLElement;
         const resize = target.closest<HTMLElement>('[data-resize]');
         if (resize) {
@@ -382,6 +439,29 @@ export class GridController {
             );
         }
         this.scroller?.focus();
+    }
+
+    contextMenu(event: MouseEvent) {
+        const target = event.target as HTMLElement;
+        const header = target.closest<HTMLElement>('.header');
+        const cell = target.closest<HTMLElement>('.cell');
+        if (!header && !cell) return;
+        event.preventDefault();
+        const column = Number((header ?? cell)?.dataset.column);
+        let row: number | null = null;
+        if (header) {
+            // The menu is about the column: the cursor moves there.
+            const range = this.selection();
+            if (column < range.left || column > range.right) this.select({ row: this.cursor.row, column });
+        } else if (cell) {
+            row = Number(cell.dataset.row);
+            // Inside the selection, the menu is about the selection.
+            const range = this.selection();
+            if (row < range.top || row > range.bottom || column < range.left || column > range.right)
+                this.select({ row, column });
+        }
+        this.scroller?.focus();
+        this.callbacks().onContextMenu({ row, column, x: event.clientX, y: event.clientY });
     }
 
     // Extends the selection while the mouse moves with the button down.
@@ -417,6 +497,14 @@ export class GridController {
         window.addEventListener('mouseup', up);
     }
 
+    private firstVisible(): number {
+        return this.visibleColumn(0, 1) ?? 0;
+    }
+
+    private lastVisible(): number {
+        return this.visibleColumn(this.columns.length - 1, -1) ?? 0;
+    }
+
     keyDown(event: KeyboardEvent) {
         const page = Math.max(1, Math.floor(((this.scroller?.clientHeight ?? 0) - HEADER_HEIGHT) / ROW_HEIGHT) - 1);
         const { row, column } = this.cursor;
@@ -432,10 +520,10 @@ export class GridController {
                 next = { row: ctrl ? 0 : row - 1, column };
                 break;
             case 'ArrowRight':
-                next = { row, column: ctrl ? lastColumn : column + 1 };
+                next = { row, column: (ctrl ? null : this.visibleColumn(column + 1, 1)) ?? this.lastVisible() };
                 break;
             case 'ArrowLeft':
-                next = { row, column: ctrl ? 0 : column - 1 };
+                next = { row, column: (ctrl ? null : this.visibleColumn(column - 1, -1)) ?? this.firstVisible() };
                 break;
             case 'PageDown':
                 next = { row: row + page, column };
@@ -444,10 +532,10 @@ export class GridController {
                 next = { row: row - page, column };
                 break;
             case 'Home':
-                next = ctrl ? { row: 0, column: 0 } : { row, column: 0 };
+                next = { row: ctrl ? 0 : row, column: this.firstVisible() };
                 break;
             case 'End':
-                next = ctrl ? { row: lastRow, column: lastColumn } : { row, column: lastColumn };
+                next = { row: ctrl ? lastRow : row, column: this.lastVisible() };
                 break;
             case 'c':
             case 'C':

@@ -3,7 +3,11 @@
 
 import type { Method, Methods } from './protocol';
 
-type WorkerMessage = { type: 'ready' } | { type: 'reply'; json: string } | { type: 'events'; json: string };
+type WorkerMessage =
+    | { type: 'ready' }
+    | { type: 'reply'; json: string }
+    | { type: 'events'; json: string }
+    | { type: 'file'; id: number; data: ArrayBuffer };
 
 interface Pending {
     resolve: (value: unknown) => void;
@@ -47,6 +51,15 @@ export class TableSkimClient {
         });
     }
 
+    /** The bytes of a file the session wrote (an export's JobState.file). */
+    readFile(path: string): Promise<ArrayBuffer> {
+        const id = this.nextId++;
+        return new Promise((resolve, reject) => {
+            this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+            this.worker.postMessage({ id, method: 'readFile', params: { path } });
+        });
+    }
+
     /**
      * Called with the sheets that changed (sheet id -> Events bits).
      * Returns a function that removes the listener.
@@ -74,6 +87,10 @@ export class TableSkimClient {
             this.pending.delete(reply.id);
             if (reply.error !== undefined) request.reject(new Error(reply.error));
             else request.resolve(reply.result);
+        } else if (message.type === 'file') {
+            const request = this.pending.get(message.id);
+            this.pending.delete(message.id);
+            request?.resolve(message.data);
         } else if (message.type === 'events') {
             const bits = JSON.parse(message.json) as Record<string, number>;
             const events = new Map(Object.entries(bits).map(([sheet, value]) => [Number(sheet), value]));

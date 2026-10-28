@@ -10,7 +10,14 @@ export const Events = {
     SEARCH: 1 << 3,
     CHECKPOINT: 1 << 4,
     STATE: 1 << 5,
+    STATS: 1 << 6,
+    HISTOGRAM: 1 << 7,
+    SCATTER: 1 << 8,
+    JOB: 1 << 9, // reported for SESSION
 } as const;
+
+/** The "sheet" that session-wide events (JOB) are reported for. */
+export const SESSION = 0;
 
 export type HeaderMode = 'auto' | 'yes' | 'no';
 
@@ -22,9 +29,22 @@ export interface BookInfo {
     textEncoding: string | null;
 }
 
+export type DateStyle = 'iso' | 'slash' | 'monthDayYear' | 'dayMonthYear' | 'japanese' | 'monthName';
+
+/** How a column shows its values; copies and exports keep the values. */
+export interface ColumnFormat {
+    thousands: boolean;
+    decimals: number | null; // as stored
+    date: DateStyle;
+}
+
+export type ColumnKind = 'unknown' | 'number' | 'date' | 'dateTime' | 'boolean' | 'text' | 'mixed';
+
 export interface Column {
     name: string;
     mark: string; // "#" numbers, "@" dates, "?" booleans, "" otherwise
+    kind: ColumnKind; // judged from the first rows read
+    format: ColumnFormat | null;
 }
 
 export interface SortKey {
@@ -114,6 +134,126 @@ export interface FilterOpInfo {
     takesValue: boolean;
 }
 
+export interface DateStyleInfo {
+    style: DateStyle;
+    example: string;
+}
+
+/** Conditions a filter request returned, for the view's filter. */
+export interface Conditions {
+    conditions: Condition[];
+}
+
+export interface SqlTable {
+    name: string;
+    columns: string[];
+}
+
+/** Offsets are bytes of the SQL as UTF-8. */
+export interface SqlCompletion {
+    begin: number;
+    end: number;
+    common: string; // the start every candidate shares
+    candidates: string[];
+}
+
+export interface ValueCount {
+    value: string;
+    count: number;
+}
+
+export interface StatsState {
+    active: boolean;
+    done: boolean;
+    column: number;
+    scannedRows: number;
+    lines: { label: string; value: string }[];
+    top: ValueCount[];
+}
+
+export type HistogramKind = 'number' | 'time' | 'none';
+
+export interface Histogram {
+    kind: HistogramKind;
+    summary: string;
+    bins: { label: string; range: string; count: number }[];
+    top: ValueCount[]; // for kind "none"
+}
+
+export interface HistogramState {
+    active: boolean;
+    done: boolean;
+    counting: boolean; // the second pass
+    column: number;
+    scannedRows: number;
+    histogram: Histogram;
+}
+
+export interface ScatterAxis {
+    kind: HistogramKind;
+    ticks: { at: number; label: string }[];
+    edges: number[]; // of the density grid's bins
+    binRanges: string[];
+}
+
+export interface BoxStats {
+    count: number;
+    min: number;
+    q1: number;
+    median: number;
+    q3: number;
+    max: number;
+    lowWhisker: number;
+    highWhisker: number;
+    mean: number;
+    outliers: number[];
+}
+
+export interface ScatterState {
+    active: boolean;
+    done: boolean;
+    counting: boolean;
+    x: number;
+    y: number;
+    scannedRows: number;
+    plottable: boolean;
+    summary: string;
+    statsText: string;
+    pairs: number;
+    xAxis: ScatterAxis;
+    yAxis: ScatterAxis;
+    counts: number[]; // by X bin (or category), then Y bin
+    categories: string[]; // a categorical X; empty otherwise
+    boxes: BoxStats[];
+    boxTexts: string[];
+    points: number[]; // x, y, view row, ... (when asked for)
+}
+
+export type ExportFormat = 'csv' | 'tsv' | 'excel' | 'parquet';
+
+export interface ExportFormatInfo {
+    format: ExportFormat;
+    label: string;
+    extension: string;
+}
+
+/** An export or a Group By, run in the background. */
+export type JobState =
+    | { kind: null }
+    | {
+          kind: 'export' | 'groupBy';
+          done: boolean;
+          rows: number;
+          error?: string; // once done: empty if it worked
+          file?: string; // export: read it with TableSkimClient.readFile()
+          fileName?: string;
+          size?: number;
+          sheet?: string; // groupBy: the result sheet
+          sheets?: string[];
+      };
+
+export type GoToReply = { row: number | null; column: number | null } | { error: string };
+
 type Empty = Record<string, never>;
 type SheetParams = { sheet: number };
 
@@ -141,8 +281,47 @@ export interface Methods {
     };
     continueReading: { params: SheetParams; result: Empty };
     stopReading: { params: SheetParams; result: Empty };
-    copy: { params: SheetParams & { top: number; left: number; bottom: number; right: number }; result: CopyReply };
+    copy: {
+        params: SheetParams & { top: number; left: number; bottom: number; right: number; hidden?: number[] };
+        result: CopyReply;
+    };
+    goTo: { params: SheetParams & { text: string }; result: GoToReply };
     filterOps: { params: Empty; result: FilterOpInfo[] };
+    cellFilter: { params: SheetParams & { row: number; column: number; equal: boolean }; result: Conditions };
+    setFormat: { params: SheetParams & { column: number } & ColumnFormat; result: Empty };
+    dateStyles: { params: Empty; result: DateStyleInfo[] };
+    sql: { params: { sql: string }; result: { sheet: string; sheets: string[] } };
+    sqlSchema: { params: Empty; result: SqlTable[] };
+    completeSql: { params: { sql: string; cursor: number }; result: SqlCompletion };
+    startStats: { params: SheetParams & { column: number }; result: StatsState };
+    statsState: { params: SheetParams; result: StatsState };
+    startHistogram: { params: SheetParams & { column: number; bins?: number }; result: HistogramState };
+    histogramState: { params: SheetParams; result: HistogramState };
+    histogramFilter: { params: SheetParams & { bin: number }; result: Conditions };
+    defaultScatter: {
+        params: SheetParams & { column: number; firstRow?: number; lastRow?: number; hidden?: number[] };
+        result: { x: number; y: number };
+    };
+    startScatter: { params: SheetParams & { x: number; y: number; points?: boolean }; result: Empty };
+    scatterState: { params: SheetParams & { points?: boolean }; result: ScatterState };
+    scatterFilter: {
+        params: SheetParams &
+            (
+                | { xBin: number; yBin: number }
+                | { category: number }
+                | { xLow: number; xHigh: number; yLow: number; yHigh: number }
+            );
+        result: Conditions;
+    };
+    exportFormats: { params: Empty; result: ExportFormatInfo[] };
+    startExport: { params: SheetParams & { format: ExportFormat; hidden?: number[] }; result: Empty };
+    aggregates: { params: Empty; result: string[] };
+    startGroupBy: {
+        params: SheetParams & { keys: number[]; values: number[]; aggregates: string[] };
+        result: Empty;
+    };
+    jobState: { params: Empty; result: JobState };
+    cancelJob: { params: Empty; result: Empty };
 }
 
 export type Method = keyof Methods;

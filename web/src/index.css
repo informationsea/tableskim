@@ -18,6 +18,17 @@
     --danger: #b42318;
     --danger-bg: #fdecea;
     --loading: #c3c7ce;
+    /* Charts: one series hue, hairline grid, and a sequential ramp (light to
+       dark) for counts; validated with the dataviz palette checks. */
+    --series: #2a78d6;
+    --series-hover: #5598e7;
+    --chart-grid: #e1e0d9;
+    --chart-axis: #c3c2b7;
+    --seq-1: #86b6ef;
+    --seq-2: #3987e5;
+    --seq-3: #256abf;
+    --seq-4: #184f95;
+    --seq-5: #0d366b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,6 +48,16 @@
         --danger: #ff8a80;
         --danger-bg: #3d2020;
         --loading: #4a4e56;
+        --series: #3987e5;
+        --series-hover: #6da7ec;
+        --chart-grid: #2c2c2a;
+        --chart-axis: #383835;
+        /* Few rows sit near the dark surface, many stand out. */
+        --seq-1: #184f95;
+        --seq-2: #256abf;
+        --seq-3: #3987e5;
+        --seq-4: #6da7ec;
+        --seq-5: #b7d3f6;
     }
 }
 
@@ -56,6 +77,10 @@
     --color-danger: var(--danger);
     --color-danger-bg: var(--danger-bg);
     --color-loading: var(--loading);
+    --color-series: var(--series);
+    --color-series-hover: var(--series-hover);
+    --color-chart-grid: var(--chart-grid);
+    --color-chart-axis: var(--chart-axis);
 }
 
 @layer base {

@@ -7,7 +7,12 @@ as the GUI and the TUI share the core. The file never leaves the browser.
 - `tableskim-wasm` (`wasm_api.cxx`, `web_session.{hxx,cxx}`,
   `web_json.{hxx,cxx}`) is the module the web app runs in a worker.
 - `web/` is the app (React, TypeScript, Tailwind CSS, built with Vite): a
-  virtual grid, sheet tabs, sorting, filtering, searching, copying.
+  virtual grid, sheet tabs, sorting, filtering, searching, copying, hidden
+  and frozen columns, display formats, Go To, column statistics,
+  histograms, scatter plots (points, density, box plots), Group By, SQL
+  (with completion and a history) and exporting the view. What the native
+  UIs have and it lacks: editing, Follow, converting a text file to
+  Parquet or DuckDB, and saving charts as images.
 - `tableskim-wasm-probe` (`wasm_probe.cxx`, `web/probe/`) was the
   feasibility probe: it opens one file, reads it to the end, sorts it and
   runs an SQL query, timing each step, in Node.js, a browser or natively.
@@ -114,8 +119,15 @@ Sources (`web/src/`): `protocol.ts` types the messages, `client.ts` sends
 them, `grid/controller.ts` is the virtual grid's state and behaviour
 (viewport, row cache, selection, keyboard, mouse) and `grid/Grid.tsx`
 draws it; `App.tsx` holds the app's state and `components/` the rest of
-the page. Colours are tokens in `index.css` (light and dark), used through
-Tailwind's utilities. The end-to-end tests find elements by the ids and
+the page: the panels (`StatsPanel`, `SqlPanel`), the dialogs (`Dialog`,
+the browser's `<dialog>`) and the context menu (`Menu`). `charts/` draws
+the histogram (SVG) and the scatter plot (a canvas, for its many points).
+`hooks.ts` has `usePolled()`, which asks for a state again on the model's
+events, one request at a time, as the statistics, charts and jobs do.
+Colours are tokens in `index.css` (light and dark), used through
+Tailwind's utilities; the charts' (`--series`, the sequential `--seq-1`
+to `--seq-5` of the density) were checked with the dataviz palette
+validator against both surfaces. The end-to-end tests find elements by the ids and
 classes the app gives them (`#file-input`, `.cell[data-row]`, `.header`,
 `#status-rows`, ...): keep them when changing the markup.
 
@@ -173,8 +185,38 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `search` / `cancelSearch` / `searchState` | `sheet`, `text`, `caseSensitive`, `regex`, `column` | `active`, `done`, `truncated`, `error`, `scannedRows`, `hits`, `generation` |
 | `findHit` | `sheet`, `row`, `column`, `forward`, `includeFrom` | `index` (null if none), `row`, `column`, `hits`, `wrapped`, `pending` |
 | `continueReading` / `stopReading` | `sheet` | |
-| `copy` | `sheet`, `top`, `left`, `bottom`, `right` | `text` (TSV), `copiedRows`, `skippedRows` |
+| `copy` | `sheet`, `top`, `left`, `bottom`, `right`, `hidden` (columns left out) | `text` (TSV), `copiedRows`, `skippedRows` |
+| `goTo` | `sheet`, `text` (`120`, `C`, a header name, `C120`) | `row`, `column` (null where not given) or `error` |
 | `filterOps` | | `op`, `label`, `takesValue` for each filter operator |
+| `cellFilter` | `sheet`, `row`, `column`, `equal` | `conditions`: a filter on the cell's value, to add to the view's |
+| `setFormat` | `sheet`, `column`, `thousands`, `decimals` (null: as stored), `date` | (the rows' texts change; `info` gives each column's `format` and `kind`) |
+| `dateStyles` | | `style`, `example` for each date style |
+| `sql` | `sql` | `sheet` (the result's), `sheets` |
+| `sqlSchema` | | `name`, `columns` of each table and view |
+| `completeSql` | `sql`, `cursor` (bytes of UTF-8) | `begin`, `end` (bytes), `common`, `candidates` |
+| `startStats` / `statsState` | `sheet`, `column` | `active`, `done`, `column`, `scannedRows`, `lines` (`label`, `value`), `top` (`value`, `count`) |
+| `startHistogram` / `histogramState` | `sheet`, `column`, `bins` (2 to 200) | `active`, `done`, `counting`, `column`, `scannedRows`, `histogram` (`kind`, `summary`, `bins`: `label`, `range`, `count`; `top` without bins) |
+| `histogramFilter` | `sheet`, `bin` (a frequent value's index without bins) | `conditions` |
+| `defaultScatter` | `sheet`, `column`, `hidden` | `x`, `y`: the columns to start with |
+| `startScatter` / `scatterState` | `sheet`, `x`, `y`; `points` (state: send them) | `done`, `plottable`, `summary`, `statsText`, `pairs`, `xAxis` / `yAxis` (`kind`, `ticks`, `edges`, `binRanges`), `counts` (by X bin, then Y bin), `categories`, `boxes`, `boxTexts`, `points` (x, y, view row, ...) |
+| `scatterFilter` | `sheet` and `xBin`, `yBin`; or `category`; or `xLow`, `xHigh`, `yLow`, `yHigh` | `conditions` |
+| `exportFormats` | | `format`, `label`, `extension` of each |
+| `startExport` | `sheet`, `format` (`csv`, `tsv`, `excel`, `parquet`), `hidden` | (a job) |
+| `aggregates` | | the aggregates' names |
+| `startGroupBy` | `sheet`, `keys`, `values` (columns), `aggregates` (names) | (a job) |
+| `jobState` | | `kind` (`export`, `groupBy` or null), `done`, `rows`, `error`; an export's `file`, `fileName`, `size`; a Group By's `sheet`, `sheets` |
+| `cancelJob` | | (stops the job; removes an export's file) |
+
+Statistics, histograms and scatter plots run on the book's worker and
+report their progress as events (`STATS`, `HISTOGRAM`, `SCATTER`); the
+model starts them over when the view changes. An export or a Group By is
+a job on a thread of its own, one at a time, reported as `JOB` for sheet
+`0` (`SESSION`). An export is written into the worker's memory file
+system; the page reads it with `{method: 'readFile', params: {path}}`,
+which `wasm_worker_pre.js` answers itself with the bytes
+(`{type: 'file', id, data}`), saves it, and frees it with `cancelJob`. A
+query or a Group By replaces the sheet of its name: the old sheet id is
+gone.
 
 ## Probe results
 

@@ -201,6 +201,164 @@ describe('the web app', () => {
         }
         await page.context().close();
     });
+
+    test('follows the cursor with statistics and filters by a cell', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        await page.locator('#stats-toggle').click();
+        const stat = (label) => page.locator('#stats-table tr', { hasText: label }).locator('td');
+        await waitForText(stat('Rows'), '54');
+        await waitForText(stat('Min'), '20');
+        await cell(page, 0, 0).click();
+        await waitForText(page.locator('#stats-panel h2'), 'ID');
+        await waitForText(stat('Max'), '54');
+
+        // Osaka, from a cell's menu.
+        await cell(page, 0, 4).click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Filter: Equal to This Value').click();
+        await waitForText(page.locator('#status-rows'), '4 rows of 54');
+        await waitForText(stat('Rows'), '4');
+        await page.context().close();
+    });
+
+    test('filters by the bars of a histogram', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 4).click();
+        await page.locator('#histogram-button').click();
+        // City is text: its most frequent values, Fukuoka first.
+        await waitForText(page.locator('#histogram-summary'), 'Click a bar');
+        await page.locator('#histogram-chart .bar').first().click();
+        await waitForText(page.locator('#status-rows'), '9 rows of 54');
+
+        await page.selectOption('#histogram-column', '3');
+        await waitForText(page.locator('#histogram-summary'), '9 numbers');
+        await page.locator('#histogram-table').waitFor({ state: 'detached' });
+        await page.locator('#histogram-dialog button', { hasText: 'Table' }).click();
+        const rows = page.locator('#histogram-table tbody tr');
+        await rows.first().waitFor();
+        let total = 0;
+        for (const count of await rows.locator('td:last-child').allTextContents()) total += Number(count);
+        assert.equal(total, 9);
+        await page.keyboard.press('Escape');
+        await page.locator('#histogram-dialog').waitFor({ state: 'detached' });
+        await page.context().close();
+    });
+
+    test('plots a scatter plot and filters by a rectangle drawn on it', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        await page.locator('#scatter-button').click();
+        await waitForText(page.locator('#scatter-summary'), '53 rows plotted');
+        await page.locator('#scatter-density').click();
+        // Around the whole plot: every row plotted is kept.
+        const box = await page.locator('#scatter-chart').boundingBox();
+        await page.mouse.move(box.x + 66, box.y + 14);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2, box.y + 200, { steps: 4 });
+        await page.mouse.move(box.x + box.width - 18, box.y + box.height - 46, { steps: 4 });
+        await page.mouse.up();
+        await waitForText(page.locator('#status-rows'), '53 rows of 54');
+
+        // A text X: box plots of each city.
+        await page.selectOption('#scatter-x', '4');
+        await page.locator('#scatter-boxes:not([disabled])').click();
+        await waitForText(page.locator('#scatter-summary'), 'Click a box');
+        await page.context().close();
+    });
+
+    test('hides, freezes and formats columns and goes to a cell', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await page.locator('.header[data-column="2"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Hide Column').click();
+        await page.locator('.header[data-column="2"]').waitFor({ state: 'detached' });
+        await waitForText(page.locator('#status-rows'), '1 column hidden');
+
+        await page.locator('.header[data-column="1"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Freeze Up to This Column').click();
+        await page.locator('.header.frozen[data-column="1"]').waitFor();
+
+        await page.locator('.header[data-column="6"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Format…').click();
+        await page.check('#format-thousands');
+        await page.selectOption('#format-decimals', '0');
+        await page.locator('#format-apply').click();
+        await waitForText(cell(page, 0, 6), '941,752');
+
+        // Copies keep the values, without hidden columns.
+        await cell(page, 0, 1).click();
+        await cell(page, 0, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+        await waitForText(page.locator('#status-cell'), 'Copied 1 rows');
+        assert.equal(
+            await page.evaluate(() => navigator.clipboard.readText()),
+            'Sakura Brown\t45\tOsaka\tEngineering\t941751.65\n',
+        );
+
+        await page.keyboard.press('Control+g');
+        await page.fill('#go-to-text', 'E30');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('.cell.cursor[data-row="29"][data-column="4"]');
+        await page.context().close();
+    });
+
+    test('exports the view and groups it into a sheet', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await page.locator('.header[data-column="2"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Hide Column').click();
+        await page.locator('#export-button').click();
+        const download = page.waitForEvent('download');
+        await page.locator('#export-start').click();
+        const file = await download;
+        assert.equal(file.suggestedFilename(), 'normal-export.csv');
+        const text = require('node:fs').readFileSync(await file.path(), 'utf8');
+        assert.match(text, /^ID,Name,Age,City,/);
+        await waitForText(page.locator('#export-status'), 'Saved normal-export.csv');
+        await waitForText(page.locator('#export-status'), '54 rows');
+        await page.keyboard.press('Escape');
+
+        await cell(page, 0, 4).click();
+        await page.locator('#group-by-button').click();
+        await page.locator('.group-value').nth(2).check(); // Age: Email is hidden
+        await page.locator('#group-by-run').click();
+        await page.waitForFunction(
+            () => document.querySelector('#tabs [aria-selected=true]')?.textContent === 'Group By',
+        );
+        await waitForText(page.locator('#status-rows'), '12 rows');
+        await waitForText(page.locator('.header .name'), 'Age mean');
+        await page.context().close();
+    });
+
+    test('runs SQL with completion and history', async () => {
+        const page = await newPage();
+        await open(page, demo('demo.sqlite3'));
+        await page.locator('#sql-toggle').click();
+        await page.fill('#sql-editor', 'SELECT City, count(*) AS n FROM nor');
+        await page.press('#sql-editor', 'End');
+        await page.press('#sql-editor', 'Tab');
+        await page.waitForFunction(() => document.querySelector('#sql-editor').value.endsWith('FROM normal'));
+        await page.locator('#sql-editor').pressSequentially(' GROUP BY City ORDER BY n DESC, City');
+        await page.press('#sql-editor', 'Control+Enter');
+        await waitForText(page.locator('#sql-status'), 'SQL Result');
+        await page.waitForFunction(
+            () => document.querySelector('#tabs [aria-selected=true]')?.textContent === 'SQL Result',
+        );
+        await waitForText(cell(page, 0, 0), 'Fukuoka');
+        await waitForText(cell(page, 0, 1), '9');
+
+        await page.fill('#sql-editor', 'SELECT nonsense FROM nowhere');
+        await page.locator('#sql-run').click();
+        await page.locator('#sql-status.text-danger').waitFor();
+        await page.press('#sql-editor', 'Control+ArrowUp');
+        await page.waitForFunction(() => document.querySelector('#sql-editor').value.startsWith('SELECT nonsense'));
+        await page.press('#sql-editor', 'Control+ArrowUp');
+        await page.waitForFunction(() => document.querySelector('#sql-editor').value.startsWith('SELECT City'));
+        await page.context().close();
+    });
 });
 
 // GitHub Pages cannot send the headers that make the page cross-origin

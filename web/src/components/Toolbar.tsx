@@ -2,27 +2,25 @@ import { useRef } from 'react';
 import type { HeaderMode } from '../protocol';
 import { SearchBox, type SearchBoxProps } from './SearchBox';
 
+export interface Tool {
+    id: string;
+    label: string;
+    title: string;
+    enabled: boolean;
+    pressed?: boolean; // a panel's toggle
+    onClick: () => void;
+}
+
 interface ToolbarProps {
     onOpen: (file: File) => void;
     showHeaderMode: boolean;
     headerMode: HeaderMode;
     onHeaderMode: (mode: HeaderMode) => void;
-    filterEnabled: boolean;
-    filterOpen: boolean;
-    onToggleFilter: () => void;
+    tools: Tool[];
     search: SearchBoxProps;
 }
 
-export function Toolbar({
-    onOpen,
-    showHeaderMode,
-    headerMode,
-    onHeaderMode,
-    filterEnabled,
-    filterOpen,
-    onToggleFilter,
-    search,
-}: ToolbarProps) {
+export function Toolbar({ onOpen, showHeaderMode, headerMode, onHeaderMode, tools, search }: ToolbarProps) {
     const input = useRef<HTMLInputElement>(null);
     return (
         <header className="flex flex-wrap items-center gap-2 border-b border-line bg-chrome px-2.5 py-1.5">
@@ -54,16 +52,20 @@ export function Toolbar({
                     <option value="no">Data</option>
                 </select>
             </label>
-            <button
-                type="button"
-                id="filter-toggle"
-                className="control"
-                aria-pressed={filterOpen}
-                disabled={!filterEnabled}
-                onClick={onToggleFilter}
-            >
-                Filter
-            </button>
+            {tools.map((tool) => (
+                <button
+                    key={tool.id}
+                    type="button"
+                    id={tool.id}
+                    className="control"
+                    title={tool.title}
+                    aria-pressed={tool.pressed}
+                    disabled={!tool.enabled}
+                    onClick={tool.onClick}
+                >
+                    {tool.label}
+                </button>
+            ))}
             <span className="flex-1" />
             <SearchBox {...search} />
         </header>
