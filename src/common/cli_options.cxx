@@ -5,6 +5,7 @@
 #include <CLI/CLI.hpp>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/null_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
 #include "file_util.hxx"
@@ -160,6 +161,10 @@ bool configureLogging(const CommandLineOptions &options, bool to_console, std::s
         else if (!to_console)
         {
             spdlog::set_default_logger(spdlog::null_logger_mt("tableskim"));
+        }
+        else
+        {
+            spdlog::set_default_logger(spdlog::stderr_color_mt("tableskim"));
         }
     }
     catch (const spdlog::spdlog_ex &e)

@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <limits>
 #include <string>
@@ -142,6 +143,48 @@ TEST_CASE("summarizeFile limits the statistics to the rows scanned", "[summary]"
     CHECK(formatCell(*column(sheet, "ID").stats->max) == "20");
     CHECK(summaryMarkdown(summary, {.max_rows = 20}).find("Statistics over the first 20 rows.") !=
           std::string::npos);
+}
+
+TEST_CASE("summary scan limits preserve the head and type sample", "[summary][regression]")
+{
+    for (const size_t max_rows : {size_t{0}, size_t{2}, size_t{54}, size_t{100}})
+    {
+        INFO(max_rows);
+        const auto summary = summarize("normal.csv", {.head_rows = 20, .max_rows = max_rows});
+        REQUIRE(summary.error.empty());
+        const auto &sheet = summary.sheets.at(0);
+        REQUIRE(sheet.error.empty());
+        CHECK(sheet.head.size() == 20);
+        CHECK(sheet.rows == RowCount{54, RowCount::Kind::Exact});
+        CHECK(column(sheet, "ID").type.kind == ColumnKind::Number);
+        CHECK(column(sheet, "Birthday").type.kind == ColumnKind::Date);
+        const size_t counted = std::min(max_rows, size_t{54});
+        CHECK(sheet.stats_rows == counted);
+        CHECK(sheet.stats_complete == (counted == 54));
+        for (const auto &c : sheet.columns)
+        {
+            REQUIRE(c.stats);
+            CHECK(c.stats->rows == counted);
+        }
+        const auto id = column(sheet, "ID");
+        if (counted)
+            CHECK(formatCell(*id.stats->max) == std::to_string(counted));
+        else
+            CHECK_FALSE(id.stats->max);
+    }
+}
+
+TEST_CASE("summary scan limits count missing cells in later columns", "[summary][regression]")
+{
+    RowsSheet source({{"a"}}, {{int64_t{1}}, {int64_t{2}}, {int64_t{3}, std::string("later")}});
+    const auto sheet = summarizeSheet(source, "Sheet", {.max_rows = 2});
+    REQUIRE(sheet.columns.size() == 2);
+    CHECK(sheet.head.size() == 3);
+    CHECK(sheet.columns[1].type.kind == ColumnKind::Text);
+    REQUIRE(sheet.columns[1].stats);
+    CHECK(sheet.columns[1].stats->rows == 2);
+    CHECK(sheet.columns[1].stats->empty == 2);
+    CHECK(sheet.columns[1].stats->distinct == 0);
 }
 
 TEST_CASE("summarizeFile without statistics shows the first rows", "[summary]")
