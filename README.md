@@ -208,6 +208,21 @@ On Linux, system libraries can be used instead of the bundled ones:
 | `-DTABLESKIM_USE_SYSTEM_SQLITE=ON`      | SQLite                      |
 | `-DTABLESKIM_USE_SYSTEM_COMPRESSION=ON` | zlib, bzip2, liblzma, zstd  |
 
+### Web app (WebAssembly)
+
+The core also builds as WebAssembly for a browser-only app (`web/`), which
+reads the file in the browser without uploading it. With the
+[Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
+(in `~/emsdk`, or sourced with `emsdk_env.sh`) and Node.js with npm:
+
+```sh
+./web.sh              # build, then serve at http://127.0.0.1:8765/
+./web.sh --dev        # Vite's development server, reloading as web/src changes
+./web.sh --help       # --debug, --port, --open, --no-build
+```
+
+See [src/wasm/README.md](src/wasm/README.md) for the details and its tests.
+
 ### Windows
 
 Use the Visual Studio 2026 presets:

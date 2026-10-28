@@ -46,6 +46,20 @@ CI does all of this in the `wasm` job of `.github/workflows/ci.yml`
 (Emscripten `EMSDK_VERSION` there, ccache, Playwright's Chromium) and
 uploads the built app as the `tableskim-web` artifact.
 
+## Trying the web app
+
+```sh
+./web.sh              # builds the module and the app, serves them at http://127.0.0.1:8765/
+./web.sh --dev        # builds the module, serves web/ with Vite (reloads as web/src changes)
+./web.sh --help       # --debug (wasm-debug), --port, --open, --no-build
+```
+
+`web.sh` sources `emsdk_env.sh` from `$EMSDK` or `~/emsdk` when `emcc` is
+not on the PATH, configures the preset once (with `TABLESKIM_WEB_APP=ON`)
+and builds only what it serves, not the tests. The page has to be opened
+as `127.0.0.1` or `localhost` (or over HTTPS): elsewhere a browser does not
+make it cross-origin isolated, and the engine cannot start.
+
 ## Working on the web app
 
 ```sh

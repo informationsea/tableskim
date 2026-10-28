@@ -115,7 +115,8 @@ ctest --preset debug -j 8            # test cases in parallel
   object, no TUI, GUI or manual tool) and, with npm, the web app into
   `build/<preset>/web/` (`npm ci` and `npm run build` in `web/`, which
   type-checks it); ctest runs the tests in Node.js and the web app's
-  end-to-end tests. See `src/wasm/README.md`. `size_t` is
+  end-to-end tests. `./web.sh` builds the app and serves it locally
+  (`--dev`: Vite's server). See `src/wasm/README.md`. `size_t` is
   32 bits there, and reads of a file are much dearer in a browser, so read
   in large pieces.
 
