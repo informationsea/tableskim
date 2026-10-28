@@ -42,6 +42,11 @@ namespace
         size_t rows = 0;
         bool eof = false;
 
+        size_t statsRows() const
+        {
+            return std::min(rows, options.max_rows.value_or(std::numeric_limits<size_t>::max()));
+        }
+
         void widen(size_t width)
         {
             while (columns.size() < width)
@@ -49,7 +54,7 @@ namespace
                 columns.push_back({ColumnStatsAccumulator(limits), {}});
                 // The rows before had no cell here (ragged rows): empty.
                 if (count_stats)
-                    columns.back().stats.add(CellValue{}, rows);
+                    columns.back().stats.add(CellValue{}, statsRows());
             }
         }
 
@@ -64,7 +69,7 @@ namespace
                 const CellValue &value = c < row.size() ? row[c] : CellValue{};
                 if (sample)
                     columns[c].types.add(value);
-                if (count_stats)
+                if (count_stats && (!options.max_rows || rows < *options.max_rows))
                     columns[c].stats.add(value);
             }
             ++rows;
@@ -296,7 +301,7 @@ SheetSummary summarizeSheet(SheetSource &sheet, const std::string &name, const S
     scan.count_stats = options.stats && counted.empty();
     size_t limit = std::max(options.head_rows, options.type_sample_rows);
     if (scan.count_stats)
-        limit = options.max_rows.value_or(std::numeric_limits<size_t>::max());
+        limit = std::max(limit, options.max_rows.value_or(std::numeric_limits<size_t>::max()));
     scan.read(sheet, limit, stop);
 
     if (scan.eof)
@@ -337,8 +342,8 @@ SheetSummary summarizeSheet(SheetSource &sheet, const std::string &name, const S
     }
     else if (scan.count_stats)
     {
-        summary.stats_rows = scan.rows;
-        summary.stats_complete = scan.eof;
+        summary.stats_rows = scan.statsRows();
+        summary.stats_complete = scan.eof && summary.stats_rows == scan.rows;
     }
     summary.head = std::move(scan.head);
     return summary;
