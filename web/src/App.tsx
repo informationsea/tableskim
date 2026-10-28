@@ -129,19 +129,24 @@ export function App({ client }: { client: TableSkimClient }) {
             state.infoDirty = true;
             return;
         }
-        const current = state.info;
-        if (!current) return;
-        const epoch = state.epoch;
         state.infoLoading = true;
         try {
             do {
                 state.infoDirty = false;
-                const next = await client.call('info', { sheet: current.sheet });
-                if (epoch !== state.epoch) return;
-                showInfo(next);
+                // The sheet shown now: another may have been chosen while a
+                // request was out, whose reply is then dropped, not the ask.
+                const current = state.info;
+                if (!current) return;
+                const epoch = state.epoch;
+                try {
+                    const next = await client.call('info', { sheet: current.sheet });
+                    if (epoch === state.epoch) showInfo(next);
+                    else state.infoDirty = true;
+                } catch (error) {
+                    if (epoch === state.epoch) setMessage(errorText(error));
+                    else state.infoDirty = true;
+                }
             } while (state.infoDirty);
-        } catch (error) {
-            setMessage(errorText(error));
         } finally {
             state.infoLoading = false;
         }
@@ -166,11 +171,14 @@ export function App({ client }: { client: TableSkimClient }) {
                 setCursorColumn(0);
                 setDialog(null);
                 grid.current?.focus();
+                // The event that it opened may have come before this reply,
+                // when another sheet was shown, and been dropped: ask again.
+                if (next.state === 'opening') void refreshInfo();
             } catch (error) {
                 setMessage(errorText(error));
             }
         },
-        [client, resetSearch, showInfo],
+        [client, refreshInfo, resetSearch, showInfo],
     );
 
     const openFile = useCallback(

@@ -333,6 +333,37 @@ describe('the web app', () => {
         await page.context().close();
     });
 
+    test('shows a sheet whose opening was reported before its info', async () => {
+        const context = await browser.newContext();
+        // Replies that a sheet is opening reach the page late, after the
+        // event that it opened: the page must still show the sheet.
+        await context.addInitScript(() => {
+            const Base = window.Worker;
+            window.Worker = class extends Base {
+                set onmessage(handler) {
+                    super.onmessage = (event) => {
+                        const late = event.data.type === 'reply' && event.data.json.includes('"state":"opening"');
+                        if (late) setTimeout(() => handler(event), 500);
+                        else handler(event);
+                    };
+                }
+            };
+        });
+        const page = await context.newPage();
+        await page.goto(baseUrl);
+        await page.waitForSelector('body[data-ready=true]');
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 4).click();
+        await page.locator('#group-by-button').click();
+        await page.locator('#group-by-run').click();
+        await page.waitForFunction(
+            () => document.querySelector('#tabs [aria-selected=true]')?.textContent === 'Group By',
+        );
+        await waitForText(page.locator('#status-rows'), '12 rows');
+        await page.waitForSelector('.cell:not(.k-l)');
+        await context.close();
+    });
+
     test('runs SQL with completion and history', async () => {
         const page = await newPage();
         await open(page, demo('demo.sqlite3'));
