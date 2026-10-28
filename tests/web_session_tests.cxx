@@ -721,3 +721,37 @@ TEST_CASE("WebSession preserves chart narrowing independently of OR conditions")
     const auto invalid = client.call("setView", sheetParams(id, R"("filter":{"narrowing":[{"column":0,"op":"matches","value":"("}]})"));
     REQUIRE(invalid["error"].string());
 }
+
+TEST_CASE("WebSession gives a cell's whole value")
+{
+    const auto file = std::filesystem::temp_directory_path() / "tableskim-test-web-cell.csv";
+    const std::string long_text(1000, 'x');
+    {
+        std::ofstream out(file, std::ios::binary);
+        out << "name,note\na,\"" << long_text << "\"\nb,\"two\nlines\"\n";
+    }
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    client.result("open", "{\"path\":\"" + jsonPath(file.generic_string()) + "\"}");
+    const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"tableskim-test-web-cell.csv\"}")["sheet"].number());
+    const auto cellAt = [&](size_t row, size_t column)
+    {
+        JsonValue reply;
+        REQUIRE(waitFor([&]
+                        { reply = client.result("cell", sheetParams(id, "\"row\":" + std::to_string(row) + ",\"column\":" +
+                                                                                std::to_string(column)));
+                          return *reply["kind"].string() != "l"; }));
+        return reply;
+    };
+
+    // Rows cut the text short; the cell does not.
+    CHECK(cell(client.rows(id, 0, 0), 0, 1).size() < long_text.size());
+    JsonValue reply = cellAt(0, 1);
+    CHECK(*reply["kind"].string() == "s");
+    CHECK(*reply["text"].string() == long_text);
+    // Line breaks are kept.
+    CHECK(*cellAt(1, 1)["text"].string() == "two\nlines");
+    CHECK(*cellAt(5, 0)["kind"].string() == "o");
+    client.result("close");
+    std::filesystem::remove(file);
+}

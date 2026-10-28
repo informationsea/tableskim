@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TableSkimClient } from '../client';
+import type { ChartImage } from '../charts/image';
 import { ScatterChart, type ScatterMode, type ScatterPick } from '../charts/ScatterChart';
 import { errorText, usePolled } from '../hooks';
 import { type Condition, Events, type ScatterState, type SheetInfo } from '../protocol';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
+import { SaveImageButtons } from './SaveImageButtons';
 import type { CheckpointBannerProps } from './Banners';
 
 interface ScatterDialogProps {
@@ -39,6 +41,7 @@ export function ScatterDialog({
     const [error, setError] = useState('');
     const sheet = info.sheet;
     const started = useRef('');
+    const chart = useRef<ChartImage>(null);
 
     // The columns to start with, as the GUI picks them.
     useEffect(() => {
@@ -167,6 +170,16 @@ export function ScatterDialog({
                     <span className="inline-block h-0.5 w-4 rounded-full bg-fit" aria-hidden="true" />
                     Regression line
                 </label>
+                <SaveImageButtons
+                    chart={chart}
+                    name={
+                        axes
+                            ? `${info.columns[axes.y]?.name ?? 'Y'} vs ${info.columns[axes.x]?.name ?? 'X'}`
+                            : 'scatter plot'
+                    }
+                    enabled={!!shown?.plottable}
+                    onError={setError}
+                />
                 <span id="scatter-progress" className="text-muted">
                     {progress}
                 </span>
@@ -184,7 +197,13 @@ export function ScatterDialog({
                         </p>
                     )}
                     {shown.plottable && (
-                        <ScatterChart state={shown} mode={shownMode} fit={fit} onPick={(picked) => void pick(picked)} />
+                        <ScatterChart
+                            ref={chart}
+                            state={shown}
+                            mode={shownMode}
+                            fit={fit}
+                            onPick={(picked) => void pick(picked)}
+                        />
                     )}
                 </>
             )}

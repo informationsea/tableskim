@@ -283,6 +283,8 @@ export interface Methods {
         params: SheetParams & { first: number; last: number; firstColumn?: number; lastColumn?: number };
         result: RowsReply;
     };
+    // The whole value, which rows cuts short; kind as in RowsReply.kinds.
+    cell: { params: SheetParams & { row: number; column: number }; result: { kind: string; text: string } };
     // Changes the view asked for last; parameters left out keep its parts,
     // addConditions joins its editable filter; addNarrowing always restricts it.
     setView: {

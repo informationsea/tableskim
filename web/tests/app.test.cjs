@@ -5,6 +5,7 @@
 const { after, before, describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
@@ -789,6 +790,79 @@ describe('the web app', () => {
         assert.equal(total, 9);
         await page.keyboard.press('Escape');
         await page.locator('#histogram-dialog').waitFor({ state: 'detached' });
+        await page.context().close();
+    });
+
+    test('saves the charts as PNG and SVG', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        const save = async (format) => {
+            const [download] = await Promise.all([
+                page.waitForEvent('download'),
+                page.locator(`#save-${format}`).click(),
+            ]);
+            return { name: download.suggestedFilename(), data: fs.readFileSync(await download.path()) };
+        };
+        const isPng = (data) => data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+
+        await page.locator('#histogram-button').click();
+        await waitForText(page.locator('#histogram-summary'), '9 numbers');
+        let saved = await save('svg');
+        assert.equal(saved.name, 'Age histogram.svg');
+        let svg = saved.data.toString();
+        assert.match(svg, /^<svg[^>]* xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+        // Styles are inlined, as the file has no style sheet.
+        assert.match(svg, /<path[^>]* fill="rgb\(/);
+        assert.doesNotMatch(svg, / class=/);
+        saved = await save('png');
+        assert.equal(saved.name, 'Age histogram.png');
+        assert.ok(isPng(saved.data));
+        await page.keyboard.press('Escape');
+
+        await page.locator('#scatter-button').click();
+        await waitForText(page.locator('#scatter-summary'), '53 rows plotted');
+        saved = await save('svg');
+        assert.match(saved.name, /\.svg$/);
+        svg = saved.data.toString();
+        assert.match(svg, /^<svg xmlns=/);
+        assert.match(svg, /<text[^>]*>/);
+        // The points, as the canvas draws them.
+        assert.ok((svg.match(/<path d="M[^"]*a/g) ?? []).length >= 53);
+        saved = await save('png');
+        assert.ok(isPng(saved.data));
+        await page.context().close();
+    });
+
+    test('shows the whole cell in the sidebar and the cells in a monospace font', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await page.locator('#sidebar').waitFor({ state: 'detached' });
+        await cell(page, 0, 2).dblclick();
+        await waitForText(page.locator('#content-text'), 'sakura.brown1@example.com');
+        await page.keyboard.press('ArrowDown');
+        await waitForText(page.locator('#content-text'), 'hanako.suzuki2@example.com');
+        await page.locator('#sidebar-stats').click();
+        await waitForText(page.locator('#stats-panel h2'), 'Email');
+        await page.locator('#sidebar-close').click();
+        await page.locator('#sidebar').waitFor({ state: 'detached' });
+        await cell(page, 0, 1).click();
+        await page.keyboard.press('Enter');
+        await waitForText(page.locator('#content-text'), 'Sakura Brown');
+
+        const font = () => cell(page, 0, 1).evaluate((element) => getComputedStyle(element).fontFamily);
+        assert.doesNotMatch(await font(), /monospace/);
+        await page.locator('#monospace-toggle').click();
+        await page.waitForFunction(() =>
+            getComputedStyle(document.querySelector('.cell[data-row="0"][data-column="1"]')).fontFamily.includes(
+                'monospace',
+            ),
+        );
+        assert.match(await page.locator('#content-text').getAttribute('class'), /font-mono/);
+        // Kept in this browser.
+        await page.reload();
+        await page.waitForSelector('body[data-ready=true]');
+        assert.equal(await page.locator('#monospace-toggle').getAttribute('aria-pressed'), 'true');
         await page.context().close();
     });
 

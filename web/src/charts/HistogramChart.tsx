@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Histogram } from '../protocol';
+import { type ChartImage, svgOfElement } from './image';
 import { barPath, columnPath, compactCount, niceTicks, observeWidth } from './scale';
 import { Tooltip } from './Tooltip';
 
@@ -7,6 +8,7 @@ interface HistogramChartProps {
     histogram: Histogram;
     rows: number; // in the view, for the shares
     onPick: (bin: number) => void; // a bar (or a frequent value) was clicked
+    ref?: Ref<ChartImage>;
 }
 
 const HEIGHT = 320;
@@ -20,8 +22,17 @@ function share(count: number, rows: number) {
 }
 
 /** Columns of the bins' counts, or bars of the most frequent values. */
-export function HistogramChart({ histogram, rows, onPick }: HistogramChartProps) {
+export function HistogramChart({ histogram, rows, onPick, ref }: HistogramChartProps) {
     const box = useRef<HTMLDivElement>(null);
+    const chart = useRef<SVGSVGElement>(null);
+    useImperativeHandle(ref, () => ({
+        image: () => {
+            const svg = chart.current;
+            return svg
+                ? { svg: svgOfElement(svg), width: svg.width.baseVal.value, height: svg.height.baseVal.value }
+                : null;
+        },
+    }));
     const [width, setWidth] = useState(600);
     const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
     useEffect(() => (box.current ? observeWidth(box.current, setWidth) : undefined), []);
@@ -55,7 +66,14 @@ export function HistogramChart({ histogram, rows, onPick }: HistogramChartProps)
         const height = items.length * (BAR_THICKNESS + ROW_GAP);
         return (
             <div ref={box} className="relative w-full">
-                <svg id="histogram-chart" width={width} height={height} role="img" aria-label="Most frequent values">
+                <svg
+                    ref={chart}
+                    id="histogram-chart"
+                    width={width}
+                    height={height}
+                    role="img"
+                    aria-label="Most frequent values"
+                >
                     {items.map((item, i) => {
                         const y = i * (BAR_THICKNESS + ROW_GAP);
                         const length = Math.max(1, (plotWidth * item.count) / most);
@@ -120,7 +138,7 @@ export function HistogramChart({ histogram, rows, onPick }: HistogramChartProps)
     const every = Math.max(1, Math.ceil((longest * 7 + 12) / slot));
     return (
         <div ref={box} className="relative w-full">
-            <svg id="histogram-chart" width={width} height={HEIGHT} role="img" aria-label="Histogram">
+            <svg ref={chart} id="histogram-chart" width={width} height={HEIGHT} role="img" aria-label="Histogram">
                 {ticks.map((tick) => (
                     <g key={tick}>
                         <line

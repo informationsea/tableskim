@@ -730,6 +730,7 @@ const std::map<std::string_view, WebSession::Method> &WebSession::methods()
         {"sheet", &WebSession::openSheet},
         {"info", &WebSession::info},
         {"rows", &WebSession::rows},
+        {"cell", &WebSession::cell},
         {"setView", &WebSession::setView},
         {"sortCycle", &WebSession::sortCycle},
         {"search", &WebSession::search},
@@ -964,6 +965,23 @@ void WebSession::rows(const Params &params, JsonWriter &result)
     const size_t last_column = std::max(
         first_column, std::min(params.index("lastColumn", first_column + MAX_COLUMNS - 1), first_column + MAX_COLUMNS - 1));
     writeRows(result, *sheet.model, sheet.formats, first, last, first_column, last_column);
+}
+
+// One cell's whole value, which rows cut short: for the sidebar's Content
+// pane, as the GUI shows it (formatCell(), without the column's format).
+void WebSession::cell(const Params &params, JsonWriter &result)
+{
+    TableModel &model = *sheet(params).model;
+    const size_t row = params.index("row");
+    const size_t column = params.index("column");
+    model.requestRange(row, row);
+    const CellRef ref = model.peek(row, column);
+    result.beginObject()
+        .key("kind")
+        .value(std::string(1, cellKind(ref)))
+        .key("text")
+        .value(ref.state == CellState::Ready ? formatCell(*ref.value) : std::string())
+        .endObject();
 }
 
 void WebSession::setView(const Params &params, JsonWriter &result)

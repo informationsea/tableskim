@@ -118,6 +118,7 @@ private:
     void info(const Params &params, JsonWriter &result);
     void writeSheetInfo(JsonWriter &result, Sheet &sheet);
     void rows(const Params &params, JsonWriter &result);
+    void cell(const Params &params, JsonWriter &result);
     void setView(const Params &params, JsonWriter &result);
     void sortCycle(const Params &params, JsonWriter &result);
     void search(const Params &params, JsonWriter &result);

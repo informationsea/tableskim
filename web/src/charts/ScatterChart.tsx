@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ScatterAxis, ScatterState } from '../protocol';
+import { type ChartImage, SvgContext, surfaceColor } from './image';
 import { compactCount, observeWidth } from './scale';
 import { Tooltip } from './Tooltip';
 
@@ -16,7 +17,34 @@ interface ScatterChartProps {
     mode: ScatterMode;
     fit: boolean; // draw the regression line
     onPick: (pick: ScatterPick) => void;
+    ref?: Ref<ChartImage>;
 }
+
+// What the plot draws with: a canvas, or an SvgContext for a saved image.
+type Painter = Pick<
+    CanvasRenderingContext2D,
+    | 'fillStyle'
+    | 'strokeStyle'
+    | 'lineWidth'
+    | 'lineCap'
+    | 'globalAlpha'
+    | 'font'
+    | 'textAlign'
+    | 'textBaseline'
+    | 'save'
+    | 'restore'
+    | 'beginPath'
+    | 'moveTo'
+    | 'lineTo'
+    | 'rect'
+    | 'arc'
+    | 'clip'
+    | 'fill'
+    | 'stroke'
+    | 'fillRect'
+    | 'strokeRect'
+    | 'fillText'
+>;
 
 const HEIGHT = 420;
 const MARGIN = { top: 12, right: 16, bottom: 44, left: 64 };
@@ -64,7 +92,7 @@ function shade(count: number, most: number): number {
 
 const numberText = (value: number) => value.toLocaleString(undefined, { maximumSignificantDigits: 6 });
 
-export function ScatterChart({ state, mode, fit, onPick }: ScatterChartProps) {
+export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProps) {
     const box = useRef<HTMLDivElement>(null);
     const canvas = useRef<HTMLCanvasElement>(null);
     const [width, setWidth] = useState(600);
@@ -110,17 +138,7 @@ export function ScatterChart({ state, mode, fit, onPick }: ScatterChartProps) {
     const columnSpan = (xi: number): [number, number] =>
         categorical ? [xi - CELL_WIDTH / 2, xi + CELL_WIDTH / 2] : [state.xAxis.edges[xi], state.xAxis.edges[xi + 1]];
 
-    useLayoutEffect(() => {
-        const element = canvas.current;
-        const context = element?.getContext('2d');
-        if (!element || !context) return;
-        const ratio = window.devicePixelRatio || 1;
-        element.width = Math.round(width * ratio);
-        element.height = Math.round(HEIGHT * ratio);
-        context.setTransform(ratio, 0, 0, ratio, 0, 0);
-        context.clearRect(0, 0, width, HEIGHT);
-        const style = getComputedStyle(element);
-        const color = (name: string) => style.getPropertyValue(name).trim();
+    const paint = (context: Painter, color: (name: string) => string) => {
         context.font = '12px system-ui, sans-serif';
 
         // Gridlines at the ticks, hairline and recessive; the labels outside.
@@ -246,7 +264,31 @@ export function ScatterChart({ state, mode, fit, onPick }: ScatterChartProps) {
             context.fillText(compactCount(most), x + 16, plot.y + 6);
             context.fillText('1', x + 16, plot.y + plot.h - 6);
         }
+    };
+
+    useLayoutEffect(() => {
+        const element = canvas.current;
+        const context = element?.getContext('2d');
+        if (!element || !context) return;
+        const ratio = window.devicePixelRatio || 1;
+        element.width = Math.round(width * ratio);
+        element.height = Math.round(HEIGHT * ratio);
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.clearRect(0, 0, width, HEIGHT);
+        const style = getComputedStyle(element);
+        paint(context, (name) => style.getPropertyValue(name).trim());
     });
+
+    useImperativeHandle(ref, () => ({
+        image: () => {
+            const element = canvas.current;
+            if (!element) return null;
+            const style = getComputedStyle(element);
+            const svg = new SvgContext(width, HEIGHT, surfaceColor(element));
+            paint(svg, (name) => style.getPropertyValue(name).trim());
+            return { svg: svg.toString(), width, height: HEIGHT };
+        },
+    }));
 
     // What lies under the pointer: a point, a density cell or a category.
     const find = (px: number, py: number): { pick: ScatterPick; value: string; label: string } | null => {

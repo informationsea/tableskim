@@ -9,11 +9,12 @@ as the GUI and the TUI share the core. The file never leaves the browser.
 - `web/` is the app (React, TypeScript, Tailwind CSS, built with Vite): a
   virtual grid, sheet tabs, sorting, filtering, searching, copying, hidden
   and frozen columns, display formats, Go To, column statistics,
-  histograms, scatter plots (points, density, box plots), Group By, SQL
-  (with completion and a history), exporting the view and, for text files,
-  the character encoding and skipping `##` lines. What the native
-  UIs have and it lacks: editing, Follow, converting a text file to
-  Parquet or DuckDB, and saving charts as images.
+  histograms and scatter plots (points, density, box plots; saved as PNG
+  or SVG), Group By, SQL (with completion and a history), exporting the
+  view, a sidebar (the whole cell, statistics), a monospace font and, for
+  text files, the character encoding and skipping `##` lines. What the
+  native UIs have and it lacks: editing, Follow and converting a text
+  file to Parquet or DuckDB.
 - `tableskim-wasm-probe` (`wasm_probe.cxx`, `web/probe/`) was the
   feasibility probe: it opens one file, reads it to the end, sorts it and
   runs an SQL query, timing each step, in Node.js, a browser or natively.
@@ -130,9 +131,12 @@ Sources (`web/src/`): `protocol.ts` types the messages, `client.ts` sends
 them, `grid/controller.ts` is the virtual grid's state and behaviour
 (viewport, row cache, selection, keyboard, mouse) and `grid/Grid.tsx`
 draws it; `App.tsx` holds the app's state and `components/` the rest of
-the page: the panels (`StatsPanel`, `SqlPanel`), the dialogs (`Dialog`,
+the page: the panels (`Sidebar` with `ContentPane` and `StatsPanel`,
+`SqlPanel`), the dialogs (`Dialog`,
 the browser's `<dialog>`) and the context menu (`Menu`). `charts/` draws
-the histogram (SVG) and the scatter plot (a canvas, for its many points).
+the histogram (SVG) and the scatter plot (a canvas, for its many points);
+`charts/image.ts` saves either as SVG (the scatter plot drawn again
+through `SvgContext`, a recorder of the canvas calls it makes) or PNG.
 `hooks.ts` has `usePolled()`, which asks for a state again on the model's
 events, one request at a time, as the statistics, charts and jobs do.
 Colours are tokens in `index.css` (light and dark), used through
@@ -191,6 +195,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `sheet` | `name` | the sheet's info (below), with its `sheet` id |
 | `info` | `sheet` | `state` (`opening`, `ready`, `error`), `error`, `rows`, `rowsExact`, `displayRows`, `rowsText`, `hasHeader`, `columns` (`name`, `mark`), `capabilities`, `view`, `pending`, `filterText`, `viewError` and `viewErrorId` (the last failed view, until another is asked for; the id tells a new failure), `checkpoint`, `readingStopped` |
 | `rows` | `sheet`, `first`, `last`, `firstColumn`, `lastColumn` | `first`, `firstColumn`, `rows` (display texts), `kinds` (a character per cell: `n` number, `s` other, `e` empty, `l` loading, `o` beyond the row, `x` error), `hits` (while a search is on or has hits: each row's columns holding one), `loading`, `end` |
+| `cell` | `sheet`, `row`, `column` | `kind` (as in `rows`), `text` (the whole value, which `rows` cuts at 256 bytes; for the sidebar) |
 | `setView` | `sheet`, `sort` (`column`, `ascending`), `filter` (`combine`, `conditions`: `column`, `op`, `value`) or null, `addConditions` (conditions joined to the filter, once each); each left out keeps the view asked for last, even while it is applied | `view` |
 | `sortCycle` | `sheet`, `column` | `view` (by the column ascending, descending, then none) |
 | `search` / `cancelSearch` / `searchState` | `sheet`, `text`, `caseSensitive`, `regex`, `column` | `active`, `done`, `truncated`, `error`, `scannedRows`, `hits`, `generation` |

@@ -13,7 +13,9 @@ import { GroupByDialog } from './components/GroupByDialog';
 import { HistogramDialog } from './components/HistogramDialog';
 import { Menu, type MenuItem } from './components/Menu';
 import { ScatterDialog } from './components/ScatterDialog';
+import { ContentPane } from './components/ContentPane';
 import { SheetTabs } from './components/SheetTabs';
+import { Sidebar, SIDEBAR_MIN_WIDTH, type SidebarTab } from './components/Sidebar';
 import { SqlPanel } from './components/SqlPanel';
 import { StatsPanel } from './components/StatsPanel';
 import { StatusBar } from './components/StatusBar';
@@ -54,6 +56,26 @@ interface Layout {
 }
 
 const NO_LAYOUT: Layout = { hidden: new Set(), frozen: 0 };
+
+// View settings kept in this browser, as the GUI keeps them; storage may be unavailable.
+const MONOSPACE_KEY = 'tableskim.monospace';
+const SIDEBAR_WIDTH_KEY = 'tableskim.sidebarWidth';
+
+function stored(key: string): string | null {
+    try {
+        return localStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
+function store(key: string, value: string) {
+    try {
+        localStorage.setItem(key, value);
+    } catch {
+        // Not kept, then.
+    }
+}
 
 function emptyTitle(phase: Phase, info: SheetInfo | null) {
     switch (phase.kind) {
@@ -102,7 +124,12 @@ export function App({ client }: { client: TableSkimClient }) {
     const [dragging, setDragging] = useState(false);
     const [layout, setLayout] = useState<Layout>(NO_LAYOUT);
     const [cursorColumn, setCursorColumn] = useState(0);
-    const [statsOpen, setStatsOpen] = useState(false);
+    const [sidebar, setSidebar] = useState<SidebarTab | null>(null); // the tab shown, or closed
+    const [sidebarWidth, setSidebarWidth] = useState(() =>
+        Math.max(SIDEBAR_MIN_WIDTH, Number(stored(SIDEBAR_WIDTH_KEY)) || 288),
+    );
+    const [monospace, setMonospace] = useState(() => stored(MONOSPACE_KEY) === 'true');
+    const [contentCell, setContentCell] = useState<Cell>({ row: 0, column: 0 });
     const [sqlOpen, setSqlOpen] = useState(false);
     const [dialog, setDialog] = useState<{ kind: DialogKind; column: number } | null>(null);
     const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -182,6 +209,7 @@ export function App({ client }: { client: TableSkimClient }) {
                 setSheetKey((key) => key + 1);
                 setLayout(NO_LAYOUT);
                 setCursorColumn(0);
+                setContentCell({ row: 0, column: 0 });
                 setDialog(null);
                 grid.current?.focus();
                 // The event that it opened may have come before this reply,
@@ -410,7 +438,7 @@ export function App({ client }: { client: TableSkimClient }) {
             items.push('separator');
         }
         items.push(
-            { label: 'Statistics', onSelect: () => setStatsOpen(true) },
+            { label: 'Statistics', onSelect: () => setSidebar('stats') },
             { label: 'Histogram…', onSelect: () => setDialog({ kind: 'histogram', column }) },
             { label: 'Scatter Plot…', onSelect: () => setDialog({ kind: 'scatter', column }) },
             { label: 'Group By…', onSelect: () => setDialog({ kind: 'groupBy', column }) },
@@ -453,6 +481,7 @@ export function App({ client }: { client: TableSkimClient }) {
             text += ` (${(range.bottom - range.top + 1).toLocaleString()} × ${range.right - range.left + 1} selected)`;
         setCellStatus(text);
         setCursorColumn(cell.column);
+        setContentCell({ row: range.top, column: range.left });
     };
 
     const copy = async (range: Range) => {
@@ -638,10 +667,10 @@ export function App({ client }: { client: TableSkimClient }) {
         {
             id: 'stats-toggle',
             label: 'Statistics',
-            title: "Statistics of the cursor's column",
+            title: "Statistics of the cursor's column in the sidebar",
             enabled: showGrid,
-            pressed: statsOpen,
-            onClick: () => setStatsOpen((open) => !open),
+            pressed: sidebar === 'stats',
+            onClick: () => setSidebar((tab) => (tab === 'stats' ? null : 'stats')),
         },
         sheetTool('histogram-button', 'Histogram', "A histogram of the cursor's column", 'histogram'),
         sheetTool('scatter-button', 'Scatter', 'Two columns plotted against each other', 'scatter'),
@@ -655,6 +684,26 @@ export function App({ client }: { client: TableSkimClient }) {
             onClick: () => setSqlOpen((open) => !open),
         },
         sheetTool('export-button', 'Export', 'Save the view as CSV, TSV, Excel or Parquet', 'export'),
+        {
+            id: 'sidebar-toggle',
+            label: 'Sidebar',
+            title: 'Show or hide the sidebar: the whole cell (Enter or a double click) and statistics',
+            enabled: true,
+            pressed: sidebar !== null,
+            onClick: () => setSidebar((tab) => (tab ? null : 'content')),
+        },
+        {
+            id: 'monospace-toggle',
+            label: 'Monospace',
+            title: 'Show the cells in a monospace font',
+            enabled: true,
+            pressed: monospace,
+            onClick: () =>
+                setMonospace((on) => {
+                    store(MONOSPACE_KEY, String(!on));
+                    return !on;
+                }),
+        },
     ];
     const checkpointControls = {
         checkpoint: info?.checkpoint ?? null,
@@ -723,17 +772,36 @@ export function App({ client }: { client: TableSkimClient }) {
                         onSelect={showCell}
                         onCopy={(range) => void copy(range)}
                         onContextMenu={contextMenu}
+                        onOpenCell={() => setSidebar('content')}
+                        monospace={monospace}
                     />
                     {!showGrid && <EmptyState title={emptyTitle(phase, info)} />}
                     {dragging && <DropOverlay />}
                 </main>
-                {statsOpen && showGrid && info && (
-                    <StatsPanel
-                        client={client}
-                        info={info}
-                        column={Math.min(cursorColumn, info.columns.length - 1)}
-                        onClose={() => setStatsOpen(false)}
-                    />
+                {sidebar && showGrid && info && (
+                    <Sidebar
+                        tab={sidebar}
+                        onTab={setSidebar}
+                        width={sidebarWidth}
+                        onWidth={(width) => {
+                            setSidebarWidth(width);
+                            store(SIDEBAR_WIDTH_KEY, String(width));
+                        }}
+                        onClose={() => {
+                            setSidebar(null);
+                            grid.current?.focus();
+                        }}
+                    >
+                        {sidebar === 'content' ? (
+                            <ContentPane client={client} info={info} cell={contentCell} monospace={monospace} />
+                        ) : (
+                            <StatsPanel
+                                client={client}
+                                info={info}
+                                column={Math.min(cursorColumn, info.columns.length - 1)}
+                            />
+                        )}
+                    </Sidebar>
                 )}
             </div>
             {sqlOpen && book?.supportsSql && (
