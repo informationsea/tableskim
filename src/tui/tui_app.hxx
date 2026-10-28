@@ -44,7 +44,7 @@ private:
     std::filesystem::file_time_type file_mtime_{};
     std::uintmax_t file_size_ = 0;
 
-    bool first_row_as_header_ = false;
+    OpenOptions::Header first_row_ = OpenOptions::Header::Auto; // H switches it
     // Set by #; unset: the file's default (on for VCF).
     std::optional<bool> skip_meta_lines_;
     // Set by E or --encoding; unset: detected.
@@ -240,7 +240,7 @@ private:
     void revertIfChanged();
     void setFollow(bool enabled);
     bool headerOptionAvailable() const;
-    void setFirstRowAsHeader(bool enabled);
+    void toggleFirstRow();
     bool skipMetaLinesAvailable() const;
     bool skipsMetaLines() const;
     void setSkipMetaLines(bool enabled);
@@ -353,6 +353,8 @@ public:
     bool open(const std::string &path, std::string *error = nullptr);
     // Reopens the file in `encoding`; before open(), only records it.
     void setTextEncoding(TextEncoding encoding);
+    // Whether the first row is the header (Auto: guessed).
+    void setFirstRow(OpenOptions::Header first_row);
 
     ftxui::Component component() const { return root_; }
 };

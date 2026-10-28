@@ -238,10 +238,28 @@ class TableWindow {open
             callback callback_use_monospace_font
             xywh {0 0 100 20} type Toggle
           }
-          MenuItem menuitem_first_row_header {
-            label {Use first row as header}
-            callback callback_use_first_row_as_header
-            xywh {0 0 100 20} type Toggle
+          Submenu {} {
+            label {First Row} open
+            xywh {0 0 100 20}
+          } {
+            MenuItem menuitem_first_row_auto {
+              label {Auto}
+              user_data {"auto"}
+              callback callback_first_row
+              xywh {0 0 100 20} type Radio
+            }
+            MenuItem menuitem_first_row_header {
+              label {Header}
+              user_data {"header"}
+              callback callback_first_row
+              xywh {0 0 100 20} type Radio
+            }
+            MenuItem menuitem_first_row_data {
+              label {Data}
+              user_data {"data"}
+              callback callback_first_row
+              xywh {0 0 100 20} type Radio
+            }
           }
           MenuItem menuitem_skip_meta_lines {
             label {Skip lines starting with \#\#}
@@ -511,7 +529,7 @@ requestWindowMenuUpdate();} {}
   }
   decl {void set_use_monospace_font(bool use)} {public local
   }
-  decl {void set_first_row_as_header(bool use)} {public local
+  decl {void set_first_row(OpenOptions::Header first_row)} {public local
   }
   decl {void set_skip_meta_lines(bool skip)} {public local
   }
@@ -581,9 +599,10 @@ requestWindowMenuUpdate();} {}
   } {
     code {return use_monospace_font_;} {}
   }
-  Function {use_first_row_as_header() const} {open return_type bool
+  Function {first_row() const} {open return_type {OpenOptions::Header}
   } {
-    code {return first_row_as_header_;} {}
+    code {// Auto unless chosen with View > First Row.
+return first_row_;} {}
   }
   Function {skip_meta_lines() const} {open return_type bool
   } {
@@ -620,7 +639,7 @@ return !table_book || table_book->usesHeaderOption();} {}
   }
   decl {bool use_monospace_font_ = false} {private local
   }
-  decl {bool first_row_as_header_ = false} {private local
+  decl {OpenOptions::Header first_row_ = OpenOptions::Header::Auto} {private local
   }
   decl {std::optional<bool> skip_meta_lines_} {private local
   }

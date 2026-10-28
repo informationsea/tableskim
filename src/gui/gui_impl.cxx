@@ -18,6 +18,7 @@
 #include <climits>
 #include <filesystem>
 #include <map>
+#include <string_view>
 
 const int TAB_HEIGHT = 25;
 // Auto Revert polls instead of watching the file, which keeps it portable and
@@ -59,19 +60,19 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
     const bool has_stamp = readFileStamp(utf8Path(path), mtime, size);
     const bool same_file = path == current_path || keep_state;
     const bool new_path = path != current_path;
-    // A choice made with View > Skip lines starting with ## or View > Text
-    // Encoding applies to that file only (or, made before any file was
-    // opened, to the first one).
+    // A choice made with View > First Row, View > Skip lines starting with
+    // ## or View > Text Encoding applies to that file only (or, made before
+    // any file was opened, to the first one).
     const bool keep_skip_choice = same_file || current_path.empty();
     std::shared_ptr<TableBook> book;
     try
     {
-        // Like Excel, the first row is data (columns A, B, C, ...) unless
-        // View > Use first row as header is checked.
+        // The first row is the header if it looks like one (text only,
+        // each value different), unless View > First Row says otherwise.
         OpenOptions options;
-        options.header = first_row_as_header_ ? OpenOptions::Header::Yes : OpenOptions::Header::No;
         if (keep_skip_choice)
         {
+            options.header = first_row_;
             options.skip_meta_lines = skip_meta_lines_;
             options.encoding = text_encoding_;
         }
@@ -107,6 +108,7 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
     std::map<std::string, int> frozen_columns;
     if (!keep_skip_choice)
     {
+        first_row_ = OpenOptions::Header::Auto;
         skip_meta_lines_.reset();
         text_encoding_.reset();
     }
@@ -607,11 +609,20 @@ void callback_clear_recent(Fl_Menu_ *, void *)
 void TableWindow::sync_menu_items()
 {
     menuitem_monospace_font->value(use_monospace_font());
-    menuitem_first_row_header->value(use_first_row_as_header());
-    if (header_option_available())
-        menuitem_first_row_header->activate();
-    else
-        menuitem_first_row_header->deactivate();
+    const std::pair<Fl_Menu_Item *, OpenOptions::Header> first_row_items[] = {
+        {menuitem_first_row_auto, OpenOptions::Header::Auto},
+        {menuitem_first_row_header, OpenOptions::Header::Yes},
+        {menuitem_first_row_data, OpenOptions::Header::No},
+    };
+    for (const auto &[item, header] : first_row_items)
+    {
+        // Formats with their own column names have no first row to choose.
+        item->value(header_option_available() && first_row() == header);
+        if (header_option_available())
+            item->activate();
+        else
+            item->deactivate();
+    }
     menuitem_skip_meta_lines->value(skip_meta_lines());
     if (skip_meta_lines_available())
         menuitem_skip_meta_lines->activate();
@@ -1350,9 +1361,9 @@ void callback_use_monospace_font(Fl_Menu_ *w, void *)
     }
 }
 
-void TableWindow::set_first_row_as_header(bool use)
+void TableWindow::set_first_row(OpenOptions::Header first_row)
 {
-    if (first_row_as_header_ == use)
+    if (first_row_ == first_row)
         return;
     // Reading the file again loses the edits.
     if (!confirm_unsaved())
@@ -1362,33 +1373,31 @@ void TableWindow::set_first_row_as_header(bool use)
         requestWindowMenuUpdate();
         return;
     }
-    first_row_as_header_ = use;
+    const OpenOptions::Header old = first_row_;
+    first_row_ = first_row;
     // Whether the first row is a header is decided when the file is read.
     // If that fails, the shown file still uses the old setting; keep it so
     // that the menu and a later Auto Revert match what is shown.
     if (!current_path.empty() && header_option_available() && !open(current_path))
-    {
-        first_row_as_header_ = !use;
-        // Deferred (see defer_command()), this may run behind another window.
-        if (frontTableWindow() == this)
-            sync_menu_items();
-        requestWindowMenuUpdate();
-    }
+        first_row_ = old;
+    // Radio items change their value when clicked, even if nothing was reopened.
+    // Deferred (see defer_command()), this may run behind another window.
+    if (frontTableWindow() == this)
+        sync_menu_items();
+    requestWindowMenuUpdate();
 }
 
-void callback_use_first_row_as_header(Fl_Menu_ *w, void *)
+void callback_first_row(Fl_Menu_ *, void *userdata)
 {
+    const std::string_view choice = static_cast<const char *>(userdata);
+    const OpenOptions::Header first_row = choice == "header" ? OpenOptions::Header::Yes
+                                          : choice == "data" ? OpenOptions::Header::No
+                                                             : OpenOptions::Header::Auto;
     if (auto *self = frontTableWindow())
-    {
-        const Fl_Menu_Item *item = w->mvalue();
-        const bool use = item && item->value() != 0;
-        self->defer_command([use](TableWindow &window)
-                            { window.set_first_row_as_header(use); });
-    }
+        self->defer_command([first_row](TableWindow &window)
+                            { window.set_first_row(first_row); });
     else
-    {
         spdlog::error("No TableWindow to apply the menu item to");
-    }
 }
 
 void TableWindow::set_skip_meta_lines(bool skip)
@@ -1501,7 +1510,7 @@ void TableWindow::convert()
 
     // Convert what is shown: the same header, ## and encoding choices.
     OpenOptions options;
-    options.header = first_row_as_header_ ? OpenOptions::Header::Yes : OpenOptions::Header::No;
+    options.header = first_row_;
     options.skip_meta_lines = table_book->skipsMetaLines();
     options.encoding = table_book->textEncoding();
     if (runConversion(source, target, *format, options))

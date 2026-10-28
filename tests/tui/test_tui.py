@@ -53,18 +53,36 @@ class TuiTestCase(unittest.TestCase):
 class OpenAndQuitTest(TuiTestCase):
     def test_shows_the_file_and_quits(self):
         tui = self.run_tui(self.demo("normal.csv"))
-        tui.wait_text("55 rows × 9 cols")
+        tui.wait_text("54 rows × 9 cols")
         self.assertIn("Sakura Brown", tui.text())
         tui.send("q")
         self.assertEqual(tui.wait_exit(), 0)
 
 
+class FirstRowTest(TuiTestCase):
+    def test_h_switches_from_the_guess_and_back(self):
+        tui = self.run_tui(self.demo("normal.csv"))
+        tui.wait_text("54 rows")
+        self.assertIn("│ header", status(tui))
+        tui.send("H")
+        tui.wait_text("55 rows")
+        tui.wait_text("First row is data (H: guess again)")
+        self.assertNotIn("│ header", status(tui))
+        tui.send("H")
+        tui.wait_text("54 rows")
+        tui.wait_text("First row: header if it looks like one (H: switch)")
+
+    def test_header_option(self):
+        tui = self.run_tui(self.demo("normal.csv"), "--header", "no")
+        tui.wait_text("55 rows")
+        tui.send("H")
+        tui.wait_text("First row: header if it looks like one (H: switch)")
+
+
 class HiddenColumnsTest(TuiTestCase):
     def test_histogram_columns_skip_hidden_ones(self):
         tui = self.run_tui(self.demo("normal.csv"))
-        tui.wait_text("55 rows")
-        tui.send("H")  # ID, Name, Email, ...
-        tui.wait_text("54 rows")
+        tui.wait_text("54 rows")  # ID, Name, Email, ...
         tui.send("l", "x")  # hides Name
         tui.wait_text("1 hidden")
         tui.send("0", "B")
@@ -153,7 +171,7 @@ class EditingTest(TuiTestCase):
 
     def test_edits_are_saved(self):
         path = self.temp_file("t.csv", "a,b\n1,x\n2,y\n")
-        tui = self.run_tui(path)
+        tui = self.run_tui(path, "--header", "no")
         tui.wait_text("3 rows")
         self.edit_first_value(tui, "42")
         tui.send("ctrl+s")
@@ -166,7 +184,7 @@ class EditingTest(TuiTestCase):
 
     def test_a_conversion_does_not_open_over_unsaved_edits(self):
         path = self.temp_file("t.csv", "a,b\n1,x\n2,y\n")
-        tui = self.run_tui(path)
+        tui = self.run_tui(path, "--header", "no")
         tui.wait_text("3 rows")
         self.edit_first_value(tui, "42")
         tui.send("P")
@@ -185,7 +203,7 @@ class EditingTest(TuiTestCase):
         path = os.path.join(self.temp, "t.xlsx")
         shutil.copyfile(self.demo("normal.xlsx"), path)
         tui = self.run_tui(path)
-        tui.wait_text("55 rows")
+        tui.wait_text("54 rows")
         tui.send("I")
         tui.wait_text("EDIT")
         tui.send("j", "i")
@@ -205,7 +223,7 @@ class EditingTest(TuiTestCase):
 class FollowTest(TuiTestCase):
     def test_appended_rows_are_shown(self):
         path = self.temp_file("log.csv", "time,level\n12:00,INFO\n")
-        tui = self.run_tui(path)
+        tui = self.run_tui(path, "--header", "no")
         tui.wait_text("2 rows")
         tui.send("T")
         tui.wait_text("follow")

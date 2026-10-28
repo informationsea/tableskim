@@ -144,7 +144,7 @@ TEST_CASE("GUI: Auto Revert waits while a cell is being edited", "[regression]")
 {
     TempDir dir;
     const auto path = dir.write("t.csv", "a,b\n1,x\n2,y\n");
-    Window window(path);
+    Window window(path, OpenOptions::Header::No);
     GuiTableView *view = window.currentView();
     REQUIRE(window.waitForRows(view, 3));
     window->set_focused(true); // polls every second
@@ -166,9 +166,9 @@ TEST_CASE("GUI: Auto Revert waits while a cell is being edited", "[regression]")
 TEST_CASE("GUI: a pending sort does not move the cell being edited", "[regression]")
 {
     TempDir dir;
-    // No header is detected: the rows are "a,b", "1,x" and "2,y".
+    // The rows are "a,b", "1,x" and "2,y".
     const auto path = dir.write("t.csv", "a,b\n1,x\n2,y\n");
-    Window window(path);
+    Window window(path, OpenOptions::Header::No);
     GuiTableView *view = window.currentView();
     REQUIRE(window.waitForRows(view, 3));
     window->set_editing(true);
@@ -190,7 +190,7 @@ TEST_CASE("GUI: Follow does not reopen the file while a menu or dialog runs its 
 {
     TempDir dir;
     const auto path = dir.write("log.csv", "time,level\n12:00,INFO\n");
-    Window window(path);
+    Window window(path, OpenOptions::Header::No);
     GuiTableView *view = window.currentView();
     REQUIRE(window.waitForRows(view, 2));
     window->set_follow(true);
@@ -241,7 +241,7 @@ TEST_CASE("GUI: edits are saved and the file is read again")
 {
     TempDir dir;
     const auto path = dir.write("t.csv", "a,b\n1,x\n2,y\n");
-    Window window(path);
+    Window window(path, OpenOptions::Header::No);
     GuiTableView *view = window.currentView();
     REQUIRE(window.waitForRows(view, 3));
     window->set_editing(true);
@@ -259,4 +259,33 @@ TEST_CASE("GUI: edits are saved and the file is read again")
                   {
         const CellRef cell = reopened->model()->peek(1, 0);
         return cell.state == CellState::Ready && formatCell(*cell.value) == "42"; }));
+}
+
+TEST_CASE("GUI: the first row is the header when it looks like one, unless chosen otherwise")
+{
+    TempDir dir;
+    const auto path = dir.write("t.csv", "a,b\n1,x\n2,y\n");
+    const auto numbers = dir.write("n.csv", "1,2\n3,4\n");
+    Window window(path);
+    REQUIRE(window.waitForRows(window.currentView(), 2));
+    CHECK(window->first_row() == OpenOptions::Header::Auto);
+    CHECK(window.currentView()->model()->columnName(0) == "a");
+
+    window->set_first_row(OpenOptions::Header::No);
+    REQUIRE(waitFor([&] { return currentRows(window, 3); }));
+    CHECK(currentCell(window, 0, 0) == "a");
+    window->set_first_row(OpenOptions::Header::Auto);
+    REQUIRE(waitFor([&] { return currentRows(window, 2); }));
+
+    // Numbers are data; Header takes them as names all the same.
+    window->open(utf8String(numbers));
+    REQUIRE(waitFor([&] { return currentRows(window, 2); }));
+    window->set_first_row(OpenOptions::Header::Yes);
+    REQUIRE(waitFor([&] { return currentRows(window, 1); }));
+    CHECK(window.currentView()->model()->columnName(0) == "1");
+
+    // The choice is the file's: another file is guessed again.
+    window->open(utf8String(path));
+    CHECK(window->first_row() == OpenOptions::Header::Auto);
+    CHECK(waitFor([&] { return currentRows(window, 2); }));
 }

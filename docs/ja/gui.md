@@ -325,7 +325,7 @@ CSV / TSV と Excel ファイルのセルは、編集モードでだけ変更で
 | 項目                              | 効果                                                           |
 | --------------------------------- | -------------------------------------------------------------- |
 | Use monospace font                | セルを等幅フォントで表示する                                   |
-| Use first row as header           | 先頭行を列名として使う（CSV / TSV / Excel）                    |
+| First Row                         | 先頭行を Auto（見出しらしければ列名）、Header（列名）、Data（データ）のどれとして扱うか（CSV / TSV / Excel） |
 | Skip lines starting with ##       | テキストファイルの `##` 行を読み飛ばす（VCF では既定でオン）   |
 | Text Encoding                     | CSV / TSV の文字コード：UTF-8、UTF-16LE、UTF-16BE、Shift_JIS（CP932） |
 | Show All Columns                  | 隠した列を再び表示する                                         |

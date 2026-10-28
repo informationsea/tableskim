@@ -104,6 +104,8 @@ int runGui(const CommandLineOptions &options)
             // Before any file is open this only records the choice.
             if (options.encoding)
                 table_windows.back()->set_text_encoding(*options.encoding);
+            if (options.header)
+                table_windows.back()->set_first_row(*options.header ? OpenOptions::Header::Yes : OpenOptions::Header::No);
             table_windows.back()->open(options.files[i]);
         }
         else

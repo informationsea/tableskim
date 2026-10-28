@@ -125,6 +125,13 @@ TEST_CASE("parseCommandLine reads the summary options", "[cli]")
         CHECK(options.files == std::vector<std::string>{"a.csv"});
     }
 
+    SECTION("--header applies to the UIs too")
+    {
+        REQUIRE_FALSE(parse({"--header", "yes", "a.csv"}, options));
+        CHECK_FALSE(options.printsSummary());
+        CHECK(options.header == true);
+    }
+
     SECTION("--head with sheets")
     {
         REQUIRE_FALSE(parse({"--head", "20", "--sheet", "A", "--sheet", "B", "a.xlsx", "b.xlsx"}, options));

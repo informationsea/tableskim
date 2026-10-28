@@ -56,6 +56,8 @@ int runTui(const CommandLineOptions &options)
     const std::string &file = options.files.front();
     if (options.encoding)
         tui.setTextEncoding(*options.encoding);
+    if (options.header)
+        tui.setFirstRow(*options.header ? OpenOptions::Header::Yes : OpenOptions::Header::No);
     if (!tui.open(file, &error))
     {
         std::fprintf(stderr, "Failed to open %s: %s\n", file.c_str(), error.c_str());

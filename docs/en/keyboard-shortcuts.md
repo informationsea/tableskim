@@ -97,7 +97,7 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `:`        | Run SQL (DuckDB / SQLite / Parquet / JSON); `Up` / `Down`: history, `Tab`: complete |
 | `w`        | Export the sheet as shown to CSV / TSV / Excel / Parquet                    |
 | `P` / `D`  | Convert to Parquet / DuckDB next to the file and open it (`Esc`: cancel)    |
-| `H`        | Use the first row as header (CSV / TSV / Excel)                             |
+| `H`        | First row: switch between the guess and header / data (CSV / TSV / Excel) |
 | `#`        | Skip lines starting with `##` (on by default for VCF)                       |
 | `E`        | Next text encoding: UTF-8, UTF-16LE, UTF-16BE, Shift_JIS (CP932)            |
 | `r`        | Revert (reload the file)                                                    |

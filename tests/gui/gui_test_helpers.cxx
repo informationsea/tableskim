@@ -118,6 +118,13 @@ namespace gui_test
         pump();
     }
 
+    Window::Window(const std::filesystem::path &path, OpenOptions::Header first_row) : Window()
+    {
+        window_->set_first_row(first_row);
+        window_->open(utf8String(path));
+        pump();
+    }
+
     Window::~Window()
     {
         window_->hide();
