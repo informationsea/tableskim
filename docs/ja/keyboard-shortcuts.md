@@ -97,7 +97,7 @@ SQL ウィンドウ内：
 | `:`        | SQL を実行（DuckDB / SQLite / Parquet / JSON）。`Up` / `Down`：履歴、`Tab`：補完 |
 | `w`        | シートを表示どおりに CSV / TSV / Excel / Parquet へエクスポート             |
 | `P` / `D`  | Parquet / DuckDB に変換して同じ場所に保存し、開く（`Esc`：中止）            |
-| `H`        | 先頭行を列名として使う（CSV / TSV / Excel）                                 |
+| `H`        | 先頭行：見出しの判定と、その逆（列名 / データ）を切り替える（CSV / TSV / Excel） |
 | `#`        | `##` で始まる行を読み飛ばす（VCF では既定でオン）                           |
 | `E`        | 次の文字コード：UTF-8、UTF-16LE、UTF-16BE、Shift_JIS（CP932）               |
 | `r`        | 再読み込み（ファイルを読み直す）                                            |

@@ -100,6 +100,7 @@ tableskim --encoding cp932 old.csv # read a Shift_JIS CSV file
 | ------------------- | ------------------------------------------------------------------- |
 | `-t`, `--tui`       | Use the terminal UI even if a graphical display is available        |
 | `--encoding <name>` | Encoding of CSV / TSV files: `auto` (default), `utf-8`, `utf-16le`, `utf-16be` or `cp932` (`shift_jis`) |
+| `--header <when>`   | Whether the first row of CSV / TSV files and Excel sheets holds the column names: `auto` (default), `yes` or `no` |
 | `--log <file>`      | Write log messages to a file                                        |
 | `-v`, `--verbose`   | Enable verbose (debug) logging                                      |
 | `-V`, `--version`   | Show version information and exit                                   |
@@ -134,8 +135,7 @@ For each sheet, the summary has:
 - The first rows: 10 with `--summary`, N with `--head N`.
 
 The first row of a CSV / TSV file or an Excel sheet is taken as the column
-names when it looks like a header (`--header auto`); `--header yes` or
-`--header no` decides instead.
+names when it looks like a header, as in the windows (`--header`, above).
 
 | Option              | Description                                                         |
 | ------------------- | ------------------------------------------------------------------- |
@@ -144,7 +144,6 @@ names when it looks like a header (`--header auto`); `--header yes` or
 | `--format <format>` | `markdown` (default) or `json`                                      |
 | `--sheet <name>`    | Only this sheet (may be repeated)                                   |
 | `--scan-rows <N>`   | Compute the statistics over the first N rows only                   |
-| `--header <when>`   | Whether the first row holds the column names: `auto` (default), `yes` or `no` |
 
 Markdown cells are cut at 80 bytes. JSON keeps every value: numbers and
 booleans as such, dates and date-times as ISO text, empty cells as `null`.
@@ -162,9 +161,12 @@ search while a large file is still loading.
 
 ![A CSV file in the GUI](../images/gui-main-window.png)
 
-By default the first row of a CSV / TSV or Excel file is shown as data, and
-the columns are named `A`, `B`, `C`, ... like a spreadsheet. If the first row
-holds column names, turn on **View → Use first row as header** (`H` in the
-terminal UI). Parquet files and databases always use their own column names.
+The first row of a CSV / TSV file or an Excel sheet is taken as the column
+names when it looks like a header: every cell is text, none is empty, and no
+two are the same. Otherwise it is shown as data, and the columns are named
+`A`, `B`, `C`, ... like a spreadsheet. If the guess is wrong, choose
+**View → First Row → Header** or **Data** (`H` in the terminal UI switches
+between the guess and the other choice; `--header` decides on the command
+line). Parquet files and databases always use their own column names.
 
 Continue with [Using the GUI](gui.md) or [Using the Terminal UI](tui.md).

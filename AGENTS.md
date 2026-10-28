@@ -166,8 +166,8 @@ read their header comments before changing anything in `src/common/`.
   interfaces, register it in `table_registry.cxx`, add the files to
   `tableskim-common` in `CMakeLists.txt`, and add `tests/table_<format>_tests.cxx`.
   Override `DataSource::usesHeaderOption()` to return true only if the
-  format honours `OpenOptions::header` (CSV, Excel); both UIs disable the
-  "first row as header" option otherwise (`TableBook::usesHeaderOption()`).
+  format honours `OpenOptions::header` (CSV, Excel); the UIs disable their
+  first-row option (View > First Row, `H`) otherwise (`TableBook::usesHeaderOption()`).
 - The DuckDB backend (`table_duckdb.cxx`) pages with `LIMIT`/`OFFSET` and
   translates `ViewSpec` into SQL that mirrors the in-memory sort/filter
   semantics in `table.cxx` (`cellMatchesCondition()`: numbers, dates by

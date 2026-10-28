@@ -38,6 +38,18 @@ std::optional<int> parseCommandLine(const std::vector<std::string> &args, Comman
                 return "Unknown encoding: " + value;
             },
             "ENCODING"));
+    std::string header = "auto";
+    app.add_option("--header", header,
+                   "Whether the first row of CSV / TSV files and Excel sheets holds the column names: auto "
+                   "(default), yes or no")
+        ->check(CLI::Validator(
+            [](std::string &value) -> std::string
+            {
+                if (value == "auto" || value == "yes" || value == "no")
+                    return {};
+                return "Expected auto, yes or no: " + value;
+            },
+            "WHEN"));
     app.add_option("files", options.files, "Files to open (the terminal UI needs exactly one)")->expected(0, -1);
 
     auto *summary_group = app.add_option_group("Summary", "Print to standard output and exit, without a UI");
@@ -62,18 +74,6 @@ std::optional<int> parseCommandLine(const std::vector<std::string> &args, Comman
     auto *scan_option = summary_group->add_option("--scan-rows", options.scan_rows,
                                                   "Compute the statistics over the first N rows only")
                             ->type_name("N");
-    std::string header = "auto";
-    auto *header_option =
-        summary_group->add_option("--header", header, "Whether the first row of CSV / TSV and Excel sheets "
-                                                      "holds the column names: auto (default), yes or no")
-            ->check(CLI::Validator(
-                [](std::string &value) -> std::string
-                {
-                    if (value == "auto" || value == "yes" || value == "no")
-                        return {};
-                    return "Expected auto, yes or no: " + value;
-                },
-                "WHEN"));
     std::vector<std::string> arg_storage = args;
     std::vector<char *> argv;
     for (auto &arg : arg_storage)
@@ -84,7 +84,7 @@ std::optional<int> parseCommandLine(const std::vector<std::string> &args, Comman
         app.parse(static_cast<int>(arg_storage.size()), argv.data());
         if (!options.printsSummary())
         {
-            for (const auto *option : {format_option, sheet_option, scan_option, header_option})
+            for (const auto *option : {format_option, sheet_option, scan_option})
             {
                 if (option->count() > 0)
                     throw CLI::ValidationError(option->get_name(), "needs --summary or --head");

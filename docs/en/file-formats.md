@@ -33,8 +33,10 @@ top of the terminal UI).
 - Quoted fields with commas, quotes and line breaks are supported.
 - Numbers, dates and booleans are recognized for sorting, filtering and
   statistics, while the text is shown as written in the file.
-- **Use first row as header** (View menu; `H` in the terminal UI) takes the
-  column names from the first row. It is off by default.
+- The first row is taken as the column names when it looks like a header
+  (every cell is text, none is empty, and no two are the same). **View →
+  First Row** (`H` in the terminal UI) chooses **Header** or **Data**
+  instead, for that file.
 
 ### Compressed files
 
@@ -83,7 +85,7 @@ row.
   booleans keep their types.
 - The value of a merged range is shown in its top-left cell; the other cells
   of the range are empty.
-- **Use first row as header** works as for CSV.
+- The first row is the header or data as for CSV, sheet by sheet.
 
 ## Parquet
 
