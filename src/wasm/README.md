@@ -189,7 +189,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `close` | | |
 | `sheet` | `name` | the sheet's info (below), with its `sheet` id |
 | `info` | `sheet` | `state` (`opening`, `ready`, `error`), `error`, `rows`, `rowsExact`, `displayRows`, `rowsText`, `hasHeader`, `columns` (`name`, `mark`), `capabilities`, `view`, `pending`, `filterText`, `viewError` and `viewErrorId` (the last failed view, until another is asked for; the id tells a new failure), `checkpoint`, `readingStopped` |
-| `rows` | `sheet`, `first`, `last`, `firstColumn`, `lastColumn` | `first`, `firstColumn`, `rows` (display texts), `kinds` (a character per cell: `n` number, `s` other, `e` empty, `l` loading, `o` beyond the row, `x` error), `loading`, `end` |
+| `rows` | `sheet`, `first`, `last`, `firstColumn`, `lastColumn` | `first`, `firstColumn`, `rows` (display texts), `kinds` (a character per cell: `n` number, `s` other, `e` empty, `l` loading, `o` beyond the row, `x` error), `hits` (while a search is on or has hits: each row's columns holding one), `loading`, `end` |
 | `setView` | `sheet`, `sort` (`column`, `ascending`), `filter` (`combine`, `conditions`: `column`, `op`, `value`) or null, `addConditions` (conditions joined to the filter, once each); each left out keeps the view asked for last, even while it is applied | `view` |
 | `sortCycle` | `sheet`, `column` | `view` (by the column ascending, descending, then none) |
 | `search` / `cancelSearch` / `searchState` | `sheet`, `text`, `caseSensitive`, `regex`, `column` | `active`, `done`, `truncated`, `error`, `scannedRows`, `hits`, `generation` |

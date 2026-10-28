@@ -234,6 +234,27 @@ TEST_CASE("WebSession opens a CSV file and pages through its rows")
                                                             ",\"row\":0,\"column\":0,\"forward\":false}");
         CHECK(*back["wrapped"].boolean());
         CHECK(back["index"].number() == 6);
+
+        // The rows mark the hits among their cells, until the search is cancelled.
+        const JsonValue all = client.rows(id, 0, 53);
+        const auto &hit_rows = *all["hits"].array();
+        REQUIRE(hit_rows.size() == 54);
+        size_t marked = 0;
+        for (size_t row = 0; row < hit_rows.size(); ++row)
+        {
+            for (const JsonValue &column : *hit_rows[row].array())
+            {
+                CHECK(cell(all, row, static_cast<size_t>(*column.number())) == "Tokyo");
+                ++marked;
+            }
+        }
+        CHECK(marked == 7);
+        const JsonValue part = client.result("rows", "{\"sheet\":" + std::to_string(id) +
+                                                         ",\"first\":0,\"last\":53,\"firstColumn\":5,\"lastColumn\":8}");
+        for (const JsonValue &row_hits : *part["hits"].array())
+            CHECK(row_hits.array()->empty()); // City is column 4
+        client.result("cancelSearch", "{\"sheet\":" + std::to_string(id) + "}");
+        CHECK(client.rows(id, 0, 53)["hits"].isNull());
     }
 
     SECTION("copying")

@@ -631,6 +631,14 @@ describe('the web app', () => {
         await waitForText(page.locator('.cell.cursor'), 'Tokyo');
         await page.press('#search-text', 'Shift+Enter');
         await page.waitForFunction((row) => document.querySelector('.cell.cursor')?.dataset.row === row, first);
+
+        // The hits in view are marked (the selected one shows the selection),
+        // and no longer once the query changes.
+        await page.locator('.cell.hit').first().waitFor();
+        const marked = await page.locator('.cell.hit').allTextContents();
+        assert.ok(marked.length > 0 && marked.every((text) => text === 'Tokyo'), marked.join());
+        await page.fill('#search-text', 'tokyo2');
+        await page.waitForFunction(() => document.querySelectorAll('.cell.hit').length === 0);
         await page.context().close();
     });
 

@@ -571,8 +571,13 @@ namespace
     {
         model.requestRange(first, last);
         const size_t columns = model.columnCount();
+        // The search's hits among these cells, for the page to mark them as
+        // the other UIs do; the hits are in view rows, in scan order.
+        const SearchState search = model.searchState();
+        const bool searching = search.active || !search.hits.empty();
         json.beginObject().key("first").value(first).key("firstColumn").value(first_column).key("rows").beginArray();
         std::vector<std::string> kinds;
+        std::vector<std::vector<size_t>> hits;
         // A sheet being opened has no columns yet; its rows come later.
         bool loading = model.state() == ModelState::Opening;
         bool end = columns == 0 && !loading;
@@ -597,11 +602,32 @@ namespace
             }
             json.endArray();
             kinds.push_back(std::move(row_kinds));
+            if (searching)
+            {
+                std::vector<size_t> &row_hits = hits.emplace_back();
+                auto hit = std::lower_bound(search.hits.begin(), search.hits.end(), CellPosition{row, first_column},
+                                            searchHitBefore);
+                for (; hit != search.hits.end() && hit->row == row && hit->col <= last_column; ++hit)
+                    row_hits.push_back(hit->col);
+            }
         }
         json.endArray().key("kinds").beginArray();
         for (const std::string &row_kinds : kinds)
             json.value(row_kinds);
-        json.endArray().key("loading").value(loading).key("end").value(end).endObject();
+        json.endArray();
+        if (searching)
+        {
+            json.key("hits").beginArray();
+            for (const std::vector<size_t> &row_hits : hits)
+            {
+                json.beginArray();
+                for (const size_t column : row_hits)
+                    json.value(column);
+                json.endArray();
+            }
+            json.endArray();
+        }
+        json.key("loading").value(loading).key("end").value(end).endObject();
     }
 
     void writeSearchState(JsonWriter &json, const SearchState &state)

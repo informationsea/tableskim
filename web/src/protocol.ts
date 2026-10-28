@@ -101,6 +101,8 @@ export interface RowsReply {
     firstColumn: number;
     rows: string[][];
     kinds: string[];
+    // While a search is on: each row's columns that hold a hit.
+    hits?: number[][];
     loading: boolean;
     end: boolean; // the table ends after these rows
 }

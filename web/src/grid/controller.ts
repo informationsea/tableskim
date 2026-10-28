@@ -67,6 +67,7 @@ interface CachedRow {
     // scrolled ones.
     frozenTexts: string[];
     frozenKinds: string;
+    hits: Set<number> | null; // columns holding a search hit
     generation: number;
 }
 
@@ -341,9 +342,9 @@ export class GridController {
     }
 
     /** What to draw in a cell. */
-    cell(row: number, column: number): { kind: CellKind; text: string } {
+    cell(row: number, column: number): { kind: CellKind; text: string; hit: boolean } {
         const cached = this.cache.get(row);
-        if (!cached) return { kind: 'l', text: '' };
+        if (!cached) return { kind: 'l', text: '', hit: false };
         let texts = cached.texts;
         let kinds = cached.kinds;
         let index = column - cached.firstColumn;
@@ -353,7 +354,7 @@ export class GridController {
             index = column;
         }
         const kind = (index >= 0 && index < kinds.length ? kinds[index] : 'l') as CellKind;
-        return { kind, text: kind === 'l' ? '' : (texts[index] ?? '') };
+        return { kind, text: kind === 'l' ? '' : (texts[index] ?? ''), hit: !!cached.hits?.has(column) };
     }
 
     // Whether a row's cached cells cover the columns first to last.
@@ -404,6 +405,10 @@ export class GridController {
                         kinds: rows.kinds[i],
                         frozenTexts: frozen ? frozen.rows[i] : [],
                         frozenKinds: frozen ? frozen.kinds[i] : '',
+                        hits:
+                            rows.hits || frozen?.hits
+                                ? new Set([...(rows.hits?.[i] ?? []), ...(frozen?.hits?.[i] ?? [])])
+                                : null,
                         generation,
                     });
                 }

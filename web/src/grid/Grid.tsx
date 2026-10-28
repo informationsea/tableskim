@@ -124,7 +124,7 @@ export function Grid({ info, sheetKey, dataVersion, viewVersion, hidden, frozen,
         const edge = column === lastFrozen ? ' border-r-2 border-r-line' : '';
         for (let row = view.firstRow; row <= view.lastRow; row++) {
             const y = HEADER_HEIGHT + (row - view.firstRow) * ROW_HEIGHT - view.rowShift;
-            const { kind, text } = controller.cell(row, column);
+            const { kind, text, hit } = controller.cell(row, column);
             const selected = inColumns && row >= selection.top && row <= selection.bottom;
             const isCursor = row === cursor.row && column === cursor.column;
             cells.push(
@@ -132,14 +132,17 @@ export function Grid({ info, sheetKey, dataVersion, viewVersion, hidden, frozen,
                     key={`${row}:${column}`}
                     className={
                         `${CELL} ${KIND_CLASSES[kind] ?? ''}${edge}` +
-                        (pinned ? ' z-1 bg-surface' : '') +
+                        // The hit's colour is opaque, so it replaces the surface.
+                        (pinned ? (hit && !selected ? ' z-1' : ' z-1 bg-surface') : '') +
                         // A frozen cell covers the cells scrolled under it: the
                         // translucent selection goes over its opaque background.
                         (selected
                             ? pinned
                                 ? ' selected bg-[linear-gradient(var(--selection),var(--selection))]'
                                 : ' selected bg-selection'
-                            : '') +
+                            : hit
+                              ? ' hit bg-hit'
+                              : '') +
                         (isCursor ? ' cursor shadow-[inset_0_0_0_2px_var(--color-accent)]' : '')
                     }
                     data-row={row}

@@ -13,6 +13,7 @@
     --header: #eef0f3;
     --accent: #2563eb;
     --selection: rgb(37 99 235 / 0.14);
+    --hit: #ffeb99; /* a search hit, as in the GUI */
     --active: #dbe5fb;
     --banner: #fff7db;
     --danger: #b42318;
@@ -44,6 +45,7 @@
         --header: #24272d;
         --accent: #6c9cff;
         --selection: rgb(108 156 255 / 0.2);
+        --hit: #5c4b12;
         --active: #2c3a57;
         --banner: #3a3420;
         --danger: #ff8a80;
@@ -74,6 +76,7 @@
     --color-header: var(--header);
     --color-accent: var(--accent);
     --color-selection: var(--selection);
+    --color-hit: var(--hit);
     --color-active: var(--active);
     --color-banner: var(--banner);
     --color-danger: var(--danger);

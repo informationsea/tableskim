@@ -307,7 +307,12 @@ export function App({ client }: { client: TableSkimClient }) {
     const changeSearch = (change: Partial<typeof search>) => {
         // A changed query or option is a new search.
         const current = flow.current.info;
-        if (flow.current.searchActive && current) client.call('cancelSearch', { sheet: current.sheet }).catch(() => {});
+        // The rows are fetched again, without the hits marked.
+        if (flow.current.searchActive && current)
+            client
+                .call('cancelSearch', { sheet: current.sheet })
+                .then(() => setDataVersion((version) => version + 1))
+                .catch(() => {});
         resetSearch();
         setSearch((previous) => ({ ...previous, ...change }));
     };
@@ -501,6 +506,9 @@ export function App({ client }: { client: TableSkimClient }) {
                     firstColumn,
                     rows: Array.from({ length: count }, (_, row) => replies.flatMap((reply) => reply.rows[row])),
                     kinds: Array.from({ length: count }, (_, row) => replies.map((reply) => reply.kinds[row]).join('')),
+                    hits: replies.some((reply) => reply.hits)
+                        ? Array.from({ length: count }, (_, row) => replies.flatMap((reply) => reply.hits?.[row] ?? []))
+                        : undefined,
                     loading: replies.some((reply) => reply.loading),
                     end: replies.some((reply) => reply.end),
                 };
@@ -541,7 +549,8 @@ export function App({ client }: { client: TableSkimClient }) {
                 const bits = current && events.get(current.sheet);
                 if (!bits) return;
                 if (bits & Events.VIEW) setViewVersion((version) => version + 1);
-                else if (bits & Events.ROWS) setDataVersion((version) => version + 1);
+                // A search marks its hits in the rows as it finds them.
+                else if (bits & (Events.ROWS | Events.SEARCH)) setDataVersion((version) => version + 1);
                 if (bits & (Events.STATE | Events.ROW_COUNT | Events.VIEW | Events.CHECKPOINT)) void refreshInfo();
                 if (bits & (Events.SEARCH | Events.VIEW)) void searchProgressed();
             }),
