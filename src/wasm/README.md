@@ -110,7 +110,17 @@ or `localhost` / `127.0.0.1`); without one, or if a reload did not help,
 the page explains what is missing. To try it, `./web.sh --pages` (or
 `node web/serve.mjs --no-isolation-headers ...`) serves without the
 headers, and an end-to-end test does the same. To publish the app, copy
-`build/wasm-release/web/` (or `web/dist/`) to the host as it is.
+`build/wasm-release/web/` (or `web/dist/`) to the host as it is, under any
+path: its links are relative (Vite's `base: './'`), so it works in any
+directory, opened by the directory's URL with the slash at the end.
+
+`cmake --build --preset wasm-release --target tableskim-web-zip` packs the
+built app into `build/wasm-release/tableskim-<version>-web.zip`, a folder of
+the same name with the app, `LICENSE`, `THIRD_PARTY_LICENSES.txt` (the
+build's list plus Emscripten's runtime and the bundled npm packages) and a
+`README.txt` on placing it (`cmake/WebZip.cmake`). The release attaches it
+(the `web` job of `.github/workflows/release.yml`), the download pages list
+it, and CI uploads its folder as the `tableskim-web` artifact.
 
 `node web/serve.mjs build/wasm-release` serves the app CMake built (or
 `web/dist/`) at http://127.0.0.1:8765/ and the probe page at `/probe/`.

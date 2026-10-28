@@ -324,9 +324,13 @@ jobs:
           key: ccache-wasm-${{ env.EMSDK_VERSION }}-${{ github.sha }}-${{ github.run_id }}
       - name: Test
         run: ctest --preset wasm-release
+      # As the release packs it (tableskim-<version>-web.zip); the artifact
+      # holds the ZIP's folder, as GitHub zips artifacts itself.
+      - name: Pack the web app
+        run: cmake --build --preset wasm-release --target tableskim-web-zip
       - name: Upload the web app
         uses: actions/upload-artifact@v4
         with:
           name: tableskim-web
-          path: build/wasm-release/web
+          path: build/wasm-release/web-zip
           if-no-files-found: error

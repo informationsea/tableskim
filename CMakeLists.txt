@@ -272,6 +272,23 @@ if(EMSCRIPTEN)
             VERBATIM
         )
         add_custom_target(tableskim-web ALL DEPENDS ${TABLESKIM_WEB_OUTPUT_DIR}/index.html)
+        # The app as a ZIP to put on any web server, with the licenses and a
+        # README (the release's tableskim-<version>-web.zip); built on request.
+        set(TABLESKIM_WEB_ZIP_NAME tableskim-${PROJECT_VERSION}-web)
+        add_custom_target(tableskim-web-zip
+            COMMAND ${CMAKE_COMMAND}
+                -DAPP_DIR=${TABLESKIM_WEB_OUTPUT_DIR}
+                -DSTAGE_DIR=${CMAKE_CURRENT_BINARY_DIR}/web-zip/${TABLESKIM_WEB_ZIP_NAME}
+                -DZIP_FILE=${CMAKE_CURRENT_BINARY_DIR}/${TABLESKIM_WEB_ZIP_NAME}.zip
+                -DLICENSE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+                -DTHIRD_PARTY_FILE=${TABLESKIM_LICENSE_FILE}
+                -DWEB_SOURCE_DIR=${TABLESKIM_WEB_SOURCE_DIR}
+                -DEMSCRIPTEN_LICENSE=${EMSCRIPTEN_ROOT_PATH}/LICENSE
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/WebZip.cmake
+            DEPENDS tableskim-web
+            COMMENT "Packing the web app into ${TABLESKIM_WEB_ZIP_NAME}.zip"
+            VERBATIM
+        )
     endif()
 endif()
 

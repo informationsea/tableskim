@@ -18,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-# Asset names as cmake/Packaging.cmake makes them.
+# Asset names as cmake/Packaging.cmake makes them, and the web app's.
 PATTERNS = {
     "windows-installer": r"tableskim-[\d.]+-Windows-[^-]+\.exe",
     "windows-zip": r"tableskim-[\d.]+-Windows-[^-]+\.zip",
@@ -31,6 +31,8 @@ PATTERNS = {
     "linux-zip": r"tableskim-[\d.]+-Linux-[^-]+\.zip",
     "linux-x11-zip": r"tableskim-[\d.]+-Linux-x11-[^-]+\.zip",
     "linux-tui-zip": r"tableskim-tui-[\d.]+-Linux-[^-]+\.zip",
+    # cmake/WebZip.cmake (the tableskim-web-zip target).
+    "web-zip": r"tableskim-[\d.]+-web\.zip",
 }
 
 PAGES = {"download.html": "en", "ja/download.html": "ja"}

@@ -116,7 +116,9 @@ ctest --preset debug -j 8            # test cases in parallel
   `build/<preset>/web/` (`npm ci` and `npm run build` in `web/`, which
   type-checks it); ctest runs the tests in Node.js and the web app's
   end-to-end tests. `./web.sh` builds the app and serves it locally
-  (`--dev`: Vite's server). See `src/wasm/README.md`. `size_t` is
+  (`--dev`: Vite's server); the `tableskim-web-zip` target packs it into
+  `tableskim-<version>-web.zip` (`cmake/WebZip.cmake`), which the release
+  attaches. See `src/wasm/README.md`. `size_t` is
   32 bits there, and reads of a file are much dearer in a browser, so read
   in large pieces.
 
