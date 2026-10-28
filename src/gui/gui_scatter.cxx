@@ -884,8 +884,7 @@ void ScatterWindow::addFilterConditions(std::vector<FilterCondition> conditions)
     if (!model_ || conditions.empty() || !model_->viewCapabilities().filter)
         return;
     ViewSpec spec = model_->requestedView();
-    for (FilterCondition &condition : conditions)
-        addFilterCondition(spec, std::move(condition));
+    addNarrowingConditions(spec, std::move(conditions));
     // The plot then starts over on the rows left.
     model_->setView(std::move(spec));
 }

@@ -26,6 +26,15 @@ if(MSVC)
     endif()
 endif()
 
+# WebAssembly (Emscripten): the core library and its tests only, for a
+# browser frontend. Every object must agree on threads and on the exception
+# model, so set both before the dependencies are added.
+if(EMSCRIPTEN)
+    set(TABLESKIM_BUILD_GUI OFF)
+    add_compile_options(-pthread -fwasm-exceptions)
+    add_link_options(-pthread -fwasm-exceptions)
+endif()
+
 option(TABLESKIM_BUILD_GUI "Build the FLTK GUI; when OFF, tableskim is the terminal UI only and FLTK is not needed" ON)
 
 # Reuse compiled objects through ccache when it is installed, for this project
@@ -91,6 +100,8 @@ add_library(tableskim-common
     src/common/table_export.hxx
     src/common/sql_text.hxx
     src/common/sql_text.cxx
+    src/common/search_hits.hxx
+    src/common/search_hits.cxx
     src/common/sql_history.hxx
     src/common/sql_history.cxx
     src/common/recent_files.hxx
@@ -146,6 +157,7 @@ add_custom_target(tableskim-git-revision ALL
     VERBATIM
 )
 add_dependencies(tableskim-common tableskim-git-revision)
+
 target_include_directories(tableskim-common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -159,6 +171,127 @@ if(WIN32)
     target_link_libraries(tableskim-common PRIVATE shell32 ole32)
 endif()
 
+# Opens a file, reads it through and sorts it, timing each step, in Node.js
+# or a browser (src/wasm/README.md); natively too, to compare (not built by
+# default there).
+add_executable(tableskim-wasm-probe src/wasm/wasm_probe.cxx)
+target_link_libraries(tableskim-wasm-probe PRIVATE tableskim-common tableskim-warnings)
+if(NOT EMSCRIPTEN)
+    set_target_properties(tableskim-wasm-probe PROPERTIES EXCLUDE_FROM_ALL ON)
+endif()
+
+if(EMSCRIPTEN)
+    # main() gets a thread of its own, so that the thread running the
+    # runtime is free to start the workers that main() waits for (and to
+    # serve the file systems, which only it may touch). DuckDB needs more
+    # stack than the default 64 KiB.
+    set(TABLESKIM_WASM_LINK_OPTIONS
+        -sPROXY_TO_PTHREAD=1
+        -sEXIT_RUNTIME=1
+        -sALLOW_MEMORY_GROWTH=1
+        -sMAXIMUM_MEMORY=4GB
+        -sSTACK_SIZE=8MB
+        -sDEFAULT_PTHREAD_STACK_SIZE=8MB
+    )
+
+    # Node.js and browsers (as a worker's script) read the files it opens
+    # through the file systems wasm_probe_pre.js mounts.
+    target_link_options(tableskim-wasm-probe PRIVATE
+        ${TABLESKIM_WASM_LINK_OPTIONS}
+        -sENVIRONMENT=web,worker,node
+        -lnodefs.js
+        -lworkerfs.js
+        --pre-js ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_probe_pre.js
+    )
+    set_property(TARGET tableskim-wasm-probe APPEND PROPERTY LINK_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_probe_pre.js)
+
+    # The module of the web frontend (web/app/), run as a worker's script.
+    add_executable(tableskim-wasm
+        src/wasm/wasm_api.cxx
+        src/wasm/web_session.hxx
+        src/wasm/web_session.cxx
+        src/wasm/web_json.hxx
+        src/wasm/web_json.cxx
+    )
+    target_link_libraries(tableskim-wasm PRIVATE tableskim-common tableskim-warnings)
+    target_link_options(tableskim-wasm PRIVATE
+        ${TABLESKIM_WASM_LINK_OPTIONS}
+        -sEXIT_RUNTIME=0
+        -sENVIRONMENT=worker
+        -sFORCE_FILESYSTEM=1
+        -sEXPORTED_RUNTIME_METHODS=stringToNewUTF8,UTF8ToString
+        -lworkerfs.js
+        --pre-js ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js
+    )
+    set_property(TARGET tableskim-wasm APPEND PROPERTY LINK_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js)
+
+    # The web app itself (web/: React, TypeScript, Vite), built with npm into
+    # <build>/web with the module next to it. AUTO builds it when npm is
+    # found, ON requires it; npm ci fetches its packages the first time.
+    set(TABLESKIM_WEB_APP AUTO CACHE STRING "Build the web app with npm (AUTO, ON or OFF; WebAssembly builds only)")
+    set_property(CACHE TABLESKIM_WEB_APP PROPERTY STRINGS AUTO ON OFF)
+    set(TABLESKIM_HAVE_WEB_APP FALSE)
+    if(NOT TABLESKIM_WEB_APP STREQUAL "OFF")
+        find_program(TABLESKIM_NPM npm)
+        if(TABLESKIM_NPM)
+            set(TABLESKIM_HAVE_WEB_APP TRUE)
+        elseif(TABLESKIM_WEB_APP STREQUAL "ON")
+            message(FATAL_ERROR "TABLESKIM_WEB_APP=ON needs npm (Node.js)")
+        else()
+            message(STATUS "Web app skipped: npm not found")
+        endif()
+    endif()
+    if(TABLESKIM_HAVE_WEB_APP)
+        set(TABLESKIM_WEB_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/web)
+        set(TABLESKIM_WEB_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/web)
+        add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web-packages.stamp
+            COMMAND ${TABLESKIM_NPM} ci --no-audit --no-fund
+            COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/web-packages.stamp
+            DEPENDS ${TABLESKIM_WEB_SOURCE_DIR}/package.json ${TABLESKIM_WEB_SOURCE_DIR}/package-lock.json
+            WORKING_DIRECTORY ${TABLESKIM_WEB_SOURCE_DIR}
+            COMMENT "Installing the web app's packages"
+            VERBATIM
+        )
+        file(GLOB_RECURSE TABLESKIM_WEB_SOURCES CONFIGURE_DEPENDS ${TABLESKIM_WEB_SOURCE_DIR}/src/*)
+        add_custom_command(
+            OUTPUT ${TABLESKIM_WEB_OUTPUT_DIR}/index.html
+            COMMAND ${CMAKE_COMMAND} -E env TABLESKIM_WASM_BUILD=${CMAKE_CURRENT_BINARY_DIR}
+                ${TABLESKIM_NPM} run build -- --outDir ${TABLESKIM_WEB_OUTPUT_DIR} --emptyOutDir
+            DEPENDS
+                ${CMAKE_CURRENT_BINARY_DIR}/web-packages.stamp
+                ${TABLESKIM_WEB_SOURCES}
+                ${TABLESKIM_WEB_SOURCE_DIR}/index.html
+                ${TABLESKIM_WEB_SOURCE_DIR}/vite.config.ts
+                ${TABLESKIM_WEB_SOURCE_DIR}/tsconfig.json
+                tableskim-wasm
+            WORKING_DIRECTORY ${TABLESKIM_WEB_SOURCE_DIR}
+            COMMENT "Building the web app"
+            VERBATIM
+        )
+        add_custom_target(tableskim-web ALL DEPENDS ${TABLESKIM_WEB_OUTPUT_DIR}/index.html)
+        # The app as a ZIP to put on any web server, with the licenses and a
+        # README (the release's tableskim-<version>-web.zip); built on request.
+        set(TABLESKIM_WEB_ZIP_NAME tableskim-${PROJECT_VERSION}-web)
+        add_custom_target(tableskim-web-zip
+            COMMAND ${CMAKE_COMMAND}
+                -DAPP_DIR=${TABLESKIM_WEB_OUTPUT_DIR}
+                -DSTAGE_DIR=${CMAKE_CURRENT_BINARY_DIR}/web-zip/${TABLESKIM_WEB_ZIP_NAME}
+                -DZIP_FILE=${CMAKE_CURRENT_BINARY_DIR}/${TABLESKIM_WEB_ZIP_NAME}.zip
+                -DLICENSE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
+                -DTHIRD_PARTY_FILE=${TABLESKIM_LICENSE_FILE}
+                -DWEB_SOURCE_DIR=${TABLESKIM_WEB_SOURCE_DIR}
+                -DEMSCRIPTEN_LICENSE=${EMSCRIPTEN_ROOT_PATH}/LICENSE
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/WebZip.cmake
+            DEPENDS tableskim-web
+            COMMENT "Packing the web app into ${TABLESKIM_WEB_ZIP_NAME}.zip"
+            VERBATIM
+        )
+    endif()
+endif()
+
 set(TABLESKIM_TUI_SOURCES
     src/main.cxx
     src/tui/tui_main.hxx
@@ -169,19 +302,19 @@ set(TABLESKIM_TUI_SOURCES
     src/tui/tui_table_view.cxx
     src/tui/tui_text.hxx
     src/tui/tui_text.cxx
-    src/tui/tui_search.hxx
-    src/tui/tui_search.cxx
 )
 
 # The single `tableskim` command: it starts the GUI or, without a display
-# (or with --tui), the terminal UI.
-add_executable(tableskim ${TABLESKIM_TUI_SOURCES})
-target_include_directories(tableskim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
-target_link_libraries(tableskim PRIVATE tableskim-common ftxui::screen ftxui::dom ftxui::component tableskim-warnings)
-target_compile_definitions(tableskim PRIVATE
-    $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
-)
-add_dependencies(tableskim tableskim-git-revision)
+# (or with --tui), the terminal UI. A WebAssembly build has no command.
+if(NOT EMSCRIPTEN)
+    add_executable(tableskim ${TABLESKIM_TUI_SOURCES})
+    target_include_directories(tableskim PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
+    target_link_libraries(tableskim PRIVATE tableskim-common ftxui::screen ftxui::dom ftxui::component tableskim-warnings)
+    target_compile_definitions(tableskim PRIVATE
+        $<$<CONFIG:Debug>:TABLESKIM_DEBUG=1>
+    )
+    add_dependencies(tableskim tableskim-git-revision)
+endif()
 
 # On Windows the GUI executable has no console in Release builds, so the
 # terminal UI gets a console-subsystem executable of its own. Without
@@ -403,27 +536,30 @@ if(UNIX AND NOT APPLE AND TABLESKIM_BUILD_GUI)
 endif()
 
 # The user manual as HTML for browsers, installed with the program (see
-# cmake/Packaging.cmake).
-add_executable(tableskim-html-manual
-    src/tools/html_manual.cxx
-    src/common/markdown.cxx
-    src/common/help_docs.cxx
-)
-target_include_directories(tableskim-html-manual PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
-target_link_libraries(tableskim-html-manual PRIVATE tableskim-warnings)
-file(GLOB_RECURSE TABLESKIM_MANUAL_SOURCES CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/docs/*.md
-    ${CMAKE_CURRENT_SOURCE_DIR}/docs/*.png
-)
-set(TABLESKIM_MANUAL_DIR ${CMAKE_CURRENT_BINARY_DIR}/manual)
-add_custom_command(
-    OUTPUT ${TABLESKIM_MANUAL_DIR}/README.html
-    COMMAND tableskim-html-manual ${CMAKE_CURRENT_SOURCE_DIR}/docs ${TABLESKIM_MANUAL_DIR}
-    DEPENDS ${TABLESKIM_MANUAL_SOURCES} tableskim-html-manual
-    COMMENT "Converting the user manual to HTML"
-    VERBATIM
-)
-add_custom_target(tableskim-manual ALL DEPENDS ${TABLESKIM_MANUAL_DIR}/README.html)
+# cmake/Packaging.cmake). The tool runs at build time, so a WebAssembly build
+# leaves it out.
+if(NOT EMSCRIPTEN)
+    add_executable(tableskim-html-manual
+        src/tools/html_manual.cxx
+        src/common/markdown.cxx
+        src/common/help_docs.cxx
+    )
+    target_include_directories(tableskim-html-manual PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
+    target_link_libraries(tableskim-html-manual PRIVATE tableskim-warnings)
+    file(GLOB_RECURSE TABLESKIM_MANUAL_SOURCES CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/docs/*.md
+        ${CMAKE_CURRENT_SOURCE_DIR}/docs/*.png
+    )
+    set(TABLESKIM_MANUAL_DIR ${CMAKE_CURRENT_BINARY_DIR}/manual)
+    add_custom_command(
+        OUTPUT ${TABLESKIM_MANUAL_DIR}/README.html
+        COMMAND tableskim-html-manual ${CMAKE_CURRENT_SOURCE_DIR}/docs ${TABLESKIM_MANUAL_DIR}
+        DEPENDS ${TABLESKIM_MANUAL_SOURCES} tableskim-html-manual
+        COMMENT "Converting the user manual to HTML"
+        VERBATIM
+    )
+    add_custom_target(tableskim-manual ALL DEPENDS ${TABLESKIM_MANUAL_DIR}/README.html)
+endif()
 
 enable_testing()
 
@@ -453,27 +589,38 @@ add_executable(tableskim-tests
     tests/licenses_tests.cxx
     tests/cell_format_tests.cxx
     tests/tui_text_tests.cxx
-    tests/tui_search_tests.cxx
+    tests/search_hits_tests.cxx
     tests/cli_options_tests.cxx
     tests/table_summary_tests.cxx
+    tests/web_session_tests.cxx
     src/tui/tui_text.cxx
-    src/tui/tui_search.cxx
+    src/wasm/web_session.cxx
+    src/wasm/web_json.cxx
 )
-target_include_directories(tableskim-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui)
+target_include_directories(tableskim-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tui ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm)
 target_link_libraries(tableskim-tests PRIVATE tableskim-common Catch2::Catch2 pugixml::pugixml ftxui::screen tableskim-warnings)
 target_compile_definitions(tableskim-tests PRIVATE
     TABLESKIM_DEMO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/demo/data"
     TABLESKIM_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/docs"
     $<$<BOOL:${TABLESKIM_BUILD_GUI}>:TABLESKIM_TESTS_HAVE_GUI=1>
 )
-# One ctest test per test case, so that `ctest -j` runs them in parallel and
-# a hung one times out alone. Listed when ctest runs (PRE_TEST), not after
-# every link. Hidden tests ([.super-large]) are not listed.
-include(${catch2_SOURCE_DIR}/extras/Catch.cmake)
-catch_discover_tests(tableskim-tests
-    DISCOVERY_MODE PRE_TEST
-    PROPERTIES TIMEOUT 300
-)
+if(EMSCRIPTEN)
+    # Run by Node.js (ctest goes through the toolchain's emulator), reading
+    # the host files directly. One ctest test for them all: each process
+    # loads the whole module again, which per test case would take minutes.
+    target_link_options(tableskim-tests PRIVATE ${TABLESKIM_WASM_LINK_OPTIONS} -sNODERAWFS=1)
+    add_test(NAME tableskim-tests COMMAND tableskim-tests)
+    set_tests_properties(tableskim-tests PROPERTIES TIMEOUT 1200)
+else()
+    # One ctest test per test case, so that `ctest -j` runs them in parallel and
+    # a hung one times out alone. Listed when ctest runs (PRE_TEST), not after
+    # every link. Hidden tests ([.super-large]) are not listed.
+    include(${catch2_SOURCE_DIR}/extras/Catch.cmake)
+    catch_discover_tests(tableskim-tests
+        DISCOVERY_MODE PRE_TEST
+        PROPERTIES TIMEOUT 300
+    )
+endif()
 
 # End-to-end tests of the terminal UI (tests/tui/), which run tableskim -t in a
 # pseudo-terminal: Linux only, with Python 3 and pyte. AUTO adds them when
@@ -500,6 +647,46 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_TUI_TESTS STREQUAL "OFF"
         message(FATAL_ERROR "TABLESKIM_TUI_TESTS=ON needs Python 3 with pyte (python3-pyte, or pip install -r tests/tui/requirements.txt)")
     else()
         message(STATUS "Terminal UI tests skipped: Python 3 with pyte not found")
+    endif()
+endif()
+
+# The web app's lint (ESLint) and formatting (Prettier) checks.
+if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP)
+    add_test(NAME tableskim-web-lint COMMAND ${TABLESKIM_NPM} run lint
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web)
+    add_test(NAME tableskim-web-format COMMAND ${TABLESKIM_NPM} run format:check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web)
+endif()
+
+# End-to-end tests of the web app (web/tests/) in headless Chromium, with
+# Node.js and Playwright (a package of web/, which npm ci installs; the
+# browser comes from npx playwright install chromium): WebAssembly builds
+# with the web app only. AUTO adds them when Playwright is found at
+# configure time, ON requires it, as CI does.
+set(TABLESKIM_WEB_TESTS AUTO CACHE STRING "End-to-end tests of the web app (AUTO, ON or OFF; WebAssembly builds only)")
+set_property(CACHE TABLESKIM_WEB_TESTS PROPERTY STRINGS AUTO ON OFF)
+if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP AND NOT TABLESKIM_WEB_TESTS STREQUAL "OFF")
+    find_program(TABLESKIM_NODE node)
+    set(TABLESKIM_HAVE_PLAYWRIGHT FALSE)
+    if(TABLESKIM_NODE)
+        execute_process(COMMAND ${TABLESKIM_NODE} -e "require('playwright')"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web
+            RESULT_VARIABLE TABLESKIM_PLAYWRIGHT_RESULT OUTPUT_QUIET ERROR_QUIET)
+        if(TABLESKIM_PLAYWRIGHT_RESULT EQUAL 0)
+            set(TABLESKIM_HAVE_PLAYWRIGHT TRUE)
+        endif()
+    endif()
+    if(TABLESKIM_HAVE_PLAYWRIGHT)
+        add_test(NAME tableskim-web-tests
+            COMMAND ${TABLESKIM_NODE} --test ${CMAKE_CURRENT_SOURCE_DIR}/web/tests/app.test.cjs)
+        # Chromium drops non-ASCII paths given to a file input without a
+        # UTF-8 locale.
+        set_tests_properties(tableskim-web-tests PROPERTIES TIMEOUT 600
+            ENVIRONMENT "TABLESKIM_WASM_BUILD=${CMAKE_CURRENT_BINARY_DIR};LANG=C.UTF-8")
+    elseif(TABLESKIM_WEB_TESTS STREQUAL "ON")
+        message(FATAL_ERROR "TABLESKIM_WEB_TESTS=ON needs Node.js with Playwright (npm ci in web/)")
+    else()
+        message(STATUS "Web app tests skipped: Node.js with Playwright not found")
     endif()
 endif()
 
@@ -530,4 +717,6 @@ if(TABLESKIM_BUILD_GUI AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_
     endif()
 endif()
 
-include(cmake/Packaging.cmake)
+if(NOT EMSCRIPTEN)
+    include(cmake/Packaging.cmake)
+endif()

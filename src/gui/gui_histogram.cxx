@@ -441,14 +441,13 @@ void HistogramWindow::filterBy(size_t index)
     {
         if (index >= hg.binCount())
             return;
-        for (FilterCondition &condition : histogramBinConditions(hg, state_.column, index))
-            addFilterCondition(spec, std::move(condition));
+        addNarrowingConditions(spec, histogramBinConditions(hg, state_.column, index));
     }
     else
     {
         if (index >= hg.top.size())
             return;
-        addFilterCondition(spec, cellFilterCondition(state_.column, hg.top[index].value, true));
+        addNarrowingConditions(spec, {cellFilterCondition(state_.column, hg.top[index].value, true)});
     }
     // The histogram then starts over on the rows left.
     model_->setView(std::move(spec));

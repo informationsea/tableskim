@@ -334,8 +334,74 @@ jobs:
             build/msvc-release/*-Windows-*.exe
             build/msvc-release/*-Windows-*.zip
 
+  # The web app (src/wasm/README.md), built and tested as in CI's wasm job,
+  # as a ZIP to put on any web server (tableskim-<version>-web.zip).
+  web:
+    needs: check-version
+    runs-on: ubuntu-24.04
+    env:
+      EMSDK_VERSION: 6.0.13
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 1G
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+      # The ccache CI saved on main (see ci.yml).
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-wasm-${{ env.EMSDK_VERSION }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-wasm-${{ env.EMSDK_VERSION }}-
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/wasm-release/_deps/*-src
+            build/wasm-release/_deps/*-subbuild
+          key: deps-wasm-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in ci.yml).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
+      - name: Install the web app's packages and Chromium
+        # Before configuring, so that CMake finds Playwright.
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Build, test and pack
+        run: |
+          export EMSDK="${EMSDK:-$(dirname "$(dirname "$(dirname "$(command -v emcc)")")")}"
+          cmake --preset wasm-release -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
+          cmake --build --preset wasm-release
+          ctest --preset wasm-release
+          cmake --build --preset wasm-release --target tableskim-web-zip
+      - name: Show ccache statistics
+        run: ccache --show-stats
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: build/wasm-release/tableskim-*-web.zip
+          if-no-files-found: error
+
   release:
-    needs: [linux-deb, linux-rpm, linux-zip, macos, windows]
+    needs: [linux-deb, linux-rpm, linux-zip, macos, windows, web]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

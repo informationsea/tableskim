@@ -699,17 +699,14 @@ namespace
 
     bool matchesFilter(const TableRow &row, const std::optional<Filter> &filter)
     {
-        if (!filter || filter->conditions.empty())
+        if (!filter)
             return true;
-        if (filter->combine == Filter::Combine::And)
-        {
-            return std::all_of(filter->conditions.begin(), filter->conditions.end(),
-                               [&](const FilterCondition &c)
-                               { return matchesCondition(row, c); });
-        }
-        return std::any_of(filter->conditions.begin(), filter->conditions.end(),
-                           [&](const FilterCondition &c)
-                           { return matchesCondition(row, c); });
+        const auto matches = [&](const FilterCondition &c) { return matchesCondition(row, c); };
+        const bool base = filter->conditions.empty() ||
+            (filter->combine == Filter::Combine::And
+                 ? std::all_of(filter->conditions.begin(), filter->conditions.end(), matches)
+                 : std::any_of(filter->conditions.begin(), filter->conditions.end(), matches));
+        return base && std::all_of(filter->narrowing.begin(), filter->narrowing.end(), matches);
     }
 
     // `regex` is the compiled spec.text for regex searches; otherwise spec.text
@@ -734,15 +731,18 @@ bool cellMatchesCondition(const CellValue &cell, const FilterCondition &conditio
 
 std::optional<std::string> filterError(const Filter &filter)
 {
-    for (const FilterCondition &condition : filter.conditions)
+    for (const auto *group : {&filter.conditions, &filter.narrowing})
     {
-        if (condition.op != FilterOp::Matches && condition.op != FilterOp::NotMatches)
-            continue;
-        re2::RE2::Options options;
-        options.set_log_errors(false);
-        const re2::RE2 regex(condition.value, options);
-        if (!regex.ok())
-            return "Invalid regular expression \"" + condition.value + "\": " + regex.error();
+        for (const FilterCondition &condition : *group)
+        {
+            if (condition.op != FilterOp::Matches && condition.op != FilterOp::NotMatches)
+                continue;
+            re2::RE2::Options options;
+            options.set_log_errors(false);
+            const re2::RE2 regex(condition.value, options);
+            if (!regex.ok())
+                return "Invalid regular expression \"" + condition.value + "\": " + regex.error();
+        }
     }
     return std::nullopt;
 }

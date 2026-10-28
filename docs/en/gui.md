@@ -130,6 +130,12 @@ How values are compared (numbers, dates, text, empty cells) is explained in
 
 ## Filtering
 
+Chart selections are kept as **Additional narrowing**, ANDed with the conditions
+in the Filter pane even when **Match: Any** is selected. Editing those conditions
+keeps the chart selection. Click **Additional narrowing (...) - Clear** to remove
+only the chart selection; **Clear** removes both. Further chart selections narrow
+the remaining rows again.
+
 ### Quick filters
 
 Right-click a cell and choose **Filter: = "value"** to show only rows with

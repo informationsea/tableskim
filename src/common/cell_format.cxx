@@ -519,13 +519,27 @@ void addFilterCondition(ViewSpec &spec, FilterCondition condition)
         conditions.push_back(std::move(condition));
 }
 
+void addNarrowingConditions(ViewSpec &spec, std::vector<FilterCondition> conditions)
+{
+    if (conditions.empty())
+        return;
+    if (!spec.filter)
+        spec.filter = Filter{};
+    auto &narrowing = spec.filter->narrowing;
+    for (auto &condition : conditions)
+    {
+        if (std::find(narrowing.begin(), narrowing.end(), condition) == narrowing.end())
+            narrowing.push_back(std::move(condition));
+    }
+}
+
 bool filtersColumn(const ViewSpec &spec, size_t column)
 {
     if (!spec.filter)
         return false;
-    const auto &conditions = spec.filter->conditions;
-    return std::any_of(conditions.begin(), conditions.end(), [column](const FilterCondition &c)
-                       { return c.column == column; });
+    const auto uses = [column](const FilterCondition &c) { return c.column == column; };
+    return std::any_of(spec.filter->conditions.begin(), spec.filter->conditions.end(), uses) ||
+           std::any_of(spec.filter->narrowing.begin(), spec.filter->narrowing.end(), uses);
 }
 
 std::string filterSummary(const TableModel &model, const Filter &filter)
@@ -538,6 +552,14 @@ std::string filterSummary(const TableModel &model, const Filter &filter)
         text += model.columnName(condition.column) + " " + filterOpLabel(condition.op);
         if (filterOpTakesValue(condition.op))
             text += " \"" + condition.value + "\"";
+    }
+    if (!filter.narrowing.empty())
+    {
+        Filter additional;
+        additional.conditions = filter.narrowing;
+        const std::string selection = filterSummary(model, additional);
+        text = text.empty() ? "Additional narrowing: " + selection
+                            : "(" + text + ") and (Additional narrowing: " + selection + ")";
     }
     return text;
 }

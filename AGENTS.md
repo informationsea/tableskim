@@ -109,6 +109,18 @@ ctest --preset debug -j 8            # test cases in parallel
   Macs (`CMAKE_OSX_ARCHITECTURES`), on Apple silicon too, whose tests run
   under Rosetta 2; `package.sh` follows `TABLESKIM_PRESET` like
   `package.bat`, and the package is named after the target architecture.
+- `wasm-debug` / `wasm-release` build `tableskim-common`, the tests and the
+  web app's module as WebAssembly with Emscripten (`source
+  <emsdk>/emsdk_env.sh` first; threads and wasm exceptions for every
+  object, no TUI, GUI or manual tool) and, with npm, the web app into
+  `build/<preset>/web/` (`npm ci` and `npm run build` in `web/`, which
+  type-checks it); ctest runs the tests in Node.js and the web app's
+  end-to-end tests. `./web.sh` builds the app and serves it locally
+  (`--dev`: Vite's server); the `tableskim-web-zip` target packs it into
+  `tableskim-<version>-web.zip` (`cmake/WebZip.cmake`), which the release
+  attaches. See `src/wasm/README.md`. `size_t` is
+  32 bits there, and reads of a file are much dearer in a browser, so read
+  in large pieces.
 
 ### Demo / test data
 
@@ -208,6 +220,32 @@ read their header comments before changing anything in `src/common/`.
   double, bool, `Date`, `DateTime`); rows are delivered in immutable,
   shared `RowBlock`s. Avoid per-cell heap allocations and virtual calls.
   Rows may be ragged (different lengths).
+- The web app (`web/`: React, TypeScript, Tailwind CSS, Vite; `npm run dev`
+  there) runs the core in a Web Worker:
+  `tableskim-wasm` (`src/wasm/`) is that worker's script. Its `main()` is a
+  session thread running `WebSession` (`web_session.{hxx,cxx}`, portable
+  and tested natively too) on the JSON requests the page posts; the
+  thread running the runtime only relays them, posts replies and events,
+  and serves the files (WORKERFS mounts of the page's `File`s), as the
+  core's threads read through it. Like the other UIs, it asks for rows,
+  gets `Loading` cells, and asks again on the model's events
+  (`web/src/grid/controller.ts` keeps the grid's state outside React;
+  `Grid.tsx` draws the cells in view). The protocol's types are in
+  `web/src/protocol.ts`; keep them in step with `web_session.cxx`. Hosts
+  without the cross-origin isolation headers (GitHub Pages) get them from
+  `web/public/coi-serviceworker.js`, registered by `src/isolation.ts`
+  (`./web.sh --pages` serves without them). Helpers
+  it shares with the TUI live in `src/common/` (e.g. `findSearchHit()` in
+  `search_hits.{hxx,cxx}`). It connects the native features through
+  `WebSession` (statistics, histograms, scatter plots, Group By, SQL,
+  exports, formats; the protocol table is in `src/wasm/README.md`):
+  filters come from the core's helpers (`histogramBinConditions()`,
+  `densityCellConditions()`, ...) so they keep the rows shown, and exports
+  and Group By run as a job on a thread of the session's (`jobState`). An
+  export is written to the worker's memory, read by the page
+  (`TableSkimClient.readFile()`) and removed. Hidden and frozen columns are
+  the page's (`GridController.setLayout()`), sent with `copy`, exports and
+  Group By. Not there yet: editing, Follow, text-file conversion.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops
   back with `ftxui::App::Post` plus `PostEvent(Event::Custom)`, since a
@@ -422,7 +460,10 @@ Match the existing code:
 - Use `spdlog` for logging and `CLI11` for command-line parsing.
 - Comments explain *why*, briefly; keep the comment density of the
   surrounding code. Comments and identifiers are in English.
-- No formatter config is committed; do not reformat unrelated code.
+- No formatter config is committed for the C++ code; do not reformat
+  unrelated code. The web app (`web/`) is the exception: Prettier formats
+  it and ESLint checks it (`npm run format`, `npm run lint`; ctest runs
+  both checks), so the brace style above does not apply there.
 
 ## Tests
 
@@ -455,6 +496,14 @@ Match the existing code:
   ```
 
   Add a test there for TUI changes that the Catch2 tests cannot reach.
+- The web app has end-to-end tests in `web/tests/` (`node:test` with
+  Playwright, headless Chromium), which ctest runs in a WebAssembly build
+  as `tableskim-web-tests` when Playwright, a package of `web/`, is found
+  at configure time (`TABLESKIM_WEB_TESTS`: `AUTO`; `npm ci` in `web/`
+  first, and `npx playwright install chromium` for the browser). CI runs
+  them, with the lint and format checks, in the `wasm` job of
+  `.github/workflows/ci.yml`. Wait for what the page shows, never for
+  fixed periods.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest
   starts it with `xvfb-run -a` (`TABLESKIM_GUI_TESTS`: `AUTO` when
@@ -486,5 +535,6 @@ Match the existing code:
 - Keep the subject short (about 70 characters), without a trailing period.
 - If an agent wrote the commit, end the message with the trailers the tool
   provides for attribution (e.g. `Co-Authored-By:`), after a blank line.
-- Never commit `build/`, `.cache/`, `CMakeUserPresets.json`, or
-  `demo/.venv/`.
+- Never commit `build/`, `.cache/`, `CMakeUserPresets.json`,
+  `demo/.venv/`, `web/node_modules/` or `web/dist/`. Commit
+  `web/package-lock.json` with any change to `web/package.json`.

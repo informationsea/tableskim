@@ -1,0 +1,132 @@
+@import 'tailwindcss';
+
+/* Colours as tokens, switched for dark mode below; Tailwind's utilities
+   (bg-surface, text-muted, border-line, ...) use them. */
+:root {
+    color-scheme: light;
+    --surface: #ffffff;
+    --fg: #1d2129;
+    --muted: #6b7280;
+    --chrome: #f3f4f6;
+    --line: #d9dce1;
+    --grid-line: #e7e9ed;
+    --header: #eef0f3;
+    --accent: #2563eb;
+    --selection: rgb(37 99 235 / 0.14);
+    --hit: #ffeb99; /* a search hit, as in the GUI */
+    --active: #dbe5fb;
+    --banner: #fff7db;
+    --danger: #b42318;
+    --danger-bg: #fdecea;
+    --loading: #c3c7ce;
+    /* Charts: one series hue, hairline grid, and a sequential ramp (light to
+       dark) for counts; validated with the dataviz palette checks. */
+    --series: #2a78d6;
+    --series-hover: #5598e7;
+    --fit: #eb6834; /* the regression line: the next categorical slot */
+    --chart-grid: #e1e0d9;
+    --chart-axis: #c3c2b7;
+    --seq-1: #86b6ef;
+    --seq-2: #3987e5;
+    --seq-3: #256abf;
+    --seq-4: #184f95;
+    --seq-5: #0d366b;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        color-scheme: dark;
+        --surface: #17191d;
+        --fg: #e4e6ea;
+        --muted: #9aa0aa;
+        --chrome: #202328;
+        --line: #363a42;
+        --grid-line: #2a2d33;
+        --header: #24272d;
+        --accent: #6c9cff;
+        --selection: rgb(108 156 255 / 0.2);
+        --hit: #5c4b12;
+        --active: #2c3a57;
+        --banner: #3a3420;
+        --danger: #ff8a80;
+        --danger-bg: #3d2020;
+        --loading: #4a4e56;
+        --series: #3987e5;
+        --series-hover: #6da7ec;
+        --fit: #d95926;
+        --chart-grid: #2c2c2a;
+        --chart-axis: #383835;
+        /* Few rows sit near the dark surface, many stand out. */
+        --seq-1: #184f95;
+        --seq-2: #256abf;
+        --seq-3: #3987e5;
+        --seq-4: #6da7ec;
+        --seq-5: #b7d3f6;
+    }
+}
+
+@theme inline {
+    --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --color-surface: var(--surface);
+    --color-fg: var(--fg);
+    --color-muted: var(--muted);
+    --color-chrome: var(--chrome);
+    --color-line: var(--line);
+    --color-grid-line: var(--grid-line);
+    --color-header: var(--header);
+    --color-accent: var(--accent);
+    --color-selection: var(--selection);
+    --color-hit: var(--hit);
+    --color-active: var(--active);
+    --color-banner: var(--banner);
+    --color-danger: var(--danger);
+    --color-danger-bg: var(--danger-bg);
+    --color-loading: var(--loading);
+    --color-series: var(--series);
+    --color-series-hover: var(--series-hover);
+    --color-fit: var(--fit);
+    --color-chart-grid: var(--chart-grid);
+    --color-chart-axis: var(--chart-axis);
+}
+
+@layer base {
+    html,
+    body,
+    #root {
+        height: 100%;
+    }
+
+    body {
+        background: var(--color-surface);
+        color: var(--color-fg);
+        font-size: 13px;
+        overflow: hidden; /* only the grid scrolls */
+    }
+}
+
+@layer components {
+    /* Buttons, selects and text fields of the toolbars. */
+    .control {
+        border: 1px solid var(--color-line);
+        border-radius: 0.25rem;
+        background: var(--color-surface);
+        padding: 3px 8px;
+    }
+
+    .control:disabled {
+        opacity: 0.5;
+    }
+
+    button.control:not(:disabled) {
+        cursor: pointer;
+    }
+
+    button.control:not(:disabled):hover {
+        border-color: var(--color-accent);
+    }
+
+    button.control[aria-pressed='true'] {
+        background: var(--color-active);
+        border-color: var(--color-accent);
+    }
+}

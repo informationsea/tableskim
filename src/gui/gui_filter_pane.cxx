@@ -49,7 +49,7 @@ namespace
     // The combine mode does not matter without conditions.
     bool sameFilter(const Filter &a, const Filter &b)
     {
-        return (a.conditions.empty() && b.conditions.empty()) || a == b;
+        return (a.empty() && b.empty()) || a == b;
     }
 
     Filter filterOf(const ViewSpec &spec)
@@ -91,6 +91,16 @@ GuiFilterPane::GuiFilterPane(int x, int y, int w, int h, const char *label)
     match_any_->type(FL_RADIO_BUTTON);
     match_any_->tooltip("Show rows that match any condition (OR)");
     match_any_->callback(changed, this);
+
+    narrowing_button_ = new Fl_Button(x, y, w, LINE_HEIGHT);
+    narrowing_button_->tooltip("Chart selections are ANDed with the conditions above. Click to remove the additional narrowing.");
+    narrowing_button_->callback([](Fl_Widget *, void *data)
+    {
+        auto *pane = static_cast<GuiFilterPane *>(data);
+        pane->narrowing_.clear();
+        pane->layout();
+        pane->apply();
+    }, this);
 
     scroll_ = new Fl_Scroll(x, y, w, h);
     scroll_->type(Fl_Scroll::VERTICAL);
@@ -140,6 +150,22 @@ void GuiFilterPane::layout()
     match_all_->resize(left + label_width, top, all_width, LINE_HEIGHT);
     match_any_->resize(left + label_width + all_width, top, any_width, LINE_HEIGHT);
     top += LINE_HEIGHT + GAP;
+
+    if (narrowing_.empty())
+        narrowing_button_->hide();
+    else
+    {
+        narrowing_button_->copy_label(("Additional narrowing (" + std::to_string(narrowing_.size()) + ") - Clear").c_str());
+        narrowing_button_->resize(left, top, width, LINE_HEIGHT);
+        narrowing_button_->show();
+        if (model_)
+        {
+            Filter additional;
+            additional.narrowing = narrowing_;
+            narrowing_tooltip_.set(narrowing_button_, filterSummary(*model_, additional));
+        }
+        top += LINE_HEIGHT + GAP;
+    }
 
     const int buttons_top = y() + h() - MARGIN - STATUS_HEIGHT - GAP - LINE_HEIGHT;
     scroll_->resize(x(), top, w(), std::max(buttons_top - GAP - top, LINE_HEIGHT));
@@ -247,6 +273,7 @@ void GuiFilterPane::rebuildColumnMenu()
 
 void GuiFilterPane::loadFilter(const Filter &filter)
 {
+    narrowing_ = filter.narrowing;
     for (const ConditionRow &row : rows_)
     {
         for (Fl_Widget *widget : {static_cast<Fl_Widget *>(row.column), static_cast<Fl_Widget *>(row.op),
@@ -343,6 +370,7 @@ void GuiFilterPane::addCondition(size_t column)
 Filter GuiFilterPane::editedFilter() const
 {
     Filter filter;
+    filter.narrowing = narrowing_;
     filter.combine = match_any_->value() ? Filter::Combine::Or : Filter::Combine::And;
     for (const ConditionRow &row : rows_)
     {
@@ -373,7 +401,7 @@ void GuiFilterPane::apply()
         refused_.reset();
         ViewSpec spec = model_->requestedView();
         synced_ = filter;
-        if (filter.conditions.empty())
+        if (filter.empty())
             spec.filter.reset();
         else
             spec.filter = std::move(filter);
@@ -393,7 +421,7 @@ void GuiFilterPane::updateState()
     const bool usable = model_ && model_->viewCapabilities().filter;
     for (Fl_Widget *widget : {static_cast<Fl_Widget *>(match_all_), static_cast<Fl_Widget *>(match_any_),
                               static_cast<Fl_Widget *>(add_button_), static_cast<Fl_Widget *>(apply_button_),
-                              static_cast<Fl_Widget *>(clear_button_)})
+                              static_cast<Fl_Widget *>(clear_button_), static_cast<Fl_Widget *>(narrowing_button_)})
         setActive(widget, usable);
     for (const ConditionRow &row : rows_)
     {

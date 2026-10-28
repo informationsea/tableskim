@@ -82,6 +82,12 @@ set(BUILD_EXTENSIONS json)
 # DuckDB takes its version from `git describe --tags` and falls back to v0.0.1
 # when it fails, as it does in a shallow clone that has not fetched the tag.
 set(OVERRIDE_GIT_DESCRIBE v${DUCKDB_VERSION})
+# DuckDB finds its platform name by running a program it builds, which a
+# WebAssembly build cannot run; name it as duckdb-wasm does (threads and
+# wasm exceptions).
+if(EMSCRIPTEN)
+    set(DUCKDB_EXPLICIT_PLATFORM wasm_threads)
+endif()
 
 FetchContent_MakeAvailable(duckdb)
 
