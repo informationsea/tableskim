@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
+#include <limits>
 #include <stdexcept>
 
 #include "cell_format.hxx"
@@ -103,7 +104,9 @@ namespace
         const auto number = value.number();
         if (!number || *number < 0 || *number != std::floor(*number))
             throw std::invalid_argument("expected a non-negative integer: " + std::string(name));
-        return static_cast<size_t>(std::min(*number, 9.0e15));
+        // size_t is 32 bits in WebAssembly; a larger index is past any end.
+        constexpr double largest = static_cast<double>(std::numeric_limits<size_t>::max() / 2);
+        return static_cast<size_t>(std::min(*number, largest));
     }
 
     std::vector<size_t> jsonIndexes(const JsonValue &value, std::string_view name)
@@ -130,6 +133,15 @@ namespace
         return sort;
     }
 
+    FilterCondition parseCondition(const JsonValue &condition)
+    {
+        const std::string *op = condition["op"].string();
+        if (!op)
+            throw std::invalid_argument("expected a string: op");
+        const std::string *text = condition["value"].string();
+        return {jsonIndex(condition["column"], "column"), parseOp(*op), text ? *text : ""};
+    }
+
     std::optional<Filter> parseFilter(const JsonValue &value)
     {
         if (value.isNull())
@@ -140,13 +152,7 @@ namespace
         if (const auto *conditions = value["conditions"].array())
         {
             for (const JsonValue &condition : *conditions)
-            {
-                const std::string *op = condition["op"].string();
-                if (!op)
-                    throw std::invalid_argument("expected a string: op");
-                const std::string *text = condition["value"].string();
-                filter.conditions.push_back({jsonIndex(condition["column"], "column"), parseOp(*op), text ? *text : ""});
-            }
+                filter.conditions.push_back(parseCondition(condition));
         }
         return filter;
     }
@@ -458,7 +464,10 @@ namespace
         return "error";
     }
 
-    void writeInfo(JsonWriter &json, int id, const std::string &name, TableModel &model, const ColumnFormats &formats)
+    // view_error is the last failure of a sort or filter, numbered so that
+    // the page shows it once.
+    void writeInfo(JsonWriter &json, int id, const std::string &name, TableModel &model, const ColumnFormats &formats,
+                   const std::string &view_error, unsigned view_error_id)
     {
         const ModelState state = model.state();
         const RowCount rows = model.rowCount();
@@ -519,8 +528,8 @@ namespace
         writeView(json, view);
         json.key("pending").value(model.requestedView() != view);
         json.key("filterText").value(view.filter ? filterSummary(model, *view.filter) : "");
-        if (const auto error = model.takeViewError())
-            json.key("viewError").value(*error);
+        if (!view_error.empty())
+            json.key("viewError").value(view_error).key("viewErrorId").value(static_cast<double>(view_error_id));
 
         json.key("checkpoint");
         if (const auto checkpoint = model.memoryCheckpoint())
@@ -633,8 +642,9 @@ public:
     int integer(std::string_view key) const
     {
         const auto number = value_[key].number();
-        if (!number)
-            throw std::invalid_argument("expected a number: " + std::string(key));
+        if (!number || *number != std::floor(*number) || *number < std::numeric_limits<int>::min() ||
+            *number > std::numeric_limits<int>::max())
+            throw std::invalid_argument("expected an integer: " + std::string(key));
         return static_cast<int>(*number);
     }
 
@@ -652,6 +662,12 @@ public:
         if (!number)
             throw std::invalid_argument("expected a number: " + std::string(key));
         return *number;
+    }
+
+    bool has(std::string_view key) const
+    {
+        const auto *members = value_.object();
+        return members && members->contains(key);
     }
 
     bool flag(std::string_view key) const
@@ -884,13 +900,24 @@ void WebSession::openSheet(const Params &params, JsonWriter &result)
         found = sheet.get();
         sheets_.push_back(std::move(sheet));
     }
-    writeInfo(result, found->id, found->name, *found->model, found->formats);
+    writeSheetInfo(result, *found);
 }
 
 void WebSession::info(const Params &params, JsonWriter &result)
 {
-    Sheet &sheet = this->sheet(params);
-    writeInfo(result, sheet.id, sheet.name, *sheet.model, sheet.formats);
+    writeSheetInfo(result, this->sheet(params));
+}
+
+void WebSession::writeSheetInfo(JsonWriter &result, Sheet &sheet)
+{
+    // Kept until the next view is asked for: the model reports an error
+    // once, and the page may drop a reply that came too late.
+    if (auto error = sheet.model->takeViewError())
+    {
+        sheet.view_error = error->empty() ? "unknown error" : std::move(*error);
+        ++sheet.view_error_id;
+    }
+    writeInfo(result, sheet.id, sheet.name, *sheet.model, sheet.formats, sheet.view_error, sheet.view_error_id);
 }
 
 void WebSession::rows(const Params &params, JsonWriter &result)
@@ -906,16 +933,34 @@ void WebSession::rows(const Params &params, JsonWriter &result)
 
 void WebSession::setView(const Params &params, JsonWriter &result)
 {
-    TableModel &model = *sheet(params).model;
+    Sheet &sheet = this->sheet(params);
+    TableModel &model = *sheet.model;
+    // Starts from the view asked for last, which may still be applied, so
+    // that a change made meanwhile keeps it; parameters left out are kept.
     ViewSpec spec = model.requestedView();
-    spec.sort = parseSort(params["sort"]);
-    spec.filter = parseFilter(params["filter"]);
+    if (params.has("sort"))
+        spec.sort = parseSort(params["sort"]);
+    if (params.has("filter"))
+        spec.filter = parseFilter(params["filter"]);
+    if (const auto *added = params["addConditions"].array())
+    {
+        if (!spec.filter)
+            spec.filter = Filter{};
+        for (const JsonValue &condition : *added)
+        {
+            const FilterCondition parsed = parseCondition(condition);
+            if (std::find(spec.filter->conditions.begin(), spec.filter->conditions.end(), parsed) ==
+                spec.filter->conditions.end())
+                spec.filter->conditions.push_back(parsed);
+        }
+    }
     if (spec.filter)
     {
         if (const auto error = filterError(*spec.filter))
             throw std::invalid_argument(*error);
     }
     model.setView(spec);
+    sheet.view_error.clear();
     result.beginObject().key("view");
     writeView(result, spec);
     result.endObject();
@@ -923,10 +968,12 @@ void WebSession::setView(const Params &params, JsonWriter &result)
 
 void WebSession::sortCycle(const Params &params, JsonWriter &result)
 {
-    TableModel &model = *sheet(params).model;
+    Sheet &sheet = this->sheet(params);
+    TableModel &model = *sheet.model;
     ViewSpec spec = model.requestedView();
     spec.sort = nextSortCycle(spec.sort, params.index("column"));
     model.setView(spec);
+    sheet.view_error.clear();
     result.beginObject().key("view");
     writeView(result, spec);
     result.endObject();

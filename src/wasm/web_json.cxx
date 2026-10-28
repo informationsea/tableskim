@@ -194,13 +194,20 @@ namespace
                 case 'u':
                 {
                     unsigned code = hex4();
-                    // A surrogate pair; a lone surrogate becomes U+FFFD.
-                    if (code >= 0xd800 && code < 0xdc00 && consume("\\u"))
+                    // A surrogate pair; a lone surrogate becomes U+FFFD, and
+                    // the escape after it is read on its own.
+                    while (code >= 0xd800 && code < 0xdc00 && consume("\\u"))
                     {
                         const unsigned low = hex4();
-                        code = low >= 0xdc00 && low < 0xe000 ? 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00) : 0xfffd;
+                        if (low >= 0xdc00 && low < 0xe000)
+                        {
+                            code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+                            break;
+                        }
+                        appendUtf8(out, 0xfffd);
+                        code = low;
                     }
-                    else if (code >= 0xd800 && code < 0xe000)
+                    if (code >= 0xd800 && code < 0xe000)
                         code = 0xfffd;
                     appendUtf8(out, code);
                     break;

@@ -29,6 +29,10 @@ export function GroupByDialog({ client, info, column, hidden, onDone, onClose }:
         client.call('aggregates', {}).then(setAggregates, (failure: unknown) => setError(errorText(failure)));
     }, [client]);
 
+    // Closing the dialog stops a Group By still running, as nothing would
+    // add its result.
+    useEffect(() => () => void client.call('cancelJob', {}).catch(() => {}), [client]);
+
     usePolled(
         client,
         SESSION,

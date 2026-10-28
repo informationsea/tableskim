@@ -70,6 +70,8 @@ private:
         std::string name;
         std::shared_ptr<TableModel> model;
         ColumnFormats formats;
+        std::string view_error; // the last failed view, until another is asked for
+        unsigned view_error_id = 0;
         Subscription subscription; // declared last: reset before the model goes
     };
 
@@ -114,6 +116,7 @@ private:
     void closeBook(const Params &params, JsonWriter &result);
     void openSheet(const Params &params, JsonWriter &result);
     void info(const Params &params, JsonWriter &result);
+    void writeSheetInfo(JsonWriter &result, Sheet &sheet);
     void rows(const Params &params, JsonWriter &result);
     void setView(const Params &params, JsonWriter &result);
     void sortCycle(const Params &params, JsonWriter &result);

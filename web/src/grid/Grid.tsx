@@ -175,7 +175,7 @@ export function Grid({ info, sheetKey, dataVersion, viewVersion, hidden, frozen,
                 style={{ left: x, width }}
             >
                 {mark && <span className="mark mr-1 font-normal text-muted">{mark}</span>}
-                <span className={`name${filtered ? 'text-accent underline decoration-dotted' : ''}`}>{name}</span>
+                <span className={filtered ? 'name text-accent underline decoration-dotted' : 'name'}>{name}</span>
                 <span className="sort ml-1 text-accent">{sortMark}</span>
                 <span className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize resize" data-resize={column} />
             </div>,

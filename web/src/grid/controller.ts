@@ -63,6 +63,10 @@ interface CachedRow {
     firstColumn: number;
     texts: string[];
     kinds: string;
+    // Columns from 0, when the frozen ones were fetched apart from the
+    // scrolled ones.
+    frozenTexts: string[];
+    frozenKinds: string;
     generation: number;
 }
 
@@ -335,63 +339,88 @@ export class GridController {
     /** What to draw in a cell. */
     cell(row: number, column: number): { kind: CellKind; text: string } {
         const cached = this.cache.get(row);
-        const index = cached ? column - cached.firstColumn : -1;
-        const kind = (cached && index >= 0 && index < cached.kinds.length ? cached.kinds[index] : 'l') as CellKind;
-        return { kind, text: kind === 'l' ? '' : (cached?.texts[index] ?? '') };
+        if (!cached) return { kind: 'l', text: '' };
+        let texts = cached.texts;
+        let kinds = cached.kinds;
+        let index = column - cached.firstColumn;
+        if (column < cached.frozenKinds.length) {
+            texts = cached.frozenTexts;
+            kinds = cached.frozenKinds;
+            index = column;
+        }
+        const kind = (index >= 0 && index < kinds.length ? kinds[index] : 'l') as CellKind;
+        return { kind, text: kind === 'l' ? '' : (texts[index] ?? '') };
+    }
+
+    // Whether a row's cached cells cover the columns first to last.
+    private covers(cached: CachedRow, first: number, last: number) {
+        if (last < first) return true;
+        if (last < cached.frozenKinds.length) return true;
+        first = Math.max(first, cached.frozenKinds.length);
+        return cached.firstColumn <= first && cached.firstColumn + cached.kinds.length - 1 >= last;
     }
 
     /** Asks for the rows in view (and some around) unless they are cached. */
     fetchIfNeeded(view: Viewport) {
         if (this.fetching || view.lastRow < view.firstRow || this.columns.length === 0) return;
-        // Frozen columns are fetched with the ones in view.
-        const leftColumn = this.frozen > 0 ? 0 : view.firstColumn;
+        const lastInView = Math.min(view.lastColumn, this.columns.length - 1);
         let needed = false;
         for (let row = view.firstRow; row <= view.lastRow && !needed; row++) {
             const cached = this.cache.get(row);
             needed =
                 !cached ||
                 cached.generation < this.generation ||
-                cached.firstColumn > leftColumn ||
-                cached.firstColumn + cached.kinds.length - 1 < Math.min(view.lastColumn, this.columns.length - 1);
+                !this.covers(cached, 0, this.frozen - 1) ||
+                !this.covers(cached, view.firstColumn, lastInView);
         }
         if (!needed) return;
         const first = Math.max(0, view.firstRow - ROW_MARGIN);
         const last = view.lastRow + ROW_MARGIN;
-        const firstColumn = Math.max(0, leftColumn - COLUMN_MARGIN);
+        let firstColumn = Math.max(0, view.firstColumn - COLUMN_MARGIN);
         const lastColumn = Math.min(this.columns.length - 1, view.lastColumn + COLUMN_MARGIN);
+        // Frozen columns are fetched with the ones in view if they are next
+        // to them, and on their own otherwise, rather than every column
+        // between.
+        const frozenApart = this.frozen > 0 && firstColumn > this.frozen;
+        if (this.frozen > 0 && !frozenApart) firstColumn = 0;
         const generation = this.generation;
+        const fetch = this.callbacks().fetchRows;
         this.fetching = true;
-        this.callbacks()
-            .fetchRows(first, last, firstColumn, lastColumn)
-            .then(
-                (rows) => {
-                    this.fetching = false;
-                    rows.rows.forEach((texts, i) => {
-                        this.cache.set(rows.first + i, {
-                            firstColumn: rows.firstColumn,
-                            texts,
-                            kinds: rows.kinds[i],
-                            generation,
-                        });
+        Promise.all([
+            fetch(first, last, firstColumn, lastColumn),
+            frozenApart ? fetch(first, last, 0, this.frozen - 1) : null,
+        ]).then(
+            ([rows, frozen]) => {
+                this.fetching = false;
+                const count = Math.min(rows.rows.length, frozen ? frozen.rows.length : Infinity);
+                for (let i = 0; i < count; i++) {
+                    this.cache.set(rows.first + i, {
+                        firstColumn: rows.firstColumn,
+                        texts: rows.rows[i],
+                        kinds: rows.kinds[i],
+                        frozenTexts: frozen ? frozen.rows[i] : [],
+                        frozenKinds: frozen ? frozen.kinds[i] : '',
+                        generation,
                     });
-                    // Rows past the end are gone (a filter, say).
-                    if (rows.end) {
-                        for (const row of this.cache.keys()) {
-                            if (row >= rows.first + rows.rows.length) this.cache.delete(row);
-                        }
+                }
+                // Rows past the end are gone (a filter, say).
+                if (rows.end || frozen?.end) {
+                    for (const row of this.cache.keys()) {
+                        if (row >= rows.first + count) this.cache.delete(row);
                     }
-                    if (this.cache.size > MAX_CACHED_ROWS) this.trimCache(view);
-                    if (!this.widthsMeasured && rows.rows.length > 0 && !rows.loading && rows.first === 0)
-                        this.measureWidths(rows);
-                    this.redraw();
-                },
-                () => {
-                    // Dropped (another sheet is shown now) or failed: look again
-                    // soon, as no event may come to ask for the rows in view.
-                    this.fetching = false;
-                    setTimeout(this.redraw, 100);
-                },
-            );
+                }
+                if (this.cache.size > MAX_CACHED_ROWS) this.trimCache(view);
+                if (!this.widthsMeasured && rows.rows.length > 0 && !rows.loading && rows.first === 0)
+                    this.measureWidths(rows);
+                this.redraw();
+            },
+            () => {
+                // Dropped (another sheet is shown now) or failed: look again
+                // soon, as no event may come to ask for the rows in view.
+                this.fetching = false;
+                setTimeout(this.redraw, 100);
+            },
+        );
     }
 
     private trimCache(view: Viewport) {

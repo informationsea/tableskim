@@ -96,6 +96,7 @@ async function regressionPage() {
                     view: this.view,
                     pending: false,
                     filterText: '',
+                    ...(this.viewError ? { viewError: this.viewError, viewErrorId: this.viewErrorId } : {}),
                     checkpoint: null,
                     readingStopped: false,
                 };
@@ -139,8 +140,22 @@ async function regressionPage() {
                     return this.reply(request, this.info());
                 }
                 if (method === 'info') return this.reply(request, this.info());
+                if (method === 'cellFilter')
+                    return this.reply(request, {
+                        conditions: [{ column: params.column, op: 'equals', value: `value-${params.column}` }],
+                    });
                 if (method === 'setView') {
-                    this.view = { sort: params.sort, filter: params.filter };
+                    let filter = 'filter' in params ? params.filter : this.view.filter;
+                    if (params.addConditions)
+                        filter = {
+                            combine: filter?.combine ?? 'and',
+                            conditions: [...(filter?.conditions ?? []), ...params.addConditions],
+                        };
+                    this.view = { sort: 'sort' in params ? params.sort : this.view.sort, filter };
+                    if (this.failViews) {
+                        this.viewError = 'the source failed';
+                        this.viewErrorId = (this.viewErrorId ?? 0) + 1;
+                    }
                     this.reply(request, { view: this.view });
                     queueMicrotask(() =>
                         this.onmessage({ data: { type: 'events', json: JSON.stringify({ [this.sheet]: 4 }) } }),
@@ -218,6 +233,43 @@ describe('frontend regressions', () => {
             ),
             true,
         );
+        // The frozen column is fetched on its own, not with every column
+        // up to the ones in view.
+        assert.equal(
+            await page.evaluate(() =>
+                window.regressionWorker.requests
+                    .filter((r) => r.method === 'rows')
+                    .every((r) => r.params.firstColumn > 0 || r.params.lastColumn < 100),
+            ),
+            true,
+        );
+        await page.context().close();
+    });
+
+    test('changes only its part of the view and reports a failed view once', async () => {
+        const page = await regressionPage();
+        await page.locator('.header[data-column="1"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Sort Ascending').click();
+        await page.waitForFunction(() => window.regressionWorker.view.sort.length === 1);
+        await page.evaluate(() => (window.regressionWorker.failViews = true));
+        await cell(page, 0, 1).click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Filter: Equal to This Value').click();
+        await page.waitForFunction(() => !!window.regressionWorker.view.filter);
+        const setViews = await page.evaluate(() =>
+            window.regressionWorker.requests.filter((r) => r.method === 'setView').map((r) => r.params),
+        );
+        assert.ok(!('filter' in setViews[0]), 'a sort leaves the filter to the worker');
+        assert.ok(!('sort' in setViews[1]), 'a filter leaves the sort to the worker');
+        assert.equal(setViews[1].addConditions.length, 1);
+        assert.equal((await page.evaluate(() => window.regressionWorker.view)).sort.length, 1);
+        await waitForText(page.locator('#message'), 'The sort or filter failed: the source failed');
+        await page.waitForFunction(() => {
+            const [header, view] = [
+                document.querySelector('.header[data-column="1"] .name'),
+                window.regressionWorker.view,
+            ];
+            return view.filter && header?.classList.contains('name') && header.classList.contains('text-accent');
+        });
         await page.context().close();
     });
 

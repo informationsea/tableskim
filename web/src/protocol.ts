@@ -83,7 +83,8 @@ export interface SheetInfo {
     view: View;
     pending: boolean; // a view is being applied
     filterText: string;
-    viewError?: string; // reported once
+    viewError?: string; // the last failed view, until another is asked for
+    viewErrorId?: number; // to show each failure once
     checkpoint: { bytes: number; rows: number } | null;
     readingStopped: boolean;
 }
@@ -268,7 +269,12 @@ export interface Methods {
         params: SheetParams & { first: number; last: number; firstColumn?: number; lastColumn?: number };
         result: RowsReply;
     };
-    setView: { params: SheetParams & { sort: SortKey[]; filter: Filter | null }; result: { view: View } };
+    // Changes the view asked for last; parameters left out keep its parts,
+    // and addConditions joins its filter (an AND filter if there is none).
+    setView: {
+        params: SheetParams & { sort?: SortKey[]; filter?: Filter | null; addConditions?: Condition[] };
+        result: { view: View };
+    };
     sortCycle: { params: SheetParams & { column: number }; result: { view: View } };
     search: {
         params: SheetParams & { text: string; caseSensitive: boolean; regex: boolean; column?: number };

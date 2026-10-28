@@ -115,6 +115,8 @@ TEST_CASE("JSON values round-trip through the reader and writer")
     CHECK(value["missing"].isNull());
 
     CHECK(*JsonValue::parse(R"("é😀\ud800")").string() == "é😀\xef\xbf\xbd");
+    CHECK(*JsonValue::parse(R"("\ud800\u0041")").string() == "\xef\xbf\xbd" "A");
+    CHECK(*JsonValue::parse(R"("\ud800\ud83d\ude00")").string() == "\xef\xbf\xbd😀");
     CHECK_THROWS(JsonValue::parse("{\"a\":}"));
     CHECK_THROWS(JsonValue::parse("[1,2"));
     CHECK_THROWS(JsonValue::parse("1 2"));
@@ -186,9 +188,33 @@ TEST_CASE("WebSession opens a CSV file and pages through its rows")
         for (size_t row = 0; row < 4; ++row)
             CHECK(cell(osaka, row, 4) == "Osaka");
 
+        SECTION("a parameter left out keeps the view asked for, and conditions are added once")
+        {
+            client.result("sortCycle", "{\"sheet\":" + std::to_string(id) + ",\"column\":0}");
+            client.result("sortCycle", "{\"sheet\":" + std::to_string(id) + ",\"column\":0}");
+            const std::string tokyo = "{\"column\":4,\"op\":\"equals\",\"value\":\"Tokyo\"}";
+            const JsonValue added = client.result("setView", "{\"sheet\":" + std::to_string(id) +
+                                                                 ",\"addConditions\":[" + tokyo + "," + tokyo + "]}");
+            CHECK(added["view"]["sort"].array()->size() == 1);
+            const auto &conditions = *added["view"]["filter"]["conditions"].array();
+            REQUIRE(conditions.size() == 2);
+            CHECK(*conditions[1]["value"].string() == "Tokyo");
+            const JsonValue cleared = client.result("setView", "{\"sheet\":" + std::to_string(id) + ",\"filter\":null}");
+            CHECK(cleared["view"]["filter"].isNull());
+            CHECK(cleared["view"]["sort"].array()->size() == 1);
+        }
+
         const JsonValue bad = client.call("setView", "{\"sheet\":" + std::to_string(id) +
                                                          ",\"filter\":{\"conditions\":[{\"column\":1,\"op\":\"matches\",\"value\":\"(\"}]}}");
         CHECK(bad["error"].string());
+    }
+
+    SECTION("indexes past what size_t holds")
+    {
+        const JsonValue far = client.result("rows", "{\"sheet\":" + std::to_string(id) + ",\"first\":5e9,\"last\":5e9}");
+        CHECK(far["rows"].array()->empty());
+        CHECK(client.call("info", "{\"sheet\":3e9}")["error"].string());
+        CHECK(client.call("info", "{\"sheet\":1.5}")["error"].string());
     }
 
     SECTION("searching")

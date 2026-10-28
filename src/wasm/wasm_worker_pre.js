@@ -16,6 +16,7 @@ if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
     var tskWaiting = [];
     var tskMounts = 0;
     var tskOpenMounts = {}; // request id -> mount directory
+    var tskCloses = {}; // ids of "close" requests not answered yet
 
     var tskSend = function (message)
     {
@@ -42,34 +43,40 @@ if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
             params = Object.assign({}, params, { path: dir + '/' + params.file.name });
             delete params.file;
         }
+        else if (message.method === 'close')
+            tskCloses[message.id] = true;
         _tskPost(stringToNewUTF8(JSON.stringify({ id: message.id, method: message.method, params: params })));
     };
 
+    var tskUnmount = function (key)
+    {
+        try
+        {
+            FS.unmount(tskOpenMounts[key]);
+            FS.rmdir(tskOpenMounts[key]);
+        }
+        catch (e)
+        {
+            // Already gone.
+        }
+        delete tskOpenMounts[key];
+    };
+
     // The session closes the book before opening the next file, so once an
-    // "open" is answered, the files mounted for earlier ones are unused.
-    // Later ones may not have been opened yet (files opened in quick
-    // succession): they stay.
+    // "open" or "close" is answered, the files mounted for earlier opens are
+    // unused, and so is the open's own file if it failed. Later ones may not
+    // have been opened yet (files opened in quick succession): they stay.
     var tskReleaseMounts = function (json)
     {
-        var match = /^\{"id":(\d+)/.exec(json);
+        var match = /^\{"id":(\d+)(,"error")?/.exec(json);
         var id = match && Number(match[1]);
-        if (!tskOpenMounts[id])
+        if (!tskOpenMounts[id] && !tskCloses[id])
             return;
+        delete tskCloses[id];
         for (var key in tskOpenMounts)
         {
-            var dir = tskOpenMounts[key];
-            if (Number(key) >= id)
-                continue;
-            try
-            {
-                FS.unmount(dir);
-                FS.rmdir(dir);
-            }
-            catch (e)
-            {
-                // Already gone.
-            }
-            delete tskOpenMounts[key];
+            if (Number(key) < id || (Number(key) === id && match[2]))
+                tskUnmount(key);
         }
     };
 

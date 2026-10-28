@@ -116,13 +116,18 @@ export function App({ client }: { client: TableSkimClient }) {
         pendingFind: null as { forward: boolean } | null,
         fileEpoch: 0, // SQL results belong to the file on which they were started
         lastSql: '', // run again after the file is opened again
+        viewError: '', // the failure of a view shown last
     });
 
     const showInfo = useCallback((next: SheetInfo) => {
         flow.current.info = next;
         setInfo(next);
         if (next.state === 'error') setMessage(next.error ?? 'The sheet cannot be read.');
-        if (next.viewError) setMessage(`The sort or filter failed: ${next.viewError}`);
+        const viewError = next.viewError ? `${flow.current.fileEpoch}:${next.sheet}:${next.viewErrorId}` : '';
+        if (viewError && viewError !== flow.current.viewError) {
+            flow.current.viewError = viewError;
+            setMessage(`The sort or filter failed: ${next.viewError}`);
+        }
         if (next.view.filter?.conditions.length && next.capabilities.filter) setFilterOpen(true);
     }, []);
 
@@ -320,12 +325,14 @@ export function App({ client }: { client: TableSkimClient }) {
         }
     };
 
-    // Applies a filter with the current sort.
-    const setFilter = async (filter: Filter | null) => {
+    // Changes the view the worker asked for last, so that a sort or filter
+    // still being applied is kept.
+    const changeView = async (change: { sort?: SortKey[]; filter?: Filter | null; addConditions?: Condition[] }) => {
         const current = flow.current.info;
         if (!current) return;
         try {
-            await client.call('setView', { sheet: current.sheet, sort: current.view.sort, filter });
+            const reply = await client.call('setView', { sheet: current.sheet, ...change });
+            if (flow.current.info?.sheet === current.sheet) showInfo({ ...flow.current.info, view: reply.view });
             setMessage('');
             void refreshInfo();
         } catch (error) {
@@ -333,33 +340,18 @@ export function App({ client }: { client: TableSkimClient }) {
         }
     };
 
+    const setFilter = (filter: Filter | null) => changeView({ filter });
+
     // Adds conditions to the view's filter (a histogram's bin, a cell's value...).
     const addConditions = async (conditions: Condition[]) => {
-        const current = flow.current.info;
-        if (!current?.capabilities.filter || conditions.length === 0) return;
-        const filter = current.view.filter ?? { combine: 'and' as const, conditions: [] };
-        const merged = [...filter.conditions];
-        for (const condition of conditions) {
-            if (
-                !merged.some(
-                    (c) => c.column === condition.column && c.op === condition.op && c.value === condition.value,
-                )
-            )
-                merged.push(condition);
-        }
+        if (!flow.current.info?.capabilities.filter || conditions.length === 0) return;
         setFilterOpen(true);
-        await setFilter({ ...filter, conditions: merged });
+        await changeView({ addConditions: conditions });
     };
 
     const setSort = async (sort: SortKey[]) => {
-        const current = flow.current.info;
-        if (!current?.capabilities.sort) return;
-        try {
-            await client.call('setView', { sheet: current.sheet, sort, filter: current.view.filter });
-            void refreshInfo();
-        } catch (error) {
-            setMessage(errorText(error));
-        }
+        if (!flow.current.info?.capabilities.sort) return;
+        await changeView({ sort });
     };
 
     const cellFilter = async (cell: Cell, equal: boolean) => {
