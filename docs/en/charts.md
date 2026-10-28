@@ -6,7 +6,7 @@ TableSkim draws charts of the rows you are looking at and summarizes them
 in tables, without a spreadsheet or a script. This page shows, with
 examples, which tool answers which question, how to read the result, and
 how to go from a chart to the rows behind it. The examples use the demo
-files `normal.csv` (54 people, with the first row as header) and
+files `normal.csv` (54 people; its first row is taken as the header) and
 `large.parquet` (10,000 rows).
 
 - [Which tool for which question](#which-tool-for-which-question)
