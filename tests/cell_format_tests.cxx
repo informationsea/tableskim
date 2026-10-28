@@ -696,3 +696,74 @@ TEST_CASE("shortestDoubleText and parseDouble match std::to_chars and std::from_
     }
 }
 #endif
+
+TEST_CASE("Chart narrowing intersects editable filters across backends")
+{
+    for (const std::string file : {"normal.csv", "normal.parquet", "demo.sqlite3", "demo.duckdb"})
+    {
+        INFO(file);
+        OpenOptions options;
+        options.header = OpenOptions::Header::Yes;
+        auto book = TableBook::open(std::filesystem::path(TABLESKIM_DEMO_DATA_DIR) / file, options);
+        const auto names = book->sheetNames();
+        const auto normal = std::find(names.begin(), names.end(), "normal");
+        auto model = book->sheet(normal == names.end() ? names.front() : *normal);
+        REQUIRE(waitFor([&] { return model->state() != ModelState::Opening; }));
+        REQUIRE(model->state() == ModelState::Ready);
+
+        const auto check = [&](const ViewSpec &spec, const std::vector<std::string> &ids)
+        {
+            model->setView(spec);
+            REQUIRE(waitFor([&] { return model->view() == spec && model->rowCount().isExact(); }));
+            REQUIRE(model->rowCount().value == ids.size());
+            for (size_t row = 0; row < ids.size(); ++row)
+                CHECK(cellText(*model, row, 0) == ids[row]);
+        };
+        ViewSpec spec{.sort = {{0, false}},
+                      .filter = Filter{.combine = Filter::Combine::Or,
+                                       .conditions = {{0, FilterOp::Equals, "1"}, {0, FilterOp::Equals, "3"}}}};
+        const auto original = spec.filter->conditions;
+        Histogram histogram;
+        histogram.kind = HistogramKind::Number;
+        histogram.edges = {2, 4};
+        addNarrowingConditions(spec, histogramBinConditions(histogram, 0, 0));
+        addNarrowingConditions(spec, histogramBinConditions(histogram, 0, 0)); // idempotent
+        REQUIRE(spec.filter->narrowing.size() == 3);
+        CHECK(spec.filter->conditions == original);
+        CHECK(spec.filter->combine == Filter::Combine::Or);
+        CHECK(spec.filtered());
+        CHECK(filtersColumn(spec, 0));
+        check(spec, {"3"});
+        CHECK(filterSummary(*model, *spec.filter).find("Additional narrowing:") != std::string::npos);
+
+        spec.filter->conditions.clear(); // removing editable conditions keeps the chart selection
+        check(spec, {"4", "3", "2"});
+        addNarrowingConditions(spec, {{0, FilterOp::Less, "4"}});
+        check(spec, {"3", "2"}); // further selections always intersect
+        spec.filter->conditions = original;
+        spec.filter->narrowing.clear();
+        check(spec, {"3", "1"}); // removing chart narrowing restores the original OR
+        spec.filter->combine = Filter::Combine::And;
+        spec.filter->conditions = {{0, FilterOp::GreaterEqual, "1"}, {0, FilterOp::LessEqual, "3"}};
+        addNarrowingConditions(spec, histogramBinConditions(histogram, 0, 0));
+        check(spec, {"3", "2"});
+        addNarrowingConditions(spec, {{0, FilterOp::Less, "0"}});
+        check(spec, {});
+        spec.filter.reset();
+        CHECK_FALSE(spec.filtered());
+    }
+}
+
+TEST_CASE("Additional narrowing participates in filter validation and column marks")
+{
+    ViewSpec spec;
+    addNarrowingConditions(spec, {{2, FilterOp::Matches, "("}});
+    CHECK(spec.filtered());
+    CHECK(spec.empty() == false);
+    CHECK(filtersColumn(spec, 2));
+    CHECK_FALSE(filtersColumn(spec, 0));
+    REQUIRE(spec.filter);
+    CHECK(filterError(*spec.filter).has_value());
+    spec.filter->narrowing.clear();
+    CHECK_FALSE(spec.filtered());
+}

@@ -37,6 +37,7 @@ private:
     // The model's filter as last loaded or applied here; a different one was
     // set elsewhere (e.g. a quick filter) and replaces the edited conditions.
     Filter synced_;
+    std::vector<FilterCondition> narrowing_;
     // The model was replaced: the next update() loads its filter.
     bool reload_ = false;
     // A filter that Apply refused (an invalid regular expression), and why.
@@ -52,8 +53,10 @@ private:
     Fl_Button *add_button_;
     Fl_Button *apply_button_;
     Fl_Button *clear_button_;
+    Fl_Button *narrowing_button_;
     Fl_Box *status_;
     ChangingTooltip status_tooltip_;
+    ChangingTooltip narrowing_tooltip_;
     std::vector<ConditionRow> rows_;
     // Shared by the column choices; the labels must outlive the items.
     std::vector<std::string> column_labels_;
@@ -84,7 +87,7 @@ public:
     void addCondition(size_t column);
     // Adds a condition on the default column (as "+ Add condition" does).
     void addDefaultCondition() { addCondition(default_column_ ? default_column_() : 0); }
-    bool hasConditions() const { return !rows_.empty(); }
+    bool hasConditions() const { return !rows_.empty() || !narrowing_.empty(); }
     // The column of a condition added with "+ Add condition".
     void setDefaultColumn(std::function<size_t()> provider) { default_column_ = std::move(provider); }
 

@@ -205,6 +205,10 @@ struct Filter
     };
     Combine combine = Combine::And;
     std::vector<FilterCondition> conditions;
+    // Chart selections further restrict the editable filter, regardless of
+    // its combine mode. Every narrowing condition is joined with AND.
+    std::vector<FilterCondition> narrowing;
+    bool empty() const { return conditions.empty() && narrowing.empty(); }
     bool operator==(const Filter &) const = default;
 };
 
@@ -216,7 +220,7 @@ struct ViewSpec
     std::vector<SortKey> sort;
     std::optional<Filter> filter;
 
-    bool filtered() const { return filter && !filter->conditions.empty(); }
+    bool filtered() const { return filter && !filter->empty(); }
     bool empty() const { return sort.empty() && !filtered(); }
     bool operator==(const ViewSpec &) const = default;
 };

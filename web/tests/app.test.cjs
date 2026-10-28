@@ -97,7 +97,7 @@ async function regressionPage() {
                     pending: false,
                     filterText: '',
                     ...(this.viewError ? { viewError: this.viewError, viewErrorId: this.viewErrorId } : {}),
-                    checkpoint: null,
+                    checkpoint: this.checkpoint ?? null,
                     readingStopped: false,
                 };
             }
@@ -144,13 +144,112 @@ async function regressionPage() {
                     return this.reply(request, {
                         conditions: [{ column: params.column, op: 'equals', value: `value-${params.column}` }],
                     });
+                if (method === 'aggregates') return this.reply(request, ['count', 'mean']);
+                if (method === 'exportFormats')
+                    return this.reply(request, [{ format: 'csv', label: 'CSV', extension: '.csv' }]);
+                if (method === 'startGroupBy' || method === 'startExport') {
+                    if (this.job && !this.job.done) {
+                        queueMicrotask(() =>
+                            this.onmessage({
+                                data: {
+                                    type: 'reply',
+                                    json: JSON.stringify({
+                                        id: request.id,
+                                        error: 'another export or Group By is running',
+                                    }),
+                                },
+                            }),
+                        );
+                        return;
+                    }
+                    this.job = { kind: method === 'startGroupBy' ? 'groupBy' : 'export', done: false, rows: 100 };
+                    if (method === 'startGroupBy' && this.holdGroupStart) {
+                        this.pendingGroupStart = request;
+                        return;
+                    }
+                    return this.reply(request, {});
+                }
+                if (method === 'jobState') {
+                    if (this.holdJobState) {
+                        this.pendingJobState = request;
+                        return;
+                    }
+                    return this.reply(request, this.job ?? { kind: null });
+                }
+                if (method === 'cancelJob') {
+                    this.job = null;
+                    return this.reply(request, {});
+                }
+                if (method === 'continueReading' || method === 'stopReading') {
+                    this.checkpoint = null;
+                    this.reply(request, {});
+                    queueMicrotask(() =>
+                        this.onmessage({ data: { type: 'events', json: JSON.stringify({ [this.sheet]: 16 }) } }),
+                    );
+                    return;
+                }
+                if (method === 'startHistogram' || method === 'histogramState')
+                    return this.reply(request, {
+                        active: true,
+                        done: !!this.chartReady,
+                        counting: false,
+                        column: 0,
+                        scannedRows: 100,
+                        histogram: this.chartReady
+                            ? {
+                                  kind: 'number',
+                                  summary: '1 number',
+                                  bins: [{ label: '20', range: '20 to 25', count: 1 }],
+                                  top: [],
+                              }
+                            : { kind: 'none', summary: '', bins: [], top: [] },
+                    });
+                if (method === 'histogramFilter')
+                    return this.reply(request, {
+                        conditions: [
+                            { column: 0, op: 'isNumber', value: '' },
+                            { column: 0, op: 'greaterEqual', value: '20' },
+                            { column: 0, op: 'less', value: '25' },
+                        ],
+                    });
+                if (method === 'defaultScatter') return this.reply(request, { x: 0, y: 1 });
+                if (method === 'startScatter') return this.reply(request, {});
+                if (method === 'scatterState')
+                    return this.reply(request, {
+                        active: true,
+                        done: false,
+                        counting: false,
+                        x: 0,
+                        y: 1,
+                        scannedRows: 100,
+                        plottable: false,
+                        summary: '',
+                        statsText: '',
+                        categories: [],
+                        points: [],
+                        fit: null,
+                    });
                 if (method === 'setView') {
                     let filter = 'filter' in params ? params.filter : this.view.filter;
-                    if (params.addConditions)
-                        filter = {
-                            combine: filter?.combine ?? 'and',
-                            conditions: [...(filter?.conditions ?? []), ...params.addConditions],
-                        };
+                    for (const [key, target] of [
+                        ['addConditions', 'conditions'],
+                        ['addNarrowing', 'narrowing'],
+                    ]) {
+                        if (!params[key]) continue;
+                        filter = { combine: filter?.combine ?? 'and', conditions: [], ...filter };
+                        const conditions = [...(filter[target] ?? [])];
+                        for (const condition of params[key])
+                            if (
+                                !conditions.some(
+                                    (c) =>
+                                        c.column === condition.column &&
+                                        c.op === condition.op &&
+                                        c.value === condition.value,
+                                )
+                            )
+                                conditions.push(condition);
+                        filter[target] = conditions;
+                    }
                     this.view = { sort: 'sort' in params ? params.sort : this.view.sort, filter };
                     if (this.failViews) {
                         this.viewError = 'the source failed';
@@ -193,6 +292,183 @@ async function regressionPage() {
 }
 
 describe('frontend regressions', () => {
+    test('keeps chart narrowing separate from editable OR conditions', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            const worker = window.regressionWorker;
+            worker.chartReady = true;
+            worker.view.filter = {
+                combine: 'or',
+                conditions: [
+                    { column: 0, op: 'equals', value: '20' },
+                    { column: 0, op: 'equals', value: '30' },
+                ],
+            };
+            worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 4 }) } });
+        });
+        await page.locator('#filter-conditions li').nth(1).waitFor();
+        await page.locator('#histogram-button').click();
+        await page.locator('#histogram-chart .bar').click();
+        await page.waitForFunction(() => window.regressionWorker.view.filter.narrowing?.length === 3);
+        await page.locator('#histogram-chart .bar').click();
+        await page.keyboard.press('Escape');
+        await page.locator('#filter-narrowing').waitFor();
+        assert.equal(await page.locator('#filter-combine').inputValue(), 'or');
+        assert.equal(await page.locator('#filter-conditions li').count(), 2);
+        assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 3);
+
+        await page.selectOption('#filter-combine', 'and');
+        await page.waitForFunction(() => window.regressionWorker.view.filter.combine === 'and');
+        assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 3);
+        await page.selectOption('#filter-combine', 'or');
+        await page.waitForFunction(() => window.regressionWorker.view.filter.combine === 'or');
+        await page.getByRole('button', { name: 'Clear additional narrowing' }).click();
+        await page.locator('#filter-narrowing').waitFor({ state: 'detached' });
+        assert.equal(await page.locator('#filter-conditions li').count(), 2);
+        assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.combine), 'or');
+        await page.context().close();
+    });
+
+    test('retains chart narrowing when the last editable condition is removed', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            const worker = window.regressionWorker;
+            worker.view.filter = {
+                combine: 'or',
+                conditions: [{ column: 0, op: 'equals', value: '20' }],
+                narrowing: [{ column: 1, op: 'equals', value: 'x' }],
+            };
+            worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 4 }) } });
+        });
+        await page.locator('#filter-narrowing').waitFor();
+        await page.locator('#filter-conditions button').click();
+        await page.waitForFunction(() => window.regressionWorker.view.filter.conditions.length === 0);
+        assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 1);
+        await page.getByRole('button', { name: 'Clear additional narrowing' }).click();
+        await page.waitForFunction(() => window.regressionWorker.view.filter === null);
+        await page.context().close();
+    });
+
+    for (const [tool, dialog, start] of [
+        ['export', 'export', 'export-start'],
+        ['group-by', 'group-by', 'group-by-run'],
+        ['histogram', 'histogram', null],
+        ['scatter', 'scatter', null],
+    ]) {
+        test(`continues and stops reading inside the ${dialog} dialog`, async () => {
+            const page = await regressionPage();
+            await page.locator(`#${tool}-button`).click();
+            if (start) await page.locator(`#${start}`).click();
+            const pause = () =>
+                page.evaluate(() => {
+                    const worker = window.regressionWorker;
+                    worker.checkpoint = { bytes: 104857600, rows: 100 };
+                    worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 16 }) } });
+                });
+            await pause();
+            const banner = page.locator(`#${dialog}-dialog-checkpoint`);
+            await banner.waitFor();
+            await banner.getByRole('button', { name: 'Continue reading' }).click();
+            await banner.waitFor({ state: 'detached' });
+            await pause();
+            await banner.getByRole('button', { name: 'Stop here' }).click();
+            await banner.waitFor({ state: 'detached' });
+            assert.deepEqual(
+                await page.evaluate(() =>
+                    window.regressionWorker.requests
+                        .filter((r) => ['continueReading', 'stopReading'].includes(r.method))
+                        .map((r) => ({ method: r.method, sheet: r.params.sheet })),
+                ),
+                [
+                    { method: 'continueReading', sheet: 2 },
+                    { method: 'stopReading', sheet: 2 },
+                ],
+            );
+            await page.locator(`#${dialog}-dialog`).waitFor();
+            await page.context().close();
+        });
+    }
+
+    for (const close of ['escape', 'button', 'cross']) {
+        test(`cancels Group By on ${close} and allows another job`, async () => {
+            const page = await regressionPage();
+            await page.locator('#group-by-button').click();
+            await page.locator('#group-by-run').click();
+            await page.waitForFunction(() => window.regressionWorker.job?.kind === 'groupBy');
+            if (close === 'escape') await page.keyboard.press('Escape');
+            else if (close === 'button')
+                await page
+                    .locator('#group-by-dialog footer')
+                    .getByRole('button', { name: 'Close', exact: true })
+                    .click();
+            else await page.locator('#group-by-dialog .dialog-close').click();
+            await page.waitForFunction(() => window.regressionWorker.job === null);
+            await page.locator('#group-by-button').click();
+            await page.locator('#group-by-run').click();
+            await page.waitForFunction(() => window.regressionWorker.job?.kind === 'groupBy');
+            await page.locator('#group-by-dialog').getByText('Grouping…', { exact: false }).waitFor();
+            assert.equal(await page.getByText('another export or Group By is running').count(), 0);
+            await page.context().close();
+        });
+    }
+
+    test('cancels Group By while its start reply is pending', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            window.regressionWorker.holdGroupStart = true;
+        });
+        await page.locator('#group-by-button').click();
+        await page.locator('#group-by-run').click();
+        await page.waitForFunction(() => !!window.regressionWorker.pendingGroupStart);
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => window.regressionWorker.job === null);
+        await page.evaluate(() => {
+            const worker = window.regressionWorker;
+            worker.reply(worker.pendingGroupStart, {});
+            worker.holdGroupStart = false;
+        });
+        await page.locator('#group-by-button').click();
+        await page.locator('#group-by-run').click();
+        await page.waitForFunction(() => window.regressionWorker.job?.kind === 'groupBy');
+        await page.locator('#group-by-dialog').getByText('Grouping…', { exact: false }).waitFor();
+        assert.equal(await page.getByText('another export or Group By is running').count(), 0);
+        await page.context().close();
+    });
+
+    test('ignores a Group By result arriving after its dialog closed', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            window.regressionWorker.holdJobState = true;
+        });
+        await page.locator('#group-by-button').click();
+        await page.locator('#group-by-run').click();
+        await page.waitForFunction(() => !!window.regressionWorker.pendingJobState);
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => window.regressionWorker.job === null);
+        await page.evaluate(() => {
+            const worker = window.regressionWorker;
+            worker.reply(worker.pendingJobState, {
+                kind: 'groupBy',
+                done: true,
+                rows: 100,
+                error: '',
+                sheet: 'Group By',
+                sheets: ['wide', 'Group By'],
+            });
+        });
+        // A round trip through info ensures that the late reply was handled.
+        await page.locator('#tabs button', { hasText: 'narrow' }).click();
+        await page.locator('#tabs [aria-selected=true]', { hasText: 'narrow' }).waitFor();
+        assert.equal(await page.locator('#tabs button', { hasText: 'Group By' }).count(), 0);
+        assert.equal(
+            await page.evaluate(() =>
+                window.regressionWorker.requests.some((r) => r.method === 'sheet' && r.params.name === 'Group By'),
+            ),
+            false,
+        );
+        await page.context().close();
+    });
+
     test('ignores SQL results from a file that was replaced', async () => {
         const page = await regressionPage();
         await page.locator('#sql-toggle').click();

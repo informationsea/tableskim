@@ -142,7 +142,11 @@ export class GridController {
         this.columns = info.columns;
         this.rowCount = info.displayRows;
         this.sort = info.view.sort;
-        this.filteredColumns = new Set((info.view.filter?.conditions ?? []).map((condition) => condition.column));
+        this.filteredColumns = new Set(
+            [...(info.view.filter?.conditions ?? []), ...(info.view.filter?.narrowing ?? [])].map(
+                (condition) => condition.column,
+            ),
+        );
         if (columnsChanged) {
             this.widths = this.columns.map((column) => this.fitWidth(`${column.mark} ${column.name} ▲`, true));
             this.widthsMeasured = false;

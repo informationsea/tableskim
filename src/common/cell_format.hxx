@@ -182,6 +182,8 @@ FilterCondition cellFilterCondition(size_t column, const CellValue &value, bool 
 // Adds a condition to the view's filter unless it is already there. A new
 // filter matches all of its conditions.
 void addFilterCondition(ViewSpec &spec, FilterCondition condition);
+// Add a chart selection without changing the editable filter's AND/OR mode.
+void addNarrowingConditions(ViewSpec &spec, std::vector<FilterCondition> conditions);
 // Whether a condition of the view's filter is on the column.
 bool filtersColumn(const ViewSpec &spec, size_t column);
 // One line such as `Price ≥ "1000" and Name contains "Tokyo"`.

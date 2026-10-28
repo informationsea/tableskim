@@ -1092,7 +1092,10 @@ void TuiApp::openFilterDialog()
     const auto &conditions = filter_draft_.conditions;
     if (conditions.empty())
     {
-        addFilterDraftCondition();
+        if (filter_draft_.narrowing.empty())
+            addFilterDraftCondition();
+        else
+            filter_line_ = 0;
     }
     else
     {
@@ -1120,7 +1123,7 @@ bool TuiApp::applyFilterDraft()
         if (!filterOpTakesValue(condition.op))
             condition.value.clear();
     }
-    return setFilter(filter.conditions.empty() ? std::nullopt : std::optional(std::move(filter)));
+    return setFilter(filter.empty() ? std::nullopt : std::optional(std::move(filter)));
 }
 
 void TuiApp::quickFilter(bool equal)
@@ -1233,6 +1236,8 @@ bool TuiApp::handleFilterDialogEvent(Event event)
         else
             filter_line_ = filter_line_ > 0 ? filter_line_ - 1 : 0;
     }
+    else if (event == Event::CtrlX && !filter_draft_.narrowing.empty())
+        filter_draft_.narrowing.clear();
     else if (event == Event::CtrlN || event == Event::Insert)
         addFilterDraftCondition();
     else if ((event == Event::CtrlD || event == Event::Delete) && condition)
@@ -2094,11 +2099,10 @@ bool TuiApp::handleHistogramEvent(Event event)
         ViewSpec spec = histogram_model_->requestedView();
         if (hg.binCount() > 0)
         {
-            for (FilterCondition &condition : histogramBinConditions(hg, state.column, histogram_selected_))
-                addFilterCondition(spec, std::move(condition));
+            addNarrowingConditions(spec, histogramBinConditions(hg, state.column, histogram_selected_));
         }
         else
-            addFilterCondition(spec, cellFilterCondition(state.column, hg.top[histogram_selected_].value, true));
+            addNarrowingConditions(spec, {cellFilterCondition(state.column, hg.top[histogram_selected_].value, true)});
         // The histogram starts over on the rows left.
         histogram_model_->setView(std::move(spec));
         histogram_selected_ = 0;
@@ -2251,8 +2255,7 @@ bool TuiApp::handleDensityEvent(Event event)
         if (!density_model_->viewCapabilities().filter)
             return true;
         ViewSpec spec = density_model_->requestedView();
-        for (FilterCondition &condition : scatterCategoryConditions(plot, state.x_column, state.y_column, box_selected_))
-            addFilterCondition(spec, std::move(condition));
+        addNarrowingConditions(spec, scatterCategoryConditions(plot, state.x_column, state.y_column, box_selected_));
         density_model_->setView(std::move(spec));
     }
     else if (boxes)
@@ -2306,9 +2309,7 @@ bool TuiApp::handleDensityEvent(Event event)
         if (!density_model_->viewCapabilities().filter)
             return true;
         ViewSpec spec = density_model_->requestedView();
-        for (FilterCondition &condition :
-             densityCellConditions(plot, state.x_column, state.y_column, density_x_, density_y_))
-            addFilterCondition(spec, std::move(condition));
+        addNarrowingConditions(spec, densityCellConditions(plot, state.x_column, state.y_column, density_x_, density_y_));
         // The density starts over on the rows left.
         density_model_->setView(std::move(spec));
     }
@@ -2988,6 +2989,9 @@ Element TuiApp::renderFilterDialog()
     lines.push_back(filter_line_ == conditions.size() + 1 ? add_line | inverted | focus : add_line | dim);
 
     Elements body{match_line, separator(), vbox(std::move(lines)) | vscroll_indicator | frame | flex_shrink, separator()};
+    if (!filter_draft_.narrowing.empty())
+        body.push_back(text("Additional narrowing: " + std::to_string(filter_draft_.narrowing.size()) +
+                            " conditions (AND); Ctrl+X: clear") | dim);
     if (model && !model->viewCapabilities().filter)
         body.push_back(text("Still opening (cannot filter yet)") | color(Color::Red));
     body.push_back(text("↑↓: line  Tab: field  ←→: change  Enter: apply  Esc: cancel") | dim);

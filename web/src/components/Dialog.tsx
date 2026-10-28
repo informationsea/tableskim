@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { CheckpointBanner, type CheckpointBannerProps } from './Banners';
 
 interface DialogProps {
     id: string;
@@ -8,10 +9,11 @@ interface DialogProps {
     // Buttons at the bottom right.
     footer?: ReactNode;
     wide?: boolean;
+    checkpoint?: CheckpointBannerProps;
 }
 
 /** A modal dialog (the browser's <dialog>: Escape closes it, focus stays in it). */
-export function Dialog({ id, title, onClose, children, footer, wide }: DialogProps) {
+export function Dialog({ id, title, onClose, children, footer, wide, checkpoint }: DialogProps) {
     const dialog = useRef<HTMLDialogElement>(null);
     const close = useRef(onClose);
     useEffect(() => {
@@ -52,6 +54,7 @@ export function Dialog({ id, title, onClose, children, footer, wide }: DialogPro
                     ✕
                 </button>
             </header>
+            {checkpoint?.checkpoint && <CheckpointBanner {...checkpoint} id={`${id}-checkpoint`} />}
             <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
             {footer && <footer className="flex justify-end gap-2 border-t border-line px-3 py-2">{footer}</footer>}
         </dialog>

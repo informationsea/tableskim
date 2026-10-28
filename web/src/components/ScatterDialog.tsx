@@ -5,6 +5,7 @@ import { errorText, usePolled } from '../hooks';
 import { type Condition, Events, type ScatterState, type SheetInfo } from '../protocol';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
+import type { CheckpointBannerProps } from './Banners';
 
 interface ScatterDialogProps {
     client: TableSkimClient;
@@ -14,13 +15,23 @@ interface ScatterDialogProps {
     onFilter: (conditions: Condition[]) => void;
     onGoToRow: (row: number) => void;
     onClose: () => void;
+    checkpoint?: CheckpointBannerProps;
 }
 
 /**
  * Two columns plotted against each other over the rows of the view: points,
  * the density, or box plots for a text X.
  */
-export function ScatterDialog({ client, info, column, hidden, onFilter, onGoToRow, onClose }: ScatterDialogProps) {
+export function ScatterDialog({
+    client,
+    info,
+    column,
+    hidden,
+    onFilter,
+    onGoToRow,
+    onClose,
+    checkpoint,
+}: ScatterDialogProps) {
     const [axes, setAxes] = useState<{ x: number; y: number } | null>(null);
     const [mode, setMode] = useState<ScatterMode>('points');
     const [fit, setFit] = useState(true);
@@ -102,7 +113,7 @@ export function ScatterDialog({ client, info, column, hidden, onFilter, onGoToRo
               ? 'Click a cell to filter to its rows' + (categorical ? '.' : '; drag a rectangle to filter to it.')
               : 'Click a box to filter to its category.';
     return (
-        <Dialog id="scatter-dialog" title="Scatter Plot" wide onClose={onClose}>
+        <Dialog id="scatter-dialog" title="Scatter Plot" wide onClose={onClose} checkpoint={checkpoint}>
             <div className="mb-2 flex flex-wrap items-center gap-2">
                 {axes && (
                     <>

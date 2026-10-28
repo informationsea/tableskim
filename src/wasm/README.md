@@ -289,3 +289,14 @@ SQL, statistics, histograms, scatter plots, Group By, exports and editing
 publishing on the project's GitHub Pages site (the app is ready for it),
 offline use and file handlers (PWA); loading DuckDB only
 when needed. Follow cannot work on a `File`, which is a snapshot.
+
+The filter has `combine` (`and` or `or`) and editable `conditions`, plus an
+optional `narrowing` array of conditions from chart selections. Its meaning is
+`(editable conditions) AND (all narrowing conditions)`; either empty group is
+true. Subsequent chart selections append to `narrowing`. Editing the ordinary
+conditions preserves it; clearing additional narrowing removes only that array,
+and clearing the filter removes both groups.
+
+`setView.addNarrowing` appends chart conditions to the latest requested view,
+keeping pending sorts and filters, just as `addConditions` does for editable
+conditions. Both additions omit duplicate conditions.

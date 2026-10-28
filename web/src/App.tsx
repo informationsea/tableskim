@@ -128,7 +128,8 @@ export function App({ client }: { client: TableSkimClient }) {
             flow.current.viewError = viewError;
             setMessage(`The sort or filter failed: ${next.viewError}`);
         }
-        if (next.view.filter?.conditions.length && next.capabilities.filter) setFilterOpen(true);
+        if ((next.view.filter?.conditions.length || next.view.filter?.narrowing?.length) && next.capabilities.filter)
+            setFilterOpen(true);
     }, []);
 
     // Asks for the sheet's state again, one request at a time.
@@ -327,7 +328,12 @@ export function App({ client }: { client: TableSkimClient }) {
 
     // Changes the view the worker asked for last, so that a sort or filter
     // still being applied is kept.
-    const changeView = async (change: { sort?: SortKey[]; filter?: Filter | null; addConditions?: Condition[] }) => {
+    const changeView = async (change: {
+        sort?: SortKey[];
+        filter?: Filter | null;
+        addConditions?: Condition[];
+        addNarrowing?: Condition[];
+    }) => {
         const current = flow.current.info;
         if (!current) return;
         try {
@@ -343,10 +349,10 @@ export function App({ client }: { client: TableSkimClient }) {
     const setFilter = (filter: Filter | null) => changeView({ filter });
 
     // Adds conditions to the view's filter (a histogram's bin, a cell's value...).
-    const addConditions = async (conditions: Condition[]) => {
+    const addConditions = async (conditions: Condition[], narrow = false) => {
         if (!flow.current.info?.capabilities.filter || conditions.length === 0) return;
         setFilterOpen(true);
-        await changeView({ addConditions: conditions });
+        await changeView(narrow ? { addNarrowing: conditions } : { addConditions: conditions });
     };
 
     const setSort = async (sort: SortKey[]) => {
@@ -636,6 +642,11 @@ export function App({ client }: { client: TableSkimClient }) {
         },
         sheetTool('export-button', 'Export', 'Save the view as CSV, TSV, Excel or Parquet', 'export'),
     ];
+    const checkpointControls = {
+        checkpoint: info?.checkpoint ?? null,
+        onContinue: () => void readOn(true),
+        onStop: () => void readOn(false),
+    };
     const closeDialog = () => {
         setDialog(null);
         grid.current?.focus();
@@ -733,29 +744,38 @@ export function App({ client }: { client: TableSkimClient }) {
                 <>
                     {dialog.kind === 'histogram' && (
                         <HistogramDialog
+                            checkpoint={checkpointControls}
                             client={client}
                             info={info}
                             column={dialog.column}
-                            onFilter={(conditions) => void addConditions(conditions)}
+                            onFilter={(conditions) => void addConditions(conditions, true)}
                             onClose={closeDialog}
                         />
                     )}
                     {dialog.kind === 'scatter' && (
                         <ScatterDialog
+                            checkpoint={checkpointControls}
                             client={client}
                             info={info}
                             column={dialog.column}
                             hidden={hidden}
-                            onFilter={(conditions) => void addConditions(conditions)}
+                            onFilter={(conditions) => void addConditions(conditions, true)}
                             onGoToRow={goToRow}
                             onClose={closeDialog}
                         />
                     )}
                     {dialog.kind === 'export' && (
-                        <ExportDialog client={client} info={info} hidden={hidden} onClose={closeDialog} />
+                        <ExportDialog
+                            checkpoint={checkpointControls}
+                            client={client}
+                            info={info}
+                            hidden={hidden}
+                            onClose={closeDialog}
+                        />
                     )}
                     {dialog.kind === 'groupBy' && (
                         <GroupByDialog
+                            checkpoint={checkpointControls}
                             client={client}
                             info={info}
                             column={dialog.column}

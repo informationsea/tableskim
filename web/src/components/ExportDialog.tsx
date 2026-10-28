@@ -3,16 +3,18 @@ import type { TableSkimClient } from '../client';
 import { errorText, usePolled } from '../hooks';
 import { Events, type ExportFormat, type ExportFormatInfo, type JobState, SESSION, type SheetInfo } from '../protocol';
 import { Dialog } from './Dialog';
+import type { CheckpointBannerProps } from './Banners';
 
 interface ExportDialogProps {
     client: TableSkimClient;
     info: SheetInfo;
     hidden: number[];
     onClose: () => void;
+    checkpoint?: CheckpointBannerProps;
 }
 
 /** Saves the sheet as shown (its sort and filter, without hidden columns). */
-export function ExportDialog({ client, info, hidden, onClose }: ExportDialogProps) {
+export function ExportDialog({ client, info, hidden, onClose, checkpoint }: ExportDialogProps) {
     const [formats, setFormats] = useState<ExportFormatInfo[]>([]);
     const [format, setFormat] = useState<ExportFormat>('csv');
     const [job, setJob] = useState<JobState | null>(null);
@@ -85,6 +87,7 @@ export function ExportDialog({ client, info, hidden, onClose }: ExportDialogProp
             id="export-dialog"
             title="Export View"
             onClose={onClose}
+            checkpoint={checkpoint}
             footer={
                 <>
                     {running ? (
