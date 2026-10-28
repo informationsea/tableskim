@@ -1,6 +1,6 @@
 import { type ReactNode, useRef } from 'react';
 
-export type SidebarTab = 'content' | 'stats';
+export type SidebarTab = 'content' | 'filter' | 'stats';
 
 interface SidebarProps {
     tab: SidebarTab;
@@ -13,6 +13,7 @@ interface SidebarProps {
 
 const TABS: { tab: SidebarTab; label: string }[] = [
     { tab: 'content', label: 'Content' },
+    { tab: 'filter', label: 'Filter' },
     { tab: 'stats', label: 'Statistics' },
 ];
 export const SIDEBAR_MIN_WIDTH = 200;

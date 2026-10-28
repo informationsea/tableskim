@@ -6,7 +6,7 @@ import type { TableSkimClient } from './client';
 import { CheckpointBanner, MessageBanner } from './components/Banners';
 import { DropOverlay, EmptyState } from './components/EmptyState';
 import { ExportDialog } from './components/ExportDialog';
-import { FilterBar } from './components/FilterBar';
+import { FilterPane } from './components/FilterPane';
 import { FormatDialog } from './components/FormatDialog';
 import { GoToDialog } from './components/GoToDialog';
 import { GroupByDialog } from './components/GroupByDialog';
@@ -117,7 +117,8 @@ export function App({ client }: { client: TableSkimClient }) {
     const [dataVersion, setDataVersion] = useState(0);
     const [viewVersion, setViewVersion] = useState(0);
     const [message, setMessage] = useState(ISOLATED ? '' : ISOLATION_MESSAGE);
-    const [filterOpen, setFilterOpen] = useState(false);
+    // A condition the Filter pane is to add ("Filter by This Column…").
+    const [filterAdding, setFilterAdding] = useState<{ column: number; serial: number } | null>(null);
     const [cellStatus, setCellStatus] = useState('');
     const [search, setSearch] = useState({ text: '', caseSensitive: false, regex: false });
     const [searchStatus, setSearchStatus] = useState('');
@@ -158,8 +159,6 @@ export function App({ client }: { client: TableSkimClient }) {
             flow.current.viewError = viewError;
             setMessage(`The sort or filter failed: ${next.viewError}`);
         }
-        if ((next.view.filter?.conditions.length || next.view.filter?.narrowing?.length) && next.capabilities.filter)
-            setFilterOpen(true);
     }, []);
 
     // Asks for the sheet's state again, one request at a time.
@@ -366,30 +365,41 @@ export function App({ client }: { client: TableSkimClient }) {
 
     // Changes the view the worker asked for last, so that a sort or filter
     // still being applied is kept.
-    const changeView = async (change: {
-        sort?: SortKey[];
-        filter?: Filter | null;
-        addConditions?: Condition[];
-        addNarrowing?: Condition[];
-    }) => {
+    const changeView = async (
+        change: {
+            sort?: SortKey[];
+            filter?: Filter | null;
+            addConditions?: Condition[];
+            addNarrowing?: Condition[];
+        },
+        quiet = false,
+    ): Promise<string | null> => {
         const current = flow.current.info;
-        if (!current) return;
+        if (!current) return null;
         try {
             const reply = await client.call('setView', { sheet: current.sheet, ...change });
             if (flow.current.info?.sheet === current.sheet) showInfo({ ...flow.current.info, view: reply.view });
             setMessage('');
             void refreshInfo();
+            return null;
         } catch (error) {
-            setMessage(errorText(error));
+            // The Filter pane shows its own refusals, as the GUI's does.
+            if (!quiet) setMessage(errorText(error));
+            return errorText(error);
         }
     };
 
-    const setFilter = (filter: Filter | null) => changeView({ filter });
+    const setFilter = (filter: Filter | null) => changeView({ filter }, true);
+
+    // Opens the Filter pane with a new condition for the column.
+    const filterByColumn = (column: number) => {
+        setSidebar('filter');
+        setFilterAdding((adding) => ({ column, serial: (adding?.serial ?? 0) + 1 }));
+    };
 
     // Adds conditions to the view's filter (a histogram's bin, a cell's value...).
     const addConditions = async (conditions: Condition[], narrow = false) => {
         if (!flow.current.info?.capabilities.filter || conditions.length === 0) return;
-        setFilterOpen(true);
         await changeView(narrow ? { addNarrowing: conditions } : { addConditions: conditions });
     };
 
@@ -435,6 +445,12 @@ export function App({ client }: { client: TableSkimClient }) {
                 { label: 'Sort Descending', onSelect: () => void setSort([{ column, ascending: false }]) },
             );
             if (sorted) items.push({ label: 'Clear Sort', onSelect: () => void setSort([]) });
+            items.push('separator');
+        }
+        if (current?.capabilities.filter) {
+            items.push({ label: 'Filter by This Column…', onSelect: () => filterByColumn(column) });
+            if (current.view.filter)
+                items.push({ label: 'Clear Filter', onSelect: () => void changeView({ filter: null }) });
             items.push('separator');
         }
         items.push(
@@ -596,7 +612,15 @@ export function App({ client }: { client: TableSkimClient }) {
         let depth = 0;
         const keyDown = (event: KeyboardEvent) => {
             const ctrl = event.ctrlKey || event.metaKey;
-            if (ctrl && event.key.toLowerCase() === 'f' && searchInput.current && !searchInput.current.disabled) {
+            if (ctrl && event.shiftKey && event.key.toLowerCase() === 'f') {
+                event.preventDefault();
+                if (flow.current.info?.capabilities.filter) setSidebar('filter');
+            } else if (
+                ctrl &&
+                event.key.toLowerCase() === 'f' &&
+                searchInput.current &&
+                !searchInput.current.disabled
+            ) {
                 event.preventDefault();
                 searchInput.current.focus();
                 searchInput.current.select();
@@ -659,10 +683,10 @@ export function App({ client }: { client: TableSkimClient }) {
         {
             id: 'filter-toggle',
             label: 'Filter',
-            title: 'Show the filter conditions',
+            title: 'The filter conditions, in the sidebar (Ctrl+Shift+F)',
             enabled: !!info?.capabilities.filter,
-            pressed: filterOpen,
-            onClick: () => setFilterOpen((open) => !open),
+            pressed: sidebar === 'filter',
+            onClick: () => setSidebar((tab) => (tab === 'filter' ? null : 'filter')),
         },
         {
             id: 'stats-toggle',
@@ -738,14 +762,6 @@ export function App({ client }: { client: TableSkimClient }) {
                     inputRef: searchInput,
                 }}
             />
-            {filterOpen && info && (
-                <FilterBar
-                    columns={info.columns}
-                    filter={info.view.filter}
-                    ops={filterOps}
-                    onChange={(filter) => void setFilter(filter)}
-                />
-            )}
             <CheckpointBanner
                 checkpoint={info?.checkpoint ?? null}
                 onContinue={() => void readOn(true)}
@@ -794,6 +810,14 @@ export function App({ client }: { client: TableSkimClient }) {
                     >
                         {sidebar === 'content' ? (
                             <ContentPane client={client} info={info} cell={contentCell} monospace={monospace} />
+                        ) : sidebar === 'filter' ? (
+                            <FilterPane
+                                info={info}
+                                ops={filterOps}
+                                onApply={setFilter}
+                                adding={filterAdding}
+                                cursorColumn={Math.min(cursorColumn, info.columns.length - 1)}
+                            />
                         ) : (
                             <StatsPanel
                                 client={client}

@@ -11,7 +11,7 @@ as the GUI and the TUI share the core. The file never leaves the browser.
   and frozen columns, display formats, Go To, column statistics,
   histograms and scatter plots (points, density, box plots; saved as PNG
   or SVG), Group By, SQL (with completion and a history), exporting the
-  view, a sidebar (the whole cell, statistics), a monospace font and, for
+  view, a sidebar (the whole cell, the filter, statistics), a monospace font and, for
   text files, the character encoding and skipping `##` lines. What the
   native UIs have and it lacks: editing, Follow and converting a text
   file to Parquet or DuckDB.
@@ -131,7 +131,8 @@ Sources (`web/src/`): `protocol.ts` types the messages, `client.ts` sends
 them, `grid/controller.ts` is the virtual grid's state and behaviour
 (viewport, row cache, selection, keyboard, mouse) and `grid/Grid.tsx`
 draws it; `App.tsx` holds the app's state and `components/` the rest of
-the page: the panels (`Sidebar` with `ContentPane` and `StatsPanel`,
+the page: the panels (`Sidebar` with `ContentPane`, `FilterPane`, laid
+out and behaving as the GUI's Filter pane, and `StatsPanel`,
 `SqlPanel`), the dialogs (`Dialog`,
 the browser's `<dialog>`) and the context menu (`Menu`). `charts/` draws
 the histogram (SVG) and the scatter plot (a canvas, for its many points);

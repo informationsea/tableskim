@@ -307,6 +307,7 @@ describe('frontend regressions', () => {
             };
             worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 4 }) } });
         });
+        await page.locator('#filter-toggle').click();
         await page.locator('#filter-conditions li').nth(1).waitFor();
         await page.locator('#histogram-button').click();
         await page.locator('#histogram-chart .bar').click();
@@ -314,16 +315,20 @@ describe('frontend regressions', () => {
         await page.locator('#histogram-chart .bar').click();
         await page.keyboard.press('Escape');
         await page.locator('#filter-narrowing').waitFor();
-        assert.equal(await page.locator('#filter-combine').inputValue(), 'or');
+        assert.equal(await page.locator('#filter-match-any').isChecked(), true);
         assert.equal(await page.locator('#filter-conditions li').count(), 2);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 3);
 
-        await page.selectOption('#filter-combine', 'and');
+        // Match changes apply with Apply, as in the GUI.
+        await page.locator('#filter-match-all').check();
+        await waitForText(page.locator('#filter-status'), 'Press Apply');
+        await page.locator('#filter-apply').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter.combine === 'and');
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 3);
-        await page.selectOption('#filter-combine', 'or');
+        await page.locator('#filter-match-any').check();
+        await page.locator('#filter-apply').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter.combine === 'or');
-        await page.getByRole('button', { name: 'Clear additional narrowing' }).click();
+        await page.locator('#filter-narrowing').click();
         await page.locator('#filter-narrowing').waitFor({ state: 'detached' });
         assert.equal(await page.locator('#filter-conditions li').count(), 2);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.combine), 'or');
@@ -341,11 +346,12 @@ describe('frontend regressions', () => {
             };
             worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 4 }) } });
         });
+        await page.locator('#filter-toggle').click();
         await page.locator('#filter-narrowing').waitFor();
-        await page.locator('#filter-conditions button').click();
+        await page.locator('#filter-conditions .filter-remove').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter.conditions.length === 0);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 1);
-        await page.getByRole('button', { name: 'Clear additional narrowing' }).click();
+        await page.locator('#filter-narrowing').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter === null);
         await page.context().close();
     });
@@ -553,12 +559,16 @@ describe('frontend regressions', () => {
     test('filters the displayed column after switching to a narrower sheet', async () => {
         const page = await regressionPage();
         await page.locator('#filter-toggle').click();
-        await page.selectOption('#filter-column', '599');
+        await page.locator('#filter-add').click();
+        await page.selectOption('.filter-column', '599');
         await page.locator('#tabs button', { hasText: 'narrow' }).click();
-        await page.waitForFunction(() => document.querySelectorAll('#filter-column option').length === 2);
-        assert.equal(await page.locator('#filter-column').inputValue(), '1');
-        await page.fill('#filter-value', 'value-1');
-        await page.locator('#filter-form button[type=submit]').click();
+        // The other sheet's filter is shown: none.
+        await page.locator('.filter-column').waitFor({ state: 'detached' });
+        await page.locator('#filter-add').click();
+        await page.waitForFunction(() => document.querySelectorAll('.filter-column option').length === 2);
+        await page.selectOption('.filter-column', '1');
+        await page.fill('.filter-value', 'value-1');
+        await page.press('.filter-value', 'Enter');
         await page.waitForFunction(() => !!window.regressionWorker.view.filter);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.conditions[0].column), 1);
         await page.context().close();
@@ -587,11 +597,14 @@ describe('the web app', () => {
         await waitForText(cell(page, 0, 0), '54');
 
         await page.locator('#filter-toggle').click();
-        await page.selectOption('#filter-column', { label: 'City' });
-        await page.selectOption('#filter-op', 'equals');
-        await page.fill('#filter-value', 'Osaka');
-        await page.locator('#filter-form button[type=submit]').click();
+        await page.locator('#filter-add').click();
+        await page.selectOption('.filter-column', { label: 'City (E)' });
+        await page.selectOption('.filter-op', 'equals');
+        await page.fill('.filter-value', 'Osaka');
+        await waitForText(page.locator('#filter-status'), 'Press Apply');
+        await page.locator('#filter-apply').click();
         await waitForText(page.locator('#status-rows'), '4 rows of 54');
+        await waitForText(page.locator('#filter-status'), '4 rows of 54');
         await waitForText(page.locator('#status-filter'), 'City = "Osaka"');
         for (let row = 0; row < 4; row++) await waitForText(cell(page, row, 4), 'Osaka');
         assert.equal(await cell(page, 4, 4).count(), 0, 'no rows past the filtered ones');
@@ -603,19 +616,31 @@ describe('the web app', () => {
             ids,
         );
 
-        await page.locator('#filter-conditions button').click();
+        await page.locator('#filter-conditions .filter-remove').click();
         await waitForText(page.locator('#status-rows'), '54 rows');
+        await waitForText(page.locator('#filter-status'), 'No filter (54 rows)');
         await page.context().close();
     });
 
-    test('reports an invalid regular expression in a filter', async () => {
+    test('reports an invalid regular expression in the Filter pane and filters by a column', async () => {
         const page = await newPage();
         await open(page, demo('normal.csv'));
         await page.locator('#filter-toggle').click();
-        await page.selectOption('#filter-op', 'matches');
-        await page.fill('#filter-value', '(');
-        await page.locator('#filter-form button[type=submit]').click();
-        await page.locator('#message:not([hidden])').waitFor();
+        await page.locator('#filter-add').click();
+        await page.selectOption('.filter-op', 'matches');
+        await page.fill('.filter-value', '(');
+        await page.press('.filter-value', 'Enter');
+        // In the pane, as the GUI shows it, and nothing is applied.
+        await page.waitForFunction(() =>
+            /regular expression|missing/i.test(document.querySelector('#filter-status').textContent),
+        );
+        await waitForText(page.locator('#status-rows'), '54 rows');
+        // A quick filter opens the pane with the condition.
+        await page.locator('.filter-remove').click();
+        await cell(page, 0, 4).click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Filter by This Column…').click();
+        await page.waitForFunction(() => document.activeElement?.classList.contains('filter-value'));
+        assert.equal(await page.locator('.filter-column').inputValue(), '4');
         await page.context().close();
     });
 
