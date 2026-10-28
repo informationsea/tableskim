@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Usage: ./web.sh [--debug] [--dev] [--port PORT] [--open] [--no-build]
+# Usage: ./web.sh [--debug] [--dev | --pages] [--port PORT] [--open] [--no-build]
 #
 # Builds the WebAssembly core and the web app (web/) with the wasm-release
 # preset (wasm-debug with --debug) and serves them at http://127.0.0.1:PORT/
@@ -8,6 +8,8 @@
 #
 #   --dev       serve web/ with Vite's development server instead, which
 #               reloads the page as web/src changes (port 5173 by default)
+#   --pages     serve without the cross-origin isolation headers, as GitHub
+#               Pages does: the app's service worker adds them
 #   --port      the port to listen on
 #   --open      open the page in the browser
 #   --no-build  serve what was built last
@@ -23,10 +25,11 @@ DEV=0
 PORT=
 OPEN=0
 BUILD=1
+PAGES=0
 
 usage()
 {
-    sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//' >&2
+    sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//' >&2
     exit "${1:-1}"
 }
 
@@ -34,6 +37,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --debug) BUILD_TYPE=debug ;;
         --dev) DEV=1 ;;
+        --pages) PAGES=1 ;;
         --port)
             [ $# -ge 2 ] || usage
             PORT="$2"
@@ -49,6 +53,11 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+if [ "${DEV}" = 1 ] && [ "${PAGES}" = 1 ]; then
+    echo "--dev and --pages cannot go together" >&2
+    usage
+fi
 
 cd "$(dirname "$0")"
 
@@ -206,4 +215,9 @@ fi
 step "Serving the web app of ${BUILD_DIR} (Ctrl+C stops it)"
 [ "${BUILD}" = 1 ] && note "ready after $(duration "${SECONDS}")"
 note "open ${URL} in a browser"
-exec node web/serve.mjs "${BUILD_DIR}" "${PORT}"
+serve_options=()
+if [ "${PAGES}" = 1 ]; then
+    note "without the isolation headers, as on GitHub Pages: the service worker adds them"
+    serve_options+=(--no-isolation-headers)
+fi
+exec node web/serve.mjs "${serve_options[@]}" "${BUILD_DIR}" "${PORT}"

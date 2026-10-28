@@ -2,9 +2,11 @@
 // /probe/) with the module files of a WebAssembly build, adding the
 // headers that make the pages cross-origin isolated, which
 // SharedArrayBuffer (and so threads) needs:
-//   node web/serve.mjs <build dir> [port] [app dir]
+//   node web/serve.mjs [--no-isolation-headers] <build dir> [port] [app dir]
 // The app is the one CMake built into <build dir>/web, else web/dist
 // (npm run build). While working on the app, npm run dev serves it too.
+// --no-isolation-headers serves as GitHub Pages does, without them, so
+// that the app's service worker (coi-serviceworker.js) has to add them.
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -12,14 +14,15 @@ import { basename, dirname, extname, join, normalize, resolve as resolvePath, se
 import { fileURLToPath } from 'node:url';
 
 const webDir = dirname(fileURLToPath(import.meta.url));
-const buildDir = process.argv[2];
-const port = Number(process.argv[3] ?? 8765);
+const isolationHeaders = !process.argv.includes('--no-isolation-headers');
+const [buildDir, portArg, appArg] = process.argv.slice(2).filter((arg) => arg !== '--no-isolation-headers');
+const port = Number(portArg ?? 8765);
 if (!buildDir) {
-    console.error('usage: node web/serve.mjs <build dir> [port] [app dir]');
+    console.error('usage: node web/serve.mjs [--no-isolation-headers] <build dir> [port] [app dir]');
     process.exit(2);
 }
 const appDir = resolvePath(
-    process.argv[4] ?? (existsSync(join(buildDir, 'web', 'index.html')) ? join(buildDir, 'web') : join(webDir, 'dist')),
+    appArg ?? (existsSync(join(buildDir, 'web', 'index.html')) ? join(buildDir, 'web') : join(webDir, 'dist')),
 );
 if (!existsSync(join(appDir, 'index.html'))) {
     console.error(`${appDir} holds no built app: run npm run build in web/`);
@@ -60,12 +63,15 @@ createServer(async (request, response) => {
     try {
         if (!file) throw Object.assign(new Error('outside the served directories'), { code: 'ENOENT' });
         const body = await readFile(file);
-        response.writeHead(200, {
+        const headers = {
             'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream',
             'Cache-Control': 'no-cache',
-            'Cross-Origin-Opener-Policy': 'same-origin',
-            'Cross-Origin-Embedder-Policy': 'require-corp',
-        });
+        };
+        if (isolationHeaders) {
+            headers['Cross-Origin-Opener-Policy'] = 'same-origin';
+            headers['Cross-Origin-Embedder-Policy'] = 'require-corp';
+        }
+        response.writeHead(200, headers);
         response.end(body);
     } catch (error) {
         response.writeHead(error.code === 'ENOENT' || error.code === 'EISDIR' ? 404 : 500).end();

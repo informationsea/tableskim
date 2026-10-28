@@ -229,7 +229,10 @@ read their header comments before changing anything in `src/common/`.
   gets `Loading` cells, and asks again on the model's events
   (`web/src/grid/controller.ts` keeps the grid's state outside React;
   `Grid.tsx` draws the cells in view). The protocol's types are in
-  `web/src/protocol.ts`; keep them in step with `web_session.cxx`. Helpers
+  `web/src/protocol.ts`; keep them in step with `web_session.cxx`. Hosts
+  without the cross-origin isolation headers (GitHub Pages) get them from
+  `web/public/coi-serviceworker.js`, registered by `src/isolation.ts`
+  (`./web.sh --pages` serves without them). Helpers
   it shares with the TUI live in `src/common/` (e.g. `findSearchHit()` in
   `search_hits.{hxx,cxx}`).
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows

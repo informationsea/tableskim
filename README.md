@@ -218,6 +218,7 @@ reads the file in the browser without uploading it. With the
 ```sh
 ./web.sh              # build, then serve at http://127.0.0.1:8765/
 ./web.sh --dev        # Vite's development server, reloading as web/src changes
+./web.sh --pages      # serve without the isolation headers, as GitHub Pages does
 ./web.sh --help       # --debug, --port, --open, --no-build
 ```
 

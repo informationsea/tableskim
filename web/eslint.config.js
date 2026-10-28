@@ -33,6 +33,10 @@ export default tseslint.config(
         languageOptions: { sourceType: 'commonjs' },
     },
     {
+        files: ['public/coi-serviceworker.js'],
+        languageOptions: { globals: globals.serviceworker },
+    },
+    {
         // Playwright runs the callbacks given to page.evaluate() in the page.
         files: ['tests/**', 'probe/run-browser.cjs'],
         languageOptions: { globals: { ...globals.node, ...globals.browser } },

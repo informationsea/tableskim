@@ -51,6 +51,7 @@ uploads the built app as the `tableskim-web` artifact.
 ```sh
 ./web.sh              # builds the module and the app, serves them at http://127.0.0.1:8765/
 ./web.sh --dev        # builds the module, serves web/ with Vite (reloads as web/src changes)
+./web.sh --pages      # serves without the isolation headers, as GitHub Pages does
 ./web.sh --help       # --debug (wasm-debug), --port, --open, --no-build
 ```
 
@@ -90,8 +91,21 @@ The page must be cross-origin isolated, which threads need
 (`SharedArrayBuffer`): served with `Cross-Origin-Opener-Policy:
 same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, as
 `npm run dev`, `npm run preview` and `web/serve.mjs` do. Any static server
-that sends them will do; the page says so when they are missing. The app
-uses relative URLs, so it works from any directory of a host.
+that sends them will do. The app uses relative URLs, so it works from any
+directory of a host.
+
+Hosts that cannot send the headers, such as GitHub Pages, are covered by a
+service worker the app carries (`web/public/coi-serviceworker.js`, next to
+`index.html` in the built app): when the page is not isolated,
+`src/isolation.ts` registers it and loads the page once more, now with the
+headers the worker adds to every response of the app's directory (the
+page, its scripts, the module and the threads' workers). Where the server
+sends the headers, it is not registered. It needs a secure context (HTTPS,
+or `localhost` / `127.0.0.1`); without one, or if a reload did not help,
+the page explains what is missing. To try it, `./web.sh --pages` (or
+`node web/serve.mjs --no-isolation-headers ...`) serves without the
+headers, and an end-to-end test does the same. To publish the app, copy
+`build/wasm-release/web/` (or `web/dist/`) to the host as it is.
 
 `node web/serve.mjs build/wasm-release` serves the app CMake built (or
 `web/dist/`) at http://127.0.0.1:8765/ and the probe page at `/probe/`.
@@ -230,6 +244,6 @@ memory checkpoint) and sorting by the first column:
 
 SQL, statistics, histograms, scatter plots, Group By, exports and editing
 (the core has them; the session and the app do not ask for them yet);
-deploying (a static host with the isolation headers, or a service worker
-that adds them), offline use and file handlers (PWA); loading DuckDB only
+publishing on the project's GitHub Pages site (the app is ready for it),
+offline use and file handlers (PWA); loading DuckDB only
 when needed. Follow cannot work on a `File`, which is a snapshot.

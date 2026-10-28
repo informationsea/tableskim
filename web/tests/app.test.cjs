@@ -16,13 +16,18 @@ let server;
 let browser;
 let baseUrl;
 
-before(async () => {
+// Starts web/serve.mjs; resolves with the server and its URL.
+async function startServer(...options) {
     const port = String(9000 + Math.floor(Math.random() * 900));
-    server = spawn(process.execPath, [path.join(root, 'web', 'serve.mjs'), buildDir, port], {
+    const child = spawn(process.execPath, [path.join(root, 'web', 'serve.mjs'), ...options, buildDir, port], {
         stdio: ['ignore', 'pipe', 'inherit'],
     });
-    await new Promise((resolve) => server.stdout.once('data', resolve));
-    baseUrl = `http://127.0.0.1:${port}/`;
+    await new Promise((resolve) => child.stdout.once('data', resolve));
+    return { child, url: `http://127.0.0.1:${port}/` };
+}
+
+before(async () => {
+    ({ child: server, url: baseUrl } = await startServer());
     browser = await chromium.launch();
 });
 
@@ -194,6 +199,41 @@ describe('the web app', () => {
             await waitForText(page.locator('.cell'), text);
             assert.match(await page.locator('#status-file').textContent(), new RegExp(file.replace('.', '\\.')));
         }
+        await page.context().close();
+    });
+});
+
+// GitHub Pages cannot send the headers that make the page cross-origin
+// isolated: the app's service worker adds them, after one reload.
+describe('the web app on a host without the isolation headers', () => {
+    let pagesServer;
+    let pagesUrl;
+
+    before(async () => {
+        ({ child: pagesServer, url: pagesUrl } = await startServer('--no-isolation-headers'));
+    });
+
+    after(() => pagesServer?.kill());
+
+    test('is isolated by its service worker and opens a file', async () => {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        page.on('pageerror', (error) => console.error('page error:', error.message));
+        const response = await page.goto(pagesUrl);
+        assert.equal(response.headers()['cross-origin-embedder-policy'], undefined, 'the server sends no headers');
+        await page.waitForSelector('body[data-ready=true]');
+        assert.equal(await page.evaluate(() => self.crossOriginIsolated), true);
+        assert.equal(await page.evaluate(() => navigator.serviceWorker.controller !== null), true);
+        // Parquet runs DuckDB, whose threads are workers too.
+        await open(page, demo('normal.parquet'));
+        await waitForText(cell(page, 0, 1), 'Sakura Brown');
+        await context.close();
+    });
+
+    test('is not taken over by the service worker where the server isolates it', async () => {
+        const page = await newPage();
+        assert.equal(await page.evaluate(() => self.crossOriginIsolated), true);
+        assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
         await page.context().close();
     });
 });
