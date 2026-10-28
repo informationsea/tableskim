@@ -642,8 +642,10 @@ if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP)
 endif()
 
 # End-to-end tests of the web app (web/tests/) in headless Chromium, with
-# Node.js and Playwright: WebAssembly builds with the web app only. AUTO
-# adds them when Playwright is found, ON requires it.
+# Node.js and Playwright (a package of web/, which npm ci installs; the
+# browser comes from npx playwright install chromium): WebAssembly builds
+# with the web app only. AUTO adds them when Playwright is found at
+# configure time, ON requires it, as CI does.
 set(TABLESKIM_WEB_TESTS AUTO CACHE STRING "End-to-end tests of the web app (AUTO, ON or OFF; WebAssembly builds only)")
 set_property(CACHE TABLESKIM_WEB_TESTS PROPERTY STRINGS AUTO ON OFF)
 if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP AND NOT TABLESKIM_WEB_TESTS STREQUAL "OFF")
@@ -651,6 +653,7 @@ if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP AND NOT TABLESKIM_WEB_TESTS STREQUAL "O
     set(TABLESKIM_HAVE_PLAYWRIGHT FALSE)
     if(TABLESKIM_NODE)
         execute_process(COMMAND ${TABLESKIM_NODE} -e "require('playwright')"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/web
             RESULT_VARIABLE TABLESKIM_PLAYWRIGHT_RESULT OUTPUT_QUIET ERROR_QUIET)
         if(TABLESKIM_PLAYWRIGHT_RESULT EQUAL 0)
             set(TABLESKIM_HAVE_PLAYWRIGHT TRUE)
@@ -664,7 +667,7 @@ if(EMSCRIPTEN AND TABLESKIM_HAVE_WEB_APP AND NOT TABLESKIM_WEB_TESTS STREQUAL "O
         set_tests_properties(tableskim-web-tests PROPERTIES TIMEOUT 600
             ENVIRONMENT "TABLESKIM_WASM_BUILD=${CMAKE_CURRENT_BINARY_DIR};LANG=C.UTF-8")
     elseif(TABLESKIM_WEB_TESTS STREQUAL "ON")
-        message(FATAL_ERROR "TABLESKIM_WEB_TESTS=ON needs Node.js with Playwright")
+        message(FATAL_ERROR "TABLESKIM_WEB_TESTS=ON needs Node.js with Playwright (npm ci in web/)")
     else()
         message(STATUS "Web app tests skipped: Node.js with Playwright not found")
     endif()

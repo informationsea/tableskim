@@ -483,8 +483,11 @@ Match the existing code:
   Add a test there for TUI changes that the Catch2 tests cannot reach.
 - The web app has end-to-end tests in `web/tests/` (`node:test` with
   Playwright, headless Chromium), which ctest runs in a WebAssembly build
-  as `tableskim-web-tests` when Node.js can load Playwright
-  (`TABLESKIM_WEB_TESTS`: `AUTO`). Wait for what the page shows, never for
+  as `tableskim-web-tests` when Playwright, a package of `web/`, is found
+  at configure time (`TABLESKIM_WEB_TESTS`: `AUTO`; `npm ci` in `web/`
+  first, and `npx playwright install chromium` for the browser). CI runs
+  them, with the lint and format checks, in the `wasm` job of
+  `.github/workflows/ci.yml`. Wait for what the page shows, never for
   fixed periods.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest

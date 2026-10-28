@@ -28,9 +28,11 @@ When npm is found (`TABLESKIM_WEB_APP`: `AUTO`, `ON` or `OFF`), the build
 also runs `npm ci` (the first time, and after `package-lock.json`
 changes) and `npm run build` in `web/`, which type-checks the app and
 builds it with the module into `build/wasm-release/web/`. ctest runs
-`tableskim-tests` in Node.js and, when Node.js can load Playwright, the web
-app's end-to-end tests (`web/tests/app.test.cjs`) in headless Chromium
-(`TABLESKIM_WEB_TESTS`: `AUTO`, `ON` or `OFF`). By hand:
+`tableskim-tests` in Node.js, the web app's lint and format checks and, when
+Playwright is found at configure time (a package of `web/`: run `npm ci`
+there first), its end-to-end tests (`web/tests/app.test.cjs`) in headless
+Chromium (`TABLESKIM_WEB_TESTS`: `AUTO`, `ON` or `OFF`). The browser comes
+from `npx playwright install chromium` in `web/`. By hand:
 
 ```sh
 LANG=C.UTF-8 TABLESKIM_WASM_BUILD=build/wasm-release node --test web/tests/app.test.cjs
@@ -39,6 +41,10 @@ LANG=C.UTF-8 TABLESKIM_WASM_BUILD=build/wasm-release node --test web/tests/app.t
 Without a UTF-8 locale, Chromium drops a non-ASCII path given to a file
 input. `WebSession` itself is tested natively too
 (`tests/web_session_tests.cxx`).
+
+CI does all of this in the `wasm` job of `.github/workflows/ci.yml`
+(Emscripten `EMSDK_VERSION` there, ccache, Playwright's Chromium) and
+uploads the built app as the `tableskim-web` artifact.
 
 ## Working on the web app
 

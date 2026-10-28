@@ -1,9 +1,10 @@
 name: CI
 
 # Builds and tests pushes to main and all pull requests on each platform, and on
-# Rocky Linux 10 and 8 (in containers) like the release workflow. The build
-# without the GUI (-DTABLESKIM_BUILD_GUI=OFF) is only built for releases. The
-# Linux ZIPs come from Rocky Linux 8 only, as in the release workflow.
+# Rocky Linux 10 and 8 (in containers) like the release workflow, and the
+# WebAssembly core with the web app. The build without the GUI
+# (-DTABLESKIM_BUILD_GUI=OFF) is only built for releases. The Linux ZIPs come
+# from Rocky Linux 8 only, as in the release workflow.
 on:
   push:
     branches:
@@ -244,4 +245,88 @@ jobs:
         with:
           name: tableskim-zip-${{ matrix.name }}
           path: build/release/*.zip
+          if-no-files-found: error
+
+  # The core as WebAssembly (src/wasm/README.md): its tests in Node.js, and
+  # the web app (web/) built, linted, format-checked and tested end to end
+  # in headless Chromium. Caches as in the build job above.
+  wasm:
+    name: wasm (web app)
+    runs-on: ubuntu-24.04
+    env:
+      EMSDK_VERSION: 6.0.13
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 1G
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-wasm-${{ env.EMSDK_VERSION }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-wasm-${{ env.EMSDK_VERSION }}-
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        id: deps
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/wasm-release/_deps/*-src
+            build/wasm-release/_deps/*-subbuild
+          key: deps-wasm-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      - name: Install the web app's packages and Chromium
+        # Before configuring, so that CMake finds Playwright.
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Configure
+        # The preset finds the toolchain file through EMSDK
+        # (<emsdk>/upstream/emscripten/emcc otherwise tells where it is).
+        run: |
+          export EMSDK="${EMSDK:-$(dirname "$(dirname "$(dirname "$(command -v emcc)")")")}"
+          echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
+          cmake --preset wasm-release -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
+      - name: Save dependency sources
+        if: github.event_name != 'pull_request' && steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/wasm-release/_deps/*-src
+            build/wasm-release/_deps/*-subbuild
+          key: ${{ steps.deps.outputs.cache-primary-key }}
+      - name: Build
+        run: cmake --build --preset wasm-release
+      - name: Show ccache statistics
+        run: ccache --show-stats
+      - name: Save ccache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-wasm-${{ env.EMSDK_VERSION }}-${{ github.sha }}-${{ github.run_id }}
+      - name: Test
+        run: ctest --preset wasm-release
+      - name: Upload the web app
+        uses: actions/upload-artifact@v4
+        with:
+          name: tableskim-web
+          path: build/wasm-release/web
           if-no-files-found: error
