@@ -27,6 +27,12 @@
     box-sizing: border-box;
 }
 
+/* Links to the web app stay hidden until it is on the site
+   (tools/place-web-app.py); a class's display must not show them. */
+[hidden] {
+    display: none !important;
+}
+
 body {
     margin: 0;
     background: var(--bg);
@@ -184,6 +190,13 @@ section {
 
 section.alt {
     background: var(--bg-alt);
+}
+
+/* Sections alternate their background; two alike in a row (the web app's
+   section, shown only with the app) get a rule between them. */
+section:not(.alt) + section:not(.alt),
+section.alt + section.alt {
+    border-top: 1px solid var(--border);
 }
 
 section h2 {

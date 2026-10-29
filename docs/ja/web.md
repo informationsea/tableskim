@@ -49,6 +49,8 @@ Web アプリは静的なファイルだけのフォルダで、`tableskim-<vers
 
 新しいブラウザを使ってください。Web アプリは Chromium（Google Chrome、Microsoft Edge）でテストしています。
 
+自分のサーバーを用意せずに使うには、TableSkim の Web サイトにある最新リリースの Web アプリを開いてください：[informationsea.github.io/tableskim/app/](https://informationsea.github.io/tableskim/app/)。こちらでも、ファイルはブラウザの中だけで読まれます。
+
 ## 画面の構成
 
 - 上端の **ツールバー**：**Open...**、ファイルの読み方の設定（**First row**、**Encoding**、**Skip ## lines**。使えるファイルのときだけ表示）、各機能のボタン（**Filter**、**Statistics**、**Histogram**、**Scatter**、**Group By**、**SQL**、**Export**、**Convert**、**Sidebar**、**Monospace**）、検索欄。ファイルに使えないボタンは薄く表示され、押された状態のボタンはそのパネルが開いていることを表します。

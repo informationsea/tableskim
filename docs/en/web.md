@@ -66,6 +66,10 @@ path, and open the folder's URL with the slash at the end, for example
 Use a recent browser. The web app is tested in Chromium (Google Chrome,
 Microsoft Edge).
 
+To use it without a server of your own, open the latest release's web app
+on the TableSkim website: [informationsea.github.io/tableskim/app/](https://informationsea.github.io/tableskim/app/).
+It, too, reads the files in your browser only.
+
 ## The page
 
 - **Toolbar** at the top: **Open...**, the reading options of the file

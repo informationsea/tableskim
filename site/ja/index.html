@@ -17,6 +17,7 @@
     <nav>
       <a href="#features">機能</a>
       <a href="download.html">ダウンロード</a>
+      <a href="../app/" data-web-app hidden>Web アプリ</a>
       <a href="#documentation">ドキュメント</a>
       <a href="https://github.com/informationsea/tableskim">GitHub</a>
       <a href="../" lang="en">English</a>
@@ -32,6 +33,7 @@
     Parquet や JSON、DuckDB / SQLite データベースを開いて、すぐにスクロールを始められます。</p>
   <div class="buttons">
     <a class="button primary" href="download.html">ダウンロード</a>
+    <a class="button" href="../app/" data-web-app hidden>ブラウザで試す</a>
     <a class="button" href="../manual/ja/README.html">ユーザーマニュアル</a>
     <a class="button" href="https://github.com/informationsea/tableskim">GitHub のソースコード</a>
   </div>
@@ -58,6 +60,23 @@
         <figcaption>ターミナル UI</figcaption>
       </figure>
     </div>
+  </div>
+</section>
+
+<section id="web-app" data-web-app hidden>
+  <div class="wrap two">
+    <div>
+      <h2>ブラウザでもそのまま使える</h2>
+      <p>Web アプリは、同じコアを WebAssembly にしてブラウザの中で動かします。開いたファイルはお使いのコンピューターの中で読まれ、
+        アップロードされません。インストールは不要で、編集と伸びていくファイルへの追従を除いて、デスクトップの GUI と同じ機能が使えます。</p>
+      <p><a class="button primary" href="../app/">Web アプリを開く</a></p>
+      <p>自分のサーバーで動かすには、<a href="download.html#web">ダウンロードページ</a>から Web アプリの ZIP をダウンロードしてください。
+        <a href="../manual/ja/web.html">Web アプリの使い方 →</a></p>
+    </div>
+    <figure>
+      <img src="../manual/images/web-main.png" alt="CSV ファイルを表示した TableSkim の Web アプリ" width="560">
+      <figcaption>Web アプリ</figcaption>
+    </figure>
   </div>
 </section>
 

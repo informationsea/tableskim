@@ -17,6 +17,7 @@
     <nav>
       <a href="#features">Features</a>
       <a href="download.html">Download</a>
+      <a href="app/" data-web-app hidden>Web App</a>
       <a href="#documentation">Documentation</a>
       <a href="https://github.com/informationsea/tableskim">GitHub</a>
       <a href="ja/" lang="ja">日本語</a>
@@ -32,6 +33,7 @@
     a Parquet or JSON file or a DuckDB / SQLite database and start scrolling immediately.</p>
   <div class="buttons">
     <a class="button primary" href="download.html">Download</a>
+    <a class="button" href="app/" data-web-app hidden>Try It in Your Browser</a>
     <a class="button" href="manual/en/README.html">User Manual</a>
     <a class="button" href="https://github.com/informationsea/tableskim">Source on GitHub</a>
   </div>
@@ -59,6 +61,25 @@
         <figcaption>The terminal UI</figcaption>
       </figure>
     </div>
+  </div>
+</section>
+
+<section id="web-app" data-web-app hidden>
+  <div class="wrap two">
+    <div>
+      <h2>Or right in your browser</h2>
+      <p>The web app runs the same core in your web browser, compiled to WebAssembly: open a file
+        and it is read on your computer, never uploaded. Nothing to install, and it has the
+        features of the desktop GUI except editing and following a growing file.</p>
+      <p><a class="button primary" href="app/">Open the Web App</a></p>
+      <p>To run it on your own server, download the web app's ZIP from the
+        <a href="download.html#web">download page</a>.
+        <a href="manual/en/web.html">Using the web app →</a></p>
+    </div>
+    <figure>
+      <img src="manual/images/web-main.png" alt="The TableSkim web app showing a CSV file" width="560">
+      <figcaption>The web app</figcaption>
+    </figure>
   </div>
 </section>
 
