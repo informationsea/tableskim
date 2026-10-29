@@ -13,6 +13,7 @@ TableSkim は [編集モード](editing.md) の外では開いたファイルを
 
 - GUI：**File → Export View...**（`Ctrl+Shift+E`）
 - ターミナル UI：`w`
+- Web アプリ：**Export**。ダイアログで形式を選ぶと、ブラウザのダウンロード先に保存されます。
 
 ファイル名を指定すると、拡張子で形式が決まります。
 
@@ -49,6 +50,7 @@ TableSkim は [編集モード](editing.md) の外では開いたファイルを
 
 - GUI：**File → Convert to Parquet / DuckDB...**。保存先を指定すると、拡張子（`.parquet`、または `.duckdb` / `.ddb`）で形式が決まります。変換が終わると、変換したファイルを開きます。
 - ターミナル UI：`P`（Parquet）または `D`（DuckDB）で、元のファイルと同じ場所に書き出し（例：`data.csv.gz` → `data.parquet` または `data.duckdb`）、そのファイルを開きます。
+- Web アプリ：**Convert**。Parquet か DuckDB を選ぶと、元のファイル名にちなんだ名前でブラウザのダウンロード先に保存されます。
 
 書き出す内容：
 

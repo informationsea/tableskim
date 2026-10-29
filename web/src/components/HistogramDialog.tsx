@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
 import type { TableSkimClient } from '../client';
 import { HistogramChart } from '../charts/HistogramChart';
+import type { ChartImage } from '../charts/image';
 import { errorText, usePolled } from '../hooks';
 import { type Condition, Events, type HistogramState, type SheetInfo } from '../protocol';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
+import { SaveImageButtons } from './SaveImageButtons';
 import type { CheckpointBannerProps } from './Banners';
 
 interface HistogramDialogProps {
@@ -32,6 +34,7 @@ export function HistogramDialog({
     const [state, setState] = useState<HistogramState | null>(null);
     const [error, setError] = useState('');
     const [table, setTable] = useState(false);
+    const chart = useRef<ChartImage>(null);
     const sheet = info.sheet;
 
     const start = `${sheet}:${column}:${bins}`;
@@ -100,6 +103,12 @@ export function HistogramDialog({
                 <button type="button" className="control" aria-pressed={table} onClick={() => setTable(!table)}>
                     Table
                 </button>
+                <SaveImageButtons
+                    chart={chart}
+                    name={`${info.columns[column]?.name ?? 'column'} histogram`}
+                    enabled={!!histogram && items.length > 0 && !table}
+                    onError={setError}
+                />
                 <span id="histogram-progress" className="text-muted">
                     {progress}
                 </span>
@@ -133,7 +142,12 @@ export function HistogramDialog({
                             </tbody>
                         </table>
                     ) : (
-                        <HistogramChart histogram={histogram} rows={info.rows} onPick={(bin) => void pick(bin)} />
+                        <HistogramChart
+                            ref={chart}
+                            histogram={histogram}
+                            rows={info.rows}
+                            onPick={(bin) => void pick(bin)}
+                        />
                     )}
                 </>
             )}

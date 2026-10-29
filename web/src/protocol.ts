@@ -21,10 +21,21 @@ export const SESSION = 0;
 
 export type HeaderMode = 'auto' | 'yes' | 'no';
 
+/** The encodings of text files, as textEncodingName() in text_encoding.cxx names them. */
+export const TEXT_ENCODINGS = ['UTF-8', 'UTF-16LE', 'UTF-16BE', 'Shift_JIS (CP932)'] as const;
+
+/** How a file is read; each option left out is the core's default. */
+export interface OpenOptions {
+    header?: HeaderMode;
+    encoding?: string; // text files: one of TEXT_ENCODINGS; detected if left out
+    skipMetaLines?: boolean; // text files: drop lines starting with "##"; only VCF files if left out
+}
+
 export interface BookInfo {
     sheets: string[];
     usesHeaderOption: boolean;
     isTextFormat: boolean;
+    skipsMetaLines: boolean;
     supportsSql: boolean;
     textEncoding: string | null;
 }
@@ -242,15 +253,15 @@ export interface ExportFormatInfo {
     extension: string;
 }
 
-/** An export or a Group By, run in the background. */
+/** An export, a conversion or a Group By, run in the background. */
 export type JobState =
     | { kind: null }
     | {
-          kind: 'export' | 'groupBy';
+          kind: 'export' | 'convert' | 'groupBy';
           done: boolean;
           rows: number;
           error?: string; // once done: empty if it worked
-          file?: string; // export: read it with TableSkimClient.readFile()
+          file?: string; // export, convert: read it with TableSkimClient.readFile()
           fileName?: string;
           size?: number;
           sheet?: string; // groupBy: the result sheet
@@ -264,7 +275,7 @@ type SheetParams = { sheet: number };
 
 /** Each method's parameters and result. */
 export interface Methods {
-    open: { params: { file: File; header?: HeaderMode; encoding?: string }; result: BookInfo };
+    open: { params: OpenOptions & { file: File }; result: BookInfo };
     close: { params: Empty; result: Empty };
     sheet: { params: { name: string }; result: SheetInfo };
     info: { params: SheetParams; result: SheetInfo };
@@ -272,6 +283,8 @@ export interface Methods {
         params: SheetParams & { first: number; last: number; firstColumn?: number; lastColumn?: number };
         result: RowsReply;
     };
+    // The whole value, which rows cuts short; kind as in RowsReply.kinds.
+    cell: { params: SheetParams & { row: number; column: number }; result: { kind: string; text: string } };
     // Changes the view asked for last; parameters left out keep its parts,
     // addConditions joins its editable filter; addNarrowing always restricts it.
     setView: {
@@ -330,6 +343,8 @@ export interface Methods {
     };
     exportFormats: { params: Empty; result: ExportFormatInfo[] };
     startExport: { params: SheetParams & { format: ExportFormat; hidden?: number[] }; result: Empty };
+    // The open text file, as it was opened (encoding, header, ## lines).
+    startConvert: { params: { format: 'parquet' | 'duckdb' }; result: Empty };
     aggregates: { params: Empty; result: string[] };
     startGroupBy: {
         params: SheetParams & { keys: number[]; values: number[]; aggregates: string[] };

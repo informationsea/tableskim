@@ -57,6 +57,7 @@ export interface GridCallbacks {
     onSelect: (cell: Cell, range: Range) => void;
     onCopy: (range: Range) => void;
     onContextMenu: (target: ContextTarget) => void;
+    onOpenCell: (cell: Cell) => void; // Enter or a double click: show the whole cell
 }
 
 interface CachedRow {
@@ -70,6 +71,9 @@ interface CachedRow {
     hits: Set<number> | null; // columns holding a search hit
     generation: number;
 }
+
+// As --font-mono in index.css.
+const MONOSPACE_FONT = "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace";
 
 export class GridController {
     columns: Column[] = [];
@@ -96,6 +100,7 @@ export class GridController {
     // follows the last row as more are read.
     private followEnd = false;
     private readonly measureContext = document.createElement('canvas').getContext('2d');
+    private monospace = false; // the cells' font, which the widths are measured in
 
     private handlers: GridCallbacks | null = null;
     private frame = 0;
@@ -277,7 +282,9 @@ export class GridController {
     private fitWidth(text: string, header: boolean): number {
         const context = this.measureContext;
         if (!context) return 100;
-        context.font = header ? '600 13px system-ui, sans-serif' : '13px system-ui, sans-serif';
+        // The fonts of index.css's --font-sans and --font-mono; headers stay in the former.
+        const family = this.monospace && !header ? MONOSPACE_FONT : 'system-ui, sans-serif';
+        context.font = header ? `600 13px ${family}` : `13px ${family}`;
         const width = Math.ceil(context.measureText(text).width) + 20;
         return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, width));
     }
@@ -441,13 +448,33 @@ export class GridController {
     // Widens the columns to fit the first rows, once.
     private measureWidths(rows: RowsReply) {
         this.widthsMeasured = true;
-        for (const texts of rows.rows.slice(0, 100)) {
+        this.fitRows(rows.firstColumn, rows.rows.slice(0, 100));
+        this.updateExtent();
+    }
+
+    private fitRows(firstColumn: number, rows: string[][]) {
+        for (const texts of rows) {
             texts.forEach((text, i) => {
-                const column = rows.firstColumn + i;
+                const column = firstColumn + i;
                 this.widths[column] = Math.max(this.widths[column], this.fitWidth(text, false));
             });
         }
+    }
+
+    /** Draws the cells in a monospace font (or not), measuring the columns again. */
+    setMonospace(monospace: boolean) {
+        if (monospace === this.monospace) return;
+        this.monospace = monospace;
+        this.widths = this.columns.map((column) => this.fitWidth(`${column.mark} ${column.name} ▲`, true));
+        // From the first rows if they are cached; otherwise when they are read.
+        const first = [...this.cache.entries()].filter(([row]) => row < 100).map(([, cached]) => cached);
+        this.widthsMeasured = first.length > 0;
+        for (const cached of first) {
+            this.fitRows(cached.firstColumn, [cached.texts]);
+            if (cached.frozenTexts.length > 0) this.fitRows(0, [cached.frozenTexts]);
+        }
         this.updateExtent();
+        this.redraw();
     }
 
     mouseDown(event: MouseEvent) {
@@ -477,6 +504,11 @@ export class GridController {
             );
         }
         this.scroller?.focus();
+    }
+
+    doubleClick(event: MouseEvent) {
+        const cell = (event.target as HTMLElement).closest<HTMLElement>('.cell');
+        if (cell) this.callbacks().onOpenCell({ row: Number(cell.dataset.row), column: Number(cell.dataset.column) });
     }
 
     contextMenu(event: MouseEvent) {
@@ -575,6 +607,10 @@ export class GridController {
             case 'End':
                 next = { row: ctrl ? lastRow : row, column: this.lastVisible() };
                 break;
+            case 'Enter':
+                event.preventDefault();
+                this.callbacks().onOpenCell(this.cursor);
+                return;
             case 'c':
             case 'C':
                 if (ctrl && !event.shiftKey && !event.altKey) {

@@ -7,11 +7,10 @@ interface StatsPanelProps {
     client: TableSkimClient;
     info: SheetInfo;
     column: number; // the cursor's
-    onClose: () => void;
 }
 
 /** Statistics of the cursor's column over the rows of the view. */
-export function StatsPanel({ client, info, column, onClose }: StatsPanelProps) {
+export function StatsPanel({ client, info, column }: StatsPanelProps) {
     const [state, setState] = useState<StatsState | null>(null);
     const [error, setError] = useState('');
     const sheet = info.sheet;
@@ -37,20 +36,10 @@ export function StatsPanel({ client, info, column, onClose }: StatsPanelProps) {
     const shown = state?.column === column ? state : null;
     const most = Math.max(1, ...(shown?.top.map((value) => value.count) ?? []));
     return (
-        <aside id="stats-panel" className="flex w-72 shrink-0 flex-col border-l border-line bg-surface">
-            <header className="flex items-center gap-2 border-b border-line bg-chrome px-2.5 py-1.5">
-                <h2 className="min-w-0 flex-1 truncate font-semibold" title={columnLabel(info, column)}>
-                    {columnLabel(info, column)}
-                </h2>
-                <button
-                    type="button"
-                    className="px-1 text-muted hover:text-fg"
-                    aria-label="Close statistics"
-                    onClick={onClose}
-                >
-                    ✕
-                </button>
-            </header>
+        <section id="stats-panel" className="flex min-h-0 flex-1 flex-col">
+            <h2 className="truncate border-b border-line px-2.5 py-1 font-semibold" title={columnLabel(info, column)}>
+                {columnLabel(info, column)}
+            </h2>
             <div className="min-h-0 flex-1 overflow-auto p-2.5">
                 {error && <p className="text-danger">{error}</p>}
                 {shown && !shown.done && (
@@ -94,6 +83,6 @@ export function StatsPanel({ client, info, column, onClose }: StatsPanelProps) {
                     </>
                 )}
             </div>
-        </aside>
+        </section>
     );
 }

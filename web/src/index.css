@@ -67,6 +67,8 @@
 
 @theme inline {
     --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    /* As MONOSPACE_FONT in grid/controller.ts, which measures the columns. */
+    --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
     --color-surface: var(--surface);
     --color-fg: var(--fg);
     --color-muted: var(--muted);

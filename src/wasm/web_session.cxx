@@ -730,6 +730,7 @@ const std::map<std::string_view, WebSession::Method> &WebSession::methods()
         {"sheet", &WebSession::openSheet},
         {"info", &WebSession::info},
         {"rows", &WebSession::rows},
+        {"cell", &WebSession::cell},
         {"setView", &WebSession::setView},
         {"sortCycle", &WebSession::sortCycle},
         {"search", &WebSession::search},
@@ -758,6 +759,7 @@ const std::map<std::string_view, WebSession::Method> &WebSession::methods()
         {"scatterFilter", &WebSession::scatterFilter},
         {"exportFormats", &WebSession::exportFormats},
         {"startExport", &WebSession::startExport},
+        {"startConvert", &WebSession::startConvert},
         {"aggregates", &WebSession::aggregates},
         {"startGroupBy", &WebSession::startGroupBy},
         {"jobState", &WebSession::jobState},
@@ -880,14 +882,19 @@ void WebSession::open(const Params &params, JsonWriter &result)
         if (!options.encoding)
             throw std::invalid_argument("unknown encoding: " + *encoding);
     }
+    if (const auto skip = params["skipMetaLines"].boolean())
+        options.skip_meta_lines = *skip;
     path_ = utf8Path(params.text("path"));
     book_ = TableBook::open(path_, options);
+    options_ = options;
     result.beginObject().key("sheets");
     writeSheetNames(result);
     result.key("usesHeaderOption")
         .value(book_->usesHeaderOption())
         .key("isTextFormat")
         .value(book_->isTextFormat())
+        .key("skipsMetaLines")
+        .value(book_->skipsMetaLines())
         .key("supportsSql")
         .value(book_->supportsSql())
         .key("textEncoding");
@@ -960,6 +967,23 @@ void WebSession::rows(const Params &params, JsonWriter &result)
     const size_t last_column = std::max(
         first_column, std::min(params.index("lastColumn", first_column + MAX_COLUMNS - 1), first_column + MAX_COLUMNS - 1));
     writeRows(result, *sheet.model, sheet.formats, first, last, first_column, last_column);
+}
+
+// One cell's whole value, which rows cut short: for the sidebar's Content
+// pane, as the GUI shows it (formatCell(), without the column's format).
+void WebSession::cell(const Params &params, JsonWriter &result)
+{
+    TableModel &model = *sheet(params).model;
+    const size_t row = params.index("row");
+    const size_t column = params.index("column");
+    model.requestRange(row, row);
+    const CellRef ref = model.peek(row, column);
+    result.beginObject()
+        .key("kind")
+        .value(std::string(1, cellKind(ref)))
+        .key("text")
+        .value(ref.state == CellState::Ready ? formatCell(*ref.value) : std::string())
+        .endObject();
 }
 
 void WebSession::setView(const Params &params, JsonWriter &result)
@@ -1463,6 +1487,55 @@ void WebSession::startExport(const Params &params, JsonWriter &result)
     result.beginObject().endObject();
 }
 
+// Converts the open text file to Parquet or DuckDB, read with the options
+// it was opened with, as the GUI's Convert to Parquet / DuckDB... does.
+void WebSession::startConvert(const Params &params, JsonWriter &result)
+{
+    if (job_ && !job_->done)
+        throw std::invalid_argument("another export or Group By is running");
+    if (!book_ || !book_->isTextFormat())
+        throw std::invalid_argument("only text files (CSV, TSV, ...) can be converted");
+    const std::string &name = params.text("format");
+    std::optional<ExportFormat> format;
+    if (name == "parquet")
+        format = ExportFormat::Parquet;
+    else if (name == "duckdb")
+        format = ExportFormat::DuckDb;
+    else
+        throw std::invalid_argument("unknown format: " + name);
+    stopJob();
+    std::filesystem::create_directories(scratch_);
+
+    job_ = std::make_unique<Job>();
+    Job &job = *job_;
+    job.kind = "convert";
+    job.file = scratch_ / ("convert-" + std::to_string(next_export_++) + exportFormatExtension(*format));
+    job.file_name = utf8String(defaultExportPath(path_, *format).filename());
+    job.thread = std::jthread([this, &job, source = path_, options = options_, format = *format](std::stop_token stop)
+                              {
+        std::string error;
+        try
+        {
+            if (!exportTextFile(source, job.file, format, options, stop, [&](size_t rows)
+                                {
+                                    job.rows = rows;
+                                    sink_(SESSION, JOB);
+                                }))
+                error = "stopped";
+        }
+        catch (const std::exception &e)
+        {
+            error = e.what();
+        }
+        {
+            std::lock_guard lock(job.mutex);
+            job.error = error;
+        }
+        job.done = true;
+        sink_(SESSION, JOB); });
+    result.beginObject().endObject();
+}
+
 void WebSession::aggregates(const Params &, JsonWriter &result)
 {
     result.beginArray();
@@ -1553,7 +1626,7 @@ void WebSession::jobState(const Params &, JsonWriter &result)
     if (done)
     {
         result.key("error").value(job.error);
-        if (job.error.empty() && job.kind == "export")
+        if (job.error.empty() && !job.file.empty())
         {
             std::error_code ec;
             const auto size = std::filesystem::file_size(job.file, ec);

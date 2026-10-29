@@ -15,6 +15,8 @@ with any unsaved edits.
 
 - GUI: **File → Export View...** (`Ctrl+Shift+E`).
 - Terminal UI: `w`.
+- Web app: **Export**; choose the format in the dialog, and the browser
+  saves the file into its downloads.
 
 Choose a file name; its extension selects the format:
 
@@ -68,6 +70,8 @@ they can be queried with [SQL](sql.md).
 - Terminal UI: `P` (Parquet) or `D` (DuckDB) writes the file next to the
   original, for example `data.csv.gz` → `data.parquet` or `data.duckdb`,
   and opens it.
+- Web app: **Convert**; choose Parquet or DuckDB, and the browser saves
+  the file, named after the source, into its downloads.
 
 What is written:
 

@@ -27,7 +27,7 @@ class JsonWriter;
 // (the session thread of the WebAssembly module); it does not wait for the
 // book's worker to read rows, so a reply may say that rows are still
 // loading: the sink then reports the change and the frontend asks again.
-// Exports and Group By run as a job on a thread of their own, which the
+// Exports, conversions and Group By run as a job on a thread of their own, which the
 // frontend follows with "jobState".
 class WebSession
 {
@@ -78,13 +78,13 @@ private:
     // An export or a Group By, run on a thread of its own.
     struct Job
     {
-        std::string kind; // "export" or "groupBy"
+        std::string kind; // "export", "convert" or "groupBy"
         std::atomic<size_t> rows = 0;
         std::atomic<bool> done = false;
         std::mutex mutex; // guards the members below
         std::string error;
-        std::filesystem::path file;            // export: the file written
-        std::string file_name;                 // export: the name to save it under
+        std::filesystem::path file;            // export, convert: the file written
+        std::string file_name;                 // export, convert: the name to save it under
         std::optional<ResultSheet> group_rows; // groupBy: until the result sheet is added
         std::string sheet;                     // groupBy: the result sheet
         std::jthread thread;                   // declared last: stopped and joined first
@@ -96,6 +96,7 @@ private:
     EventSink sink_;
     std::filesystem::path scratch_;
     std::filesystem::path path_; // the open file
+    OpenOptions options_;        // as it was opened, which a conversion reads it with
     std::shared_ptr<TableBook> book_;
     std::vector<std::unique_ptr<Sheet>> sheets_; // destroyed before book_ by close()
     int next_sheet_id_ = 1;
@@ -118,6 +119,7 @@ private:
     void info(const Params &params, JsonWriter &result);
     void writeSheetInfo(JsonWriter &result, Sheet &sheet);
     void rows(const Params &params, JsonWriter &result);
+    void cell(const Params &params, JsonWriter &result);
     void setView(const Params &params, JsonWriter &result);
     void sortCycle(const Params &params, JsonWriter &result);
     void search(const Params &params, JsonWriter &result);
@@ -146,6 +148,7 @@ private:
     void scatterFilter(const Params &params, JsonWriter &result);
     void exportFormats(const Params &params, JsonWriter &result);
     void startExport(const Params &params, JsonWriter &result);
+    void startConvert(const Params &params, JsonWriter &result);
     void aggregates(const Params &params, JsonWriter &result);
     void startGroupBy(const Params &params, JsonWriter &result);
     void jobState(const Params &params, JsonWriter &result);

@@ -5,6 +5,7 @@
 const { after, before, describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
@@ -306,6 +307,7 @@ describe('frontend regressions', () => {
             };
             worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 4 }) } });
         });
+        await page.locator('#filter-toggle').click();
         await page.locator('#filter-conditions li').nth(1).waitFor();
         await page.locator('#histogram-button').click();
         await page.locator('#histogram-chart .bar').click();
@@ -313,16 +315,20 @@ describe('frontend regressions', () => {
         await page.locator('#histogram-chart .bar').click();
         await page.keyboard.press('Escape');
         await page.locator('#filter-narrowing').waitFor();
-        assert.equal(await page.locator('#filter-combine').inputValue(), 'or');
+        assert.equal(await page.locator('#filter-match-any').isChecked(), true);
         assert.equal(await page.locator('#filter-conditions li').count(), 2);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 3);
 
-        await page.selectOption('#filter-combine', 'and');
+        // Match changes apply with Apply, as in the GUI.
+        await page.locator('#filter-match-all').check();
+        await waitForText(page.locator('#filter-status'), 'Press Apply');
+        await page.locator('#filter-apply').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter.combine === 'and');
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 3);
-        await page.selectOption('#filter-combine', 'or');
+        await page.locator('#filter-match-any').check();
+        await page.locator('#filter-apply').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter.combine === 'or');
-        await page.getByRole('button', { name: 'Clear additional narrowing' }).click();
+        await page.locator('#filter-narrowing').click();
         await page.locator('#filter-narrowing').waitFor({ state: 'detached' });
         assert.equal(await page.locator('#filter-conditions li').count(), 2);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.combine), 'or');
@@ -340,11 +346,12 @@ describe('frontend regressions', () => {
             };
             worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 4 }) } });
         });
+        await page.locator('#filter-toggle').click();
         await page.locator('#filter-narrowing').waitFor();
-        await page.locator('#filter-conditions button').click();
+        await page.locator('#filter-conditions .filter-remove').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter.conditions.length === 0);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.narrowing.length), 1);
-        await page.getByRole('button', { name: 'Clear additional narrowing' }).click();
+        await page.locator('#filter-narrowing').click();
         await page.waitForFunction(() => window.regressionWorker.view.filter === null);
         await page.context().close();
     });
@@ -552,12 +559,16 @@ describe('frontend regressions', () => {
     test('filters the displayed column after switching to a narrower sheet', async () => {
         const page = await regressionPage();
         await page.locator('#filter-toggle').click();
-        await page.selectOption('#filter-column', '599');
+        await page.locator('#filter-add').click();
+        await page.selectOption('.filter-column', '599');
         await page.locator('#tabs button', { hasText: 'narrow' }).click();
-        await page.waitForFunction(() => document.querySelectorAll('#filter-column option').length === 2);
-        assert.equal(await page.locator('#filter-column').inputValue(), '1');
-        await page.fill('#filter-value', 'value-1');
-        await page.locator('#filter-form button[type=submit]').click();
+        // The other sheet's filter is shown: none.
+        await page.locator('.filter-column').waitFor({ state: 'detached' });
+        await page.locator('#filter-add').click();
+        await page.waitForFunction(() => document.querySelectorAll('.filter-column option').length === 2);
+        await page.selectOption('.filter-column', '1');
+        await page.fill('.filter-value', 'value-1');
+        await page.press('.filter-value', 'Enter');
         await page.waitForFunction(() => !!window.regressionWorker.view.filter);
         assert.equal(await page.evaluate(() => window.regressionWorker.view.filter.conditions[0].column), 1);
         await page.context().close();
@@ -586,11 +597,14 @@ describe('the web app', () => {
         await waitForText(cell(page, 0, 0), '54');
 
         await page.locator('#filter-toggle').click();
-        await page.selectOption('#filter-column', { label: 'City' });
-        await page.selectOption('#filter-op', 'equals');
-        await page.fill('#filter-value', 'Osaka');
-        await page.locator('#filter-form button[type=submit]').click();
+        await page.locator('#filter-add').click();
+        await page.selectOption('.filter-column', { label: 'City (E)' });
+        await page.selectOption('.filter-op', 'equals');
+        await page.fill('.filter-value', 'Osaka');
+        await waitForText(page.locator('#filter-status'), 'Press Apply');
+        await page.locator('#filter-apply').click();
         await waitForText(page.locator('#status-rows'), '4 rows of 54');
+        await waitForText(page.locator('#filter-status'), '4 rows of 54');
         await waitForText(page.locator('#status-filter'), 'City = "Osaka"');
         for (let row = 0; row < 4; row++) await waitForText(cell(page, row, 4), 'Osaka');
         assert.equal(await cell(page, 4, 4).count(), 0, 'no rows past the filtered ones');
@@ -602,19 +616,31 @@ describe('the web app', () => {
             ids,
         );
 
-        await page.locator('#filter-conditions button').click();
+        await page.locator('#filter-conditions .filter-remove').click();
         await waitForText(page.locator('#status-rows'), '54 rows');
+        await waitForText(page.locator('#filter-status'), 'No filter (54 rows)');
         await page.context().close();
     });
 
-    test('reports an invalid regular expression in a filter', async () => {
+    test('reports an invalid regular expression in the Filter pane and filters by a column', async () => {
         const page = await newPage();
         await open(page, demo('normal.csv'));
         await page.locator('#filter-toggle').click();
-        await page.selectOption('#filter-op', 'matches');
-        await page.fill('#filter-value', '(');
-        await page.locator('#filter-form button[type=submit]').click();
-        await page.locator('#message:not([hidden])').waitFor();
+        await page.locator('#filter-add').click();
+        await page.selectOption('.filter-op', 'matches');
+        await page.fill('.filter-value', '(');
+        await page.press('.filter-value', 'Enter');
+        // In the pane, as the GUI shows it, and nothing is applied.
+        await page.waitForFunction(() =>
+            /regular expression|missing/i.test(document.querySelector('#filter-status').textContent),
+        );
+        await waitForText(page.locator('#status-rows'), '54 rows');
+        // A quick filter opens the pane with the condition.
+        await page.locator('.filter-remove').click();
+        await cell(page, 0, 4).click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Filter by This Column…').click();
+        await page.waitForFunction(() => document.activeElement?.classList.contains('filter-value'));
+        assert.equal(await page.locator('.filter-column').inputValue(), '4');
         await page.context().close();
     });
 
@@ -674,6 +700,61 @@ describe('the web app', () => {
         await page.selectOption('#header-mode', 'no');
         await waitForText(cell(page, 0, 1), 'Name');
         await waitForText(page.locator('#status-rows'), '55 rows');
+        await page.context().close();
+    });
+
+    test('reads a text file in the encoding chosen', async () => {
+        const page = await newPage();
+        await open(page, demo('cp932-sample.csv'));
+        await waitForText(cell(page, 0, 1), '表示,ソフト');
+        assert.equal(await page.locator('#encoding').inputValue(), 'Shift_JIS (CP932)');
+        await page.selectOption('#encoding', 'UTF-8');
+        await waitForText(page.locator('#status-file'), '(UTF-8)');
+        assert.notEqual(await cell(page, 0, 1).textContent(), '表示,ソフト');
+        await page.selectOption('#encoding', 'Shift_JIS (CP932)');
+        await waitForText(page.locator('#status-file'), '(Shift_JIS (CP932))');
+        await waitForText(cell(page, 0, 1), '表示,ソフト');
+        await page.context().close();
+    });
+
+    test('converts a text file to Parquet and DuckDB', async () => {
+        const page = await newPage();
+        await open(page, demo('demo.sqlite3'));
+        assert.equal(await page.locator('#convert-button').isDisabled(), true);
+        await open(page, demo('cp932-sample.csv'));
+        await page.locator('#convert-button').click();
+        const convert = async () => {
+            const [download] = await Promise.all([
+                page.waitForEvent('download'),
+                page.locator('#convert-start').click(),
+            ]);
+            return { name: download.suggestedFilename(), data: fs.readFileSync(await download.path()) };
+        };
+        let saved = await convert();
+        assert.equal(saved.name, 'cp932-sample.parquet');
+        assert.equal(saved.data.subarray(0, 4).toString(), 'PAR1');
+        await waitForText(page.locator('#convert-status'), 'Saved cp932-sample.parquet');
+        await page.locator('#convert-dialog input[value=duckdb]').check();
+        saved = await convert();
+        assert.equal(saved.name, 'cp932-sample.duckdb');
+        assert.equal(saved.data.subarray(8, 12).toString(), 'DUCK');
+        await page.context().close();
+    });
+
+    test('skips lines starting with ## on request', async () => {
+        const page = await newPage();
+        await page.setInputFiles('#file-input', {
+            name: 'meta.csv',
+            mimeType: 'text/csv',
+            buffer: Buffer.from('##meta\nname,value\nx,1\n'),
+        });
+        await page.waitForSelector('.cell:not(.k-l)');
+        assert.equal(await page.locator('#skip-meta-lines').isChecked(), false);
+        await page.locator('#skip-meta-lines').check();
+        await waitForText(page.locator('.header[data-column="0"]'), 'name');
+        await waitForText(cell(page, 0, 0), 'x');
+        await waitForText(page.locator('#status-rows'), '1 row');
+        assert.equal(await page.locator('#skip-meta-lines').isChecked(), true);
         await page.context().close();
     });
 
@@ -758,6 +839,79 @@ describe('the web app', () => {
         assert.equal(total, 9);
         await page.keyboard.press('Escape');
         await page.locator('#histogram-dialog').waitFor({ state: 'detached' });
+        await page.context().close();
+    });
+
+    test('saves the charts as PNG and SVG', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        const save = async (format) => {
+            const [download] = await Promise.all([
+                page.waitForEvent('download'),
+                page.locator(`#save-${format}`).click(),
+            ]);
+            return { name: download.suggestedFilename(), data: fs.readFileSync(await download.path()) };
+        };
+        const isPng = (data) => data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+
+        await page.locator('#histogram-button').click();
+        await waitForText(page.locator('#histogram-summary'), '53 numbers');
+        let saved = await save('svg');
+        assert.equal(saved.name, 'Age histogram.svg');
+        let svg = saved.data.toString();
+        assert.match(svg, /^<svg[^>]* xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+        // Styles are inlined, as the file has no style sheet.
+        assert.match(svg, /<path[^>]* fill="rgb\(/);
+        assert.doesNotMatch(svg, / class=/);
+        saved = await save('png');
+        assert.equal(saved.name, 'Age histogram.png');
+        assert.ok(isPng(saved.data));
+        await page.keyboard.press('Escape');
+
+        await page.locator('#scatter-button').click();
+        await waitForText(page.locator('#scatter-summary'), '53 rows plotted');
+        saved = await save('svg');
+        assert.match(saved.name, /\.svg$/);
+        svg = saved.data.toString();
+        assert.match(svg, /^<svg xmlns=/);
+        assert.match(svg, /<text[^>]*>/);
+        // The points, as the canvas draws them.
+        assert.ok((svg.match(/<path d="M[^"]*a/g) ?? []).length >= 53);
+        saved = await save('png');
+        assert.ok(isPng(saved.data));
+        await page.context().close();
+    });
+
+    test('shows the whole cell in the sidebar and the cells in a monospace font', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await page.locator('#sidebar').waitFor({ state: 'detached' });
+        await cell(page, 0, 2).dblclick();
+        await waitForText(page.locator('#content-text'), 'sakura.brown1@example.com');
+        await page.keyboard.press('ArrowDown');
+        await waitForText(page.locator('#content-text'), 'hanako.suzuki2@example.com');
+        await page.locator('#sidebar-stats').click();
+        await waitForText(page.locator('#stats-panel h2'), 'Email');
+        await page.locator('#sidebar-close').click();
+        await page.locator('#sidebar').waitFor({ state: 'detached' });
+        await cell(page, 0, 1).click();
+        await page.keyboard.press('Enter');
+        await waitForText(page.locator('#content-text'), 'Sakura Brown');
+
+        const font = () => cell(page, 0, 1).evaluate((element) => getComputedStyle(element).fontFamily);
+        assert.doesNotMatch(await font(), /monospace/);
+        await page.locator('#monospace-toggle').click();
+        await page.waitForFunction(() =>
+            getComputedStyle(document.querySelector('.cell[data-row="0"][data-column="1"]')).fontFamily.includes(
+                'monospace',
+            ),
+        );
+        assert.match(await page.locator('#content-text').evaluate((e) => getComputedStyle(e).fontFamily), /monospace/);
+        // Kept in this browser.
+        await page.reload();
+        await page.waitForSelector('body[data-ready=true]');
+        assert.equal(await page.locator('#monospace-toggle').getAttribute('aria-pressed'), 'true');
         await page.context().close();
     });
 

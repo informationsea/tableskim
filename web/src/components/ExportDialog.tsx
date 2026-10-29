@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { TableSkimClient } from '../client';
-import { errorText, usePolled } from '../hooks';
-import { Events, type ExportFormat, type ExportFormatInfo, type JobState, SESSION, type SheetInfo } from '../protocol';
+import { errorText } from '../hooks';
+import type { ExportFormat, ExportFormatInfo, SheetInfo } from '../protocol';
 import { Dialog } from './Dialog';
+import { useFileJob } from './fileJob';
 import type { CheckpointBannerProps } from './Banners';
 
 interface ExportDialogProps {
@@ -17,70 +18,15 @@ interface ExportDialogProps {
 export function ExportDialog({ client, info, hidden, onClose, checkpoint }: ExportDialogProps) {
     const [formats, setFormats] = useState<ExportFormatInfo[]>([]);
     const [format, setFormat] = useState<ExportFormat>('csv');
-    const [job, setJob] = useState<JobState | null>(null);
-    const [running, setRunning] = useState(false);
-    const [error, setError] = useState('');
-    const [saved, setSaved] = useState('');
+    const { running, rows, error, saved, start, cancel, setError } = useFileJob(client, 'export');
 
     useEffect(() => {
         client.call('exportFormats', {}).then(setFormats, (failure: unknown) => setError(errorText(failure)));
+        // setError is a state setter.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [client]);
 
-    // Leaving the dialog stops an export and frees its file.
-    useEffect(() => () => void client.call('cancelJob', {}).catch(() => {}), [client]);
-
-    usePolled(
-        client,
-        SESSION,
-        Events.JOB,
-        async () => {
-            if (!running) return;
-            const state = await client.call('jobState', {});
-            setJob(state);
-            if (state.kind !== 'export' || !state.done) return;
-            setRunning(false);
-            if (state.error) {
-                setError(state.error);
-                return;
-            }
-            try {
-                // Saved by the browser, then removed from the worker's memory.
-                const data = await client.readFile(state.file ?? '');
-                const url = URL.createObjectURL(new Blob([data]));
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = state.fileName ?? 'export';
-                link.click();
-                setTimeout(() => URL.revokeObjectURL(url), 60000);
-                setSaved(
-                    `Saved ${state.fileName} (${(state.size ?? data.byteLength).toLocaleString()} bytes, ${state.rows.toLocaleString()} rows).`,
-                );
-            } catch (failure) {
-                setError(errorText(failure));
-            } finally {
-                await client.call('cancelJob', {});
-            }
-        },
-        running,
-    );
-
-    const startExport = async () => {
-        setError('');
-        setSaved('');
-        try {
-            await client.call('startExport', { sheet: info.sheet, format, hidden });
-            setJob(null);
-            setRunning(true);
-        } catch (failure) {
-            setError(errorText(failure));
-        }
-    };
-
-    const cancel = async () => {
-        await client.call('cancelJob', {}).catch(() => {});
-        setRunning(false);
-        setJob(null);
-    };
+    const startExport = () => start(() => client.call('startExport', { sheet: info.sheet, format, hidden }));
 
     return (
         <Dialog
@@ -124,7 +70,7 @@ export function ExportDialog({ client, info, hidden, onClose, checkpoint }: Expo
                 ))}
             </fieldset>
             <p id="export-status" className="text-muted" role="status">
-                {running && `Writing… ${(job && job.kind === 'export' ? job.rows : 0).toLocaleString()} rows`}
+                {running && `Writing… ${rows.toLocaleString()} rows`}
                 {saved}
             </p>
             {error && <p className="text-danger">{error}</p>}

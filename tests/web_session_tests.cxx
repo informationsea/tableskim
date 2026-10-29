@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <tuple>
+#include <utility>
 
 #include "test_helpers.hxx"
 #include "web_json.hxx"
@@ -71,18 +73,23 @@ namespace
         return *(*(*rows["rows"].array())[row].array())[column].string();
     }
 
-    std::string path(const std::string &name)
+    // JSON-escaped; the paths have no quotes or control characters on the
+    // systems the tests run on, but Windows paths use backslashes.
+    std::string jsonPath(const std::string &text)
     {
-        // JSON-escaped; the demo directory has no quotes or backslashes on
-        // the systems the tests run on, but Windows paths use backslashes.
         std::string escaped;
-        for (const char c : DEMO + "/" + name)
+        for (const char c : text)
         {
             if (c == '\\' || c == '"')
                 escaped += '\\';
             escaped += c;
         }
         return escaped;
+    }
+
+    std::string path(const std::string &name)
+    {
+        return jsonPath(DEMO + "/" + name);
     }
 }
 
@@ -305,6 +312,68 @@ TEST_CASE("WebSession shows each sheet of a workbook and reopens with header opt
     const auto &ops = *filter_ops.array();
     CHECK(ops.size() == 14);
     CHECK(*ops[0]["op"].string() == "contains");
+}
+
+TEST_CASE("WebSession opens a text file with the encoding and ## option asked for")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    const auto firstRow = [&](const std::string &params)
+    {
+        client.result("open", params);
+        const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"cp932-sample.csv\"}")["sheet"].number());
+        return client.rows(id, 0, 0);
+    };
+
+    SECTION("encoding")
+    {
+        JsonValue opened = client.result("open", "{\"path\":\"" + path("cp932-sample.csv") + "\"}");
+        CHECK(*opened["isTextFormat"].boolean());
+        CHECK_FALSE(*opened["skipsMetaLines"].boolean());
+        // The name the reply gives is accepted back.
+        const std::string detected = *opened["textEncoding"].string();
+        CHECK(detected == "Shift_JIS (CP932)");
+        CHECK(cell(firstRow("{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"" + detected + "\"}"), 0, 1) ==
+              "表示,ソフト");
+
+        opened = client.result("open", "{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"UTF-8\"}");
+        CHECK(*opened["textEncoding"].string() == "UTF-8");
+        CHECK(cell(firstRow("{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"UTF-8\"}"), 0, 1) !=
+              "表示,ソフト");
+
+        CHECK(client.call("open", "{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"EBCDIC\"}")["error"].string());
+    }
+
+    SECTION("## lines")
+    {
+        const auto file = std::filesystem::temp_directory_path() / "tableskim-test-web-meta.csv";
+        {
+            std::ofstream out(file, std::ios::binary);
+            out << "##meta\na,b\n1,2\n";
+        }
+        const std::string file_path = jsonPath(file.generic_string());
+        const auto open = [&](const std::string &extra)
+        {
+            const JsonValue opened = client.result("open", "{\"path\":\"" + file_path + "\",\"header\":\"yes\"" + extra + "}");
+            const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"tableskim-test-web-meta.csv\"}")["sheet"].number());
+            return std::pair{*opened["skipsMetaLines"].boolean(), client.readyInfo(id)};
+        };
+
+        // Not a VCF file: kept unless asked.
+        auto [skips, info] = open("");
+        CHECK_FALSE(skips);
+        CHECK(*(*info["columns"].array())[0]["name"].string() == "##meta");
+
+        std::tie(skips, info) = open(",\"skipMetaLines\":true");
+        CHECK(skips);
+        CHECK(*(*info["columns"].array())[0]["name"].string() == "a");
+        CHECK(*info["rows"].number() == 1);
+
+        std::tie(skips, info) = open(",\"skipMetaLines\":false");
+        CHECK_FALSE(skips);
+        client.result("close");
+        std::filesystem::remove(file);
+    }
 }
 
 namespace
@@ -651,4 +720,75 @@ TEST_CASE("WebSession preserves chart narrowing independently of OR conditions")
     CHECK(cell(client.rows(id, 0, 0), 0, 0) == "2");
     const auto invalid = client.call("setView", sheetParams(id, R"("filter":{"narrowing":[{"column":0,"op":"matches","value":"("}]})"));
     REQUIRE(invalid["error"].string());
+}
+
+TEST_CASE("WebSession gives a cell's whole value")
+{
+    const auto file = std::filesystem::temp_directory_path() / "tableskim-test-web-cell.csv";
+    const std::string long_text(1000, 'x');
+    {
+        std::ofstream out(file, std::ios::binary);
+        out << "name,note\na,\"" << long_text << "\"\nb,\"two\nlines\"\n";
+    }
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    client.result("open", "{\"path\":\"" + jsonPath(file.generic_string()) + "\"}");
+    const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"tableskim-test-web-cell.csv\"}")["sheet"].number());
+    const auto cellAt = [&](size_t row, size_t column)
+    {
+        JsonValue reply;
+        REQUIRE(waitFor([&]
+                        { reply = client.result("cell", sheetParams(id, "\"row\":" + std::to_string(row) + ",\"column\":" +
+                                                                                std::to_string(column)));
+                          return *reply["kind"].string() != "l"; }));
+        return reply;
+    };
+
+    // Rows cut the text short; the cell does not.
+    CHECK(cell(client.rows(id, 0, 0), 0, 1).size() < long_text.size());
+    JsonValue reply = cellAt(0, 1);
+    CHECK(*reply["kind"].string() == "s");
+    CHECK(*reply["text"].string() == long_text);
+    // Line breaks are kept.
+    CHECK(*cellAt(1, 1)["text"].string() == "two\nlines");
+    CHECK(*cellAt(5, 0)["kind"].string() == "o");
+    client.result("close");
+    std::filesystem::remove(file);
+}
+
+TEST_CASE("WebSession converts a text file to Parquet and DuckDB as it was opened")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    CHECK(client.call("startConvert", "{\"format\":\"parquet\"}")["error"].string());
+    client.result("open", "{\"path\":\"" + path("demo.sqlite3") + "\"}");
+    CHECK(client.call("startConvert", "{\"format\":\"parquet\"}")["error"].string()->find("text files") != std::string::npos);
+
+    client.result("open", "{\"path\":\"" + path("cp932-sample.csv") + "\",\"encoding\":\"Shift_JIS (CP932)\"}");
+    CHECK(client.call("startConvert", "{\"format\":\"xlsx\"}")["error"].string());
+    for (const auto &[format, extension] : {std::pair{"parquet", ".parquet"}, std::pair{"duckdb", ".duckdb"}})
+    {
+        INFO(format);
+        client.result("startConvert", "{\"format\":\"" + std::string(format) + "\"}");
+        const JsonValue job = waitDone(client, "jobState", "{}");
+        CHECK(*job["kind"].string() == "convert");
+        REQUIRE(*job["error"].string() == "");
+        CHECK(*job["fileName"].string() == "cp932-sample" + std::string(extension));
+        CHECK(*job["size"].number() > 0);
+        CHECK(*job["rows"].number() > 0);
+
+        // The converted file reads back with the text decoded as it was shown.
+        const std::filesystem::path converted = *job["file"].string();
+        const auto copy = std::filesystem::temp_directory_path() / ("tableskim-test-web-converted" + std::string(extension));
+        std::filesystem::copy_file(converted, copy, std::filesystem::copy_options::overwrite_existing);
+        WebSession reader([](int, unsigned) {});
+        Client read_client(reader);
+        const JsonValue opened = read_client.result("open", "{\"path\":\"" + jsonPath(copy.generic_string()) + "\"}");
+        const std::string sheet_name = *(*opened["sheets"].array())[0].string();
+        const int id = static_cast<int>(*read_client.result("sheet", "{\"name\":\"" + sheet_name + "\"}")["sheet"].number());
+        CHECK(cell(read_client.rows(id, 0, 0), 0, 1) == "表示,ソフト");
+        read_client.result("close");
+        std::filesystem::remove(copy);
+    }
+    client.result("cancelJob");
 }

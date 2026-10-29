@@ -6,14 +6,17 @@ import type { TableSkimClient } from './client';
 import { CheckpointBanner, MessageBanner } from './components/Banners';
 import { DropOverlay, EmptyState } from './components/EmptyState';
 import { ExportDialog } from './components/ExportDialog';
-import { FilterBar } from './components/FilterBar';
+import { FilterPane } from './components/FilterPane';
 import { FormatDialog } from './components/FormatDialog';
 import { GoToDialog } from './components/GoToDialog';
 import { GroupByDialog } from './components/GroupByDialog';
 import { HistogramDialog } from './components/HistogramDialog';
 import { Menu, type MenuItem } from './components/Menu';
 import { ScatterDialog } from './components/ScatterDialog';
+import { ContentPane } from './components/ContentPane';
+import { ConvertDialog } from './components/ConvertDialog';
 import { SheetTabs } from './components/SheetTabs';
+import { Sidebar, SIDEBAR_MIN_WIDTH, type SidebarTab } from './components/Sidebar';
 import { SqlPanel } from './components/SqlPanel';
 import { StatsPanel } from './components/StatsPanel';
 import { StatusBar } from './components/StatusBar';
@@ -27,7 +30,7 @@ import {
     Events,
     type Filter,
     type FilterOpInfo,
-    type HeaderMode,
+    type OpenOptions,
     type SheetInfo,
     type SortKey,
 } from './protocol';
@@ -45,7 +48,7 @@ type Phase =
     | { kind: 'failed'; name: string }
     | { kind: 'open' };
 
-type DialogKind = 'histogram' | 'scatter' | 'export' | 'groupBy' | 'format' | 'goTo';
+type DialogKind = 'histogram' | 'scatter' | 'export' | 'convert' | 'groupBy' | 'format' | 'goTo';
 
 // Hidden and frozen columns: part of what a sheet shows, kept here.
 interface Layout {
@@ -54,6 +57,26 @@ interface Layout {
 }
 
 const NO_LAYOUT: Layout = { hidden: new Set(), frozen: 0 };
+
+// View settings kept in this browser, as the GUI keeps them; storage may be unavailable.
+const MONOSPACE_KEY = 'tableskim.monospace';
+const SIDEBAR_WIDTH_KEY = 'tableskim.sidebarWidth';
+
+function stored(key: string): string | null {
+    try {
+        return localStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
+function store(key: string, value: string) {
+    try {
+        localStorage.setItem(key, value);
+    } catch {
+        // Not kept, then.
+    }
+}
 
 function emptyTitle(phase: Phase, info: SheetInfo | null) {
     switch (phase.kind) {
@@ -86,20 +109,29 @@ export function App({ client }: { client: TableSkimClient }) {
     const [file, setFile] = useState<File | null>(null);
     const [fileEpoch, setFileEpoch] = useState(0);
     const [book, setBook] = useState<BookInfo | null>(null);
-    const [headerMode, setHeaderMode] = useState<HeaderMode>('auto');
+    const [openOptions, setOpenOptions] = useState<OpenOptions>({});
+    // The book last opened from the file, kept while another option fails to
+    // open it, so that the options stay to choose another.
+    const [optionsBook, setOptionsBook] = useState<BookInfo | null>(null);
     const [info, setInfo] = useState<SheetInfo | null>(null);
     const [sheetKey, setSheetKey] = useState(0);
     const [dataVersion, setDataVersion] = useState(0);
     const [viewVersion, setViewVersion] = useState(0);
     const [message, setMessage] = useState(ISOLATED ? '' : ISOLATION_MESSAGE);
-    const [filterOpen, setFilterOpen] = useState(false);
+    // A condition the Filter pane is to add ("Filter by This Column…").
+    const [filterAdding, setFilterAdding] = useState<{ column: number; serial: number } | null>(null);
     const [cellStatus, setCellStatus] = useState('');
     const [search, setSearch] = useState({ text: '', caseSensitive: false, regex: false });
     const [searchStatus, setSearchStatus] = useState('');
     const [dragging, setDragging] = useState(false);
     const [layout, setLayout] = useState<Layout>(NO_LAYOUT);
     const [cursorColumn, setCursorColumn] = useState(0);
-    const [statsOpen, setStatsOpen] = useState(false);
+    const [sidebar, setSidebar] = useState<SidebarTab | null>(null); // the tab shown, or closed
+    const [sidebarWidth, setSidebarWidth] = useState(() =>
+        Math.max(SIDEBAR_MIN_WIDTH, Number(stored(SIDEBAR_WIDTH_KEY)) || 288),
+    );
+    const [monospace, setMonospace] = useState(() => stored(MONOSPACE_KEY) === 'true');
+    const [contentCell, setContentCell] = useState<Cell>({ row: 0, column: 0 });
     const [sqlOpen, setSqlOpen] = useState(false);
     const [dialog, setDialog] = useState<{ kind: DialogKind; column: number } | null>(null);
     const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -128,8 +160,6 @@ export function App({ client }: { client: TableSkimClient }) {
             flow.current.viewError = viewError;
             setMessage(`The sort or filter failed: ${next.viewError}`);
         }
-        if ((next.view.filter?.conditions.length || next.view.filter?.narrowing?.length) && next.capabilities.filter)
-            setFilterOpen(true);
     }, []);
 
     // Asks for the sheet's state again, one request at a time.
@@ -179,6 +209,7 @@ export function App({ client }: { client: TableSkimClient }) {
                 setSheetKey((key) => key + 1);
                 setLayout(NO_LAYOUT);
                 setCursorColumn(0);
+                setContentCell({ row: 0, column: 0 });
                 setDialog(null);
                 grid.current?.focus();
                 // The event that it opened may have come before this reply,
@@ -193,7 +224,7 @@ export function App({ client }: { client: TableSkimClient }) {
 
     const openFile = useCallback(
         // again: the same file with another option, whose SQL result is made again
-        async (opened: File, header: HeaderMode = 'auto', again = false) => {
+        async (opened: File, options: OpenOptions = {}, again = false) => {
             const epoch = ++flow.current.epoch;
             flow.current.fileEpoch++;
             setFileEpoch(flow.current.fileEpoch);
@@ -202,7 +233,8 @@ export function App({ client }: { client: TableSkimClient }) {
             setFile(opened);
             setBook(null);
             setInfo(null);
-            setHeaderMode(header);
+            setOpenOptions(options);
+            if (!again) setOptionsBook(null);
             setMessage('');
             setCellStatus('');
             setDialog(null);
@@ -213,7 +245,7 @@ export function App({ client }: { client: TableSkimClient }) {
             setPhase({ kind: 'opening', name: opened.name });
             document.title = `${opened.name} – TableSkim`;
             try {
-                const next = await client.call('open', { file: opened, header });
+                const next = await client.call('open', { ...options, file: opened });
                 if (epoch !== flow.current.epoch) return;
                 if (again && flow.current.lastSql && next.supportsSql) {
                     // The result's view died with the book.
@@ -225,6 +257,7 @@ export function App({ client }: { client: TableSkimClient }) {
                     if (epoch !== flow.current.epoch) return;
                 }
                 setBook(next);
+                setOptionsBook(next);
                 if (next.sheets.length === 0) throw new Error('The file has no sheets.');
                 setPhase({ kind: 'open' });
                 await selectSheet(next.sheets[0]);
@@ -333,30 +366,41 @@ export function App({ client }: { client: TableSkimClient }) {
 
     // Changes the view the worker asked for last, so that a sort or filter
     // still being applied is kept.
-    const changeView = async (change: {
-        sort?: SortKey[];
-        filter?: Filter | null;
-        addConditions?: Condition[];
-        addNarrowing?: Condition[];
-    }) => {
+    const changeView = async (
+        change: {
+            sort?: SortKey[];
+            filter?: Filter | null;
+            addConditions?: Condition[];
+            addNarrowing?: Condition[];
+        },
+        quiet = false,
+    ): Promise<string | null> => {
         const current = flow.current.info;
-        if (!current) return;
+        if (!current) return null;
         try {
             const reply = await client.call('setView', { sheet: current.sheet, ...change });
             if (flow.current.info?.sheet === current.sheet) showInfo({ ...flow.current.info, view: reply.view });
             setMessage('');
             void refreshInfo();
+            return null;
         } catch (error) {
-            setMessage(errorText(error));
+            // The Filter pane shows its own refusals, as the GUI's does.
+            if (!quiet) setMessage(errorText(error));
+            return errorText(error);
         }
     };
 
-    const setFilter = (filter: Filter | null) => changeView({ filter });
+    const setFilter = (filter: Filter | null) => changeView({ filter }, true);
+
+    // Opens the Filter pane with a new condition for the column.
+    const filterByColumn = (column: number) => {
+        setSidebar('filter');
+        setFilterAdding((adding) => ({ column, serial: (adding?.serial ?? 0) + 1 }));
+    };
 
     // Adds conditions to the view's filter (a histogram's bin, a cell's value...).
     const addConditions = async (conditions: Condition[], narrow = false) => {
         if (!flow.current.info?.capabilities.filter || conditions.length === 0) return;
-        setFilterOpen(true);
         await changeView(narrow ? { addNarrowing: conditions } : { addConditions: conditions });
     };
 
@@ -404,8 +448,14 @@ export function App({ client }: { client: TableSkimClient }) {
             if (sorted) items.push({ label: 'Clear Sort', onSelect: () => void setSort([]) });
             items.push('separator');
         }
+        if (current?.capabilities.filter) {
+            items.push({ label: 'Filter by This Column…', onSelect: () => filterByColumn(column) });
+            if (current.view.filter)
+                items.push({ label: 'Clear Filter', onSelect: () => void changeView({ filter: null }) });
+            items.push('separator');
+        }
         items.push(
-            { label: 'Statistics', onSelect: () => setStatsOpen(true) },
+            { label: 'Statistics', onSelect: () => setSidebar('stats') },
             { label: 'Histogram…', onSelect: () => setDialog({ kind: 'histogram', column }) },
             { label: 'Scatter Plot…', onSelect: () => setDialog({ kind: 'scatter', column }) },
             { label: 'Group By…', onSelect: () => setDialog({ kind: 'groupBy', column }) },
@@ -448,6 +498,7 @@ export function App({ client }: { client: TableSkimClient }) {
             text += ` (${(range.bottom - range.top + 1).toLocaleString()} × ${range.right - range.left + 1} selected)`;
         setCellStatus(text);
         setCursorColumn(cell.column);
+        setContentCell({ row: range.top, column: range.left });
     };
 
     const copy = async (range: Range) => {
@@ -562,7 +613,15 @@ export function App({ client }: { client: TableSkimClient }) {
         let depth = 0;
         const keyDown = (event: KeyboardEvent) => {
             const ctrl = event.ctrlKey || event.metaKey;
-            if (ctrl && event.key.toLowerCase() === 'f' && searchInput.current && !searchInput.current.disabled) {
+            if (ctrl && event.shiftKey && event.key.toLowerCase() === 'f') {
+                event.preventDefault();
+                if (flow.current.info?.capabilities.filter) setSidebar('filter');
+            } else if (
+                ctrl &&
+                event.key.toLowerCase() === 'f' &&
+                searchInput.current &&
+                !searchInput.current.disabled
+            ) {
                 event.preventDefault();
                 searchInput.current.focus();
                 searchInput.current.select();
@@ -625,18 +684,18 @@ export function App({ client }: { client: TableSkimClient }) {
         {
             id: 'filter-toggle',
             label: 'Filter',
-            title: 'Show the filter conditions',
+            title: 'The filter conditions, in the sidebar (Ctrl+Shift+F)',
             enabled: !!info?.capabilities.filter,
-            pressed: filterOpen,
-            onClick: () => setFilterOpen((open) => !open),
+            pressed: sidebar === 'filter',
+            onClick: () => setSidebar((tab) => (tab === 'filter' ? null : 'filter')),
         },
         {
             id: 'stats-toggle',
             label: 'Statistics',
-            title: "Statistics of the cursor's column",
+            title: "Statistics of the cursor's column in the sidebar",
             enabled: showGrid,
-            pressed: statsOpen,
-            onClick: () => setStatsOpen((open) => !open),
+            pressed: sidebar === 'stats',
+            onClick: () => setSidebar((tab) => (tab === 'stats' ? null : 'stats')),
         },
         sheetTool('histogram-button', 'Histogram', "A histogram of the cursor's column", 'histogram'),
         sheetTool('scatter-button', 'Scatter', 'Two columns plotted against each other', 'scatter'),
@@ -650,6 +709,30 @@ export function App({ client }: { client: TableSkimClient }) {
             onClick: () => setSqlOpen((open) => !open),
         },
         sheetTool('export-button', 'Export', 'Save the view as CSV, TSV, Excel or Parquet', 'export'),
+        {
+            ...sheetTool('convert-button', 'Convert', 'Convert the whole text file to Parquet or DuckDB', 'convert'),
+            enabled: showGrid && !!book?.isTextFormat,
+        },
+        {
+            id: 'sidebar-toggle',
+            label: 'Sidebar',
+            title: 'Show or hide the sidebar: the whole cell (Enter or a double click) and statistics',
+            enabled: true,
+            pressed: sidebar !== null,
+            onClick: () => setSidebar((tab) => (tab ? null : 'content')),
+        },
+        {
+            id: 'monospace-toggle',
+            label: 'Monospace',
+            title: 'Show the cells in a monospace font',
+            enabled: true,
+            pressed: monospace,
+            onClick: () =>
+                setMonospace((on) => {
+                    store(MONOSPACE_KEY, String(!on));
+                    return !on;
+                }),
+        },
     ];
     const checkpointControls = {
         checkpoint: info?.checkpoint ?? null,
@@ -670,9 +753,9 @@ export function App({ client }: { client: TableSkimClient }) {
         <div className="flex h-full flex-col">
             <Toolbar
                 onOpen={(opened) => void openFile(opened)}
-                showHeaderMode={!!book?.usesHeaderOption}
-                headerMode={headerMode}
-                onHeaderMode={(mode) => file && void openFile(file, mode, true)}
+                book={optionsBook}
+                options={openOptions}
+                onOptions={(options) => file && void openFile(file, options, true)}
                 tools={tools}
                 search={{
                     ...search,
@@ -684,14 +767,6 @@ export function App({ client }: { client: TableSkimClient }) {
                     inputRef: searchInput,
                 }}
             />
-            {filterOpen && info && (
-                <FilterBar
-                    columns={info.columns}
-                    filter={info.view.filter}
-                    ops={filterOps}
-                    onChange={(filter) => void setFilter(filter)}
-                />
-            )}
             <CheckpointBanner
                 checkpoint={info?.checkpoint ?? null}
                 onContinue={() => void readOn(true)}
@@ -718,17 +793,44 @@ export function App({ client }: { client: TableSkimClient }) {
                         onSelect={showCell}
                         onCopy={(range) => void copy(range)}
                         onContextMenu={contextMenu}
+                        onOpenCell={() => setSidebar('content')}
+                        monospace={monospace}
                     />
                     {!showGrid && <EmptyState title={emptyTitle(phase, info)} />}
                     {dragging && <DropOverlay />}
                 </main>
-                {statsOpen && showGrid && info && (
-                    <StatsPanel
-                        client={client}
-                        info={info}
-                        column={Math.min(cursorColumn, info.columns.length - 1)}
-                        onClose={() => setStatsOpen(false)}
-                    />
+                {sidebar && showGrid && info && (
+                    <Sidebar
+                        tab={sidebar}
+                        onTab={setSidebar}
+                        width={sidebarWidth}
+                        onWidth={(width) => {
+                            setSidebarWidth(width);
+                            store(SIDEBAR_WIDTH_KEY, String(width));
+                        }}
+                        onClose={() => {
+                            setSidebar(null);
+                            grid.current?.focus();
+                        }}
+                    >
+                        {sidebar === 'content' ? (
+                            <ContentPane client={client} info={info} cell={contentCell} monospace={monospace} />
+                        ) : sidebar === 'filter' ? (
+                            <FilterPane
+                                info={info}
+                                ops={filterOps}
+                                onApply={setFilter}
+                                adding={filterAdding}
+                                cursorColumn={Math.min(cursorColumn, info.columns.length - 1)}
+                            />
+                        ) : (
+                            <StatsPanel
+                                client={client}
+                                info={info}
+                                column={Math.min(cursorColumn, info.columns.length - 1)}
+                            />
+                        )}
+                    </Sidebar>
                 )}
             </div>
             {sqlOpen && book?.supportsSql && (
@@ -772,6 +874,9 @@ export function App({ client }: { client: TableSkimClient }) {
                             onGoToRow={goToRow}
                             onClose={closeDialog}
                         />
+                    )}
+                    {dialog.kind === 'convert' && file && (
+                        <ConvertDialog client={client} fileName={file.name} onClose={closeDialog} />
                     )}
                     {dialog.kind === 'export' && (
                         <ExportDialog

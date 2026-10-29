@@ -21,6 +21,7 @@ interface GridProps extends GridCallbacks {
     viewVersion: number;
     hidden: Set<number>;
     frozen: number;
+    monospace: boolean; // the cells' font
     ref?: Ref<GridHandle>;
 }
 
@@ -34,7 +35,17 @@ const KIND_CLASSES: Record<string, string> = {
     x: 'k-x text-danger',
 };
 
-export function Grid({ info, sheetKey, dataVersion, viewVersion, hidden, frozen, ref, ...callbacks }: GridProps) {
+export function Grid({
+    info,
+    sheetKey,
+    dataVersion,
+    viewVersion,
+    hidden,
+    frozen,
+    monospace,
+    ref,
+    ...callbacks
+}: GridProps) {
     const scrollerRef = useRef<HTMLDivElement>(null);
     const layerRef = useRef<HTMLDivElement>(null);
     const spacerRef = useRef<HTMLDivElement>(null);
@@ -80,6 +91,8 @@ export function Grid({ info, sheetKey, dataVersion, viewVersion, hidden, frozen,
     }, [controller, info, sheetKey]);
 
     useLayoutEffect(() => controller.setLayout(hidden, frozen), [controller, hidden, frozen, info]);
+
+    useLayoutEffect(() => controller.setMonospace(monospace), [controller, monospace]);
 
     useEffect(() => {
         if (dataVersion) controller.dataChanged();
@@ -132,6 +145,7 @@ export function Grid({ info, sheetKey, dataVersion, viewVersion, hidden, frozen,
                     key={`${row}:${column}`}
                     className={
                         `${CELL} ${KIND_CLASSES[kind] ?? ''}${edge}` +
+                        (monospace ? ' font-mono' : '') +
                         // The hit's colour is opaque, so it replaces the surface.
                         (pinned ? (hit && !selected ? ' z-1' : ' z-1 bg-surface') : '') +
                         // A frozen cell covers the cells scrolled under it: the
@@ -216,6 +230,7 @@ export function Grid({ info, sheetKey, dataVersion, viewVersion, hidden, frozen,
                 ref={layerRef}
                 className="sticky top-0 left-0 z-1 overflow-hidden select-none"
                 onMouseDown={(event) => controller.mouseDown(event.nativeEvent)}
+                onDoubleClick={(event) => controller.doubleClick(event.nativeEvent)}
                 onContextMenu={(event) => controller.contextMenu(event.nativeEvent)}
             >
                 {cells}

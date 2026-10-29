@@ -9,6 +9,8 @@ sheet.
 
 - GUI: **Edit → Run SQL...** (`Ctrl+E`) opens the SQL window.
 - Terminal UI: `:` opens the SQL prompt at the bottom of the screen.
+- Web app: the **SQL** button opens the SQL panel at the bottom of the
+  page (see [Running SQL](web.md#running-sql)).
 
 ![The SQL window and its result sheet](../images/gui-sql-result.png)
 
