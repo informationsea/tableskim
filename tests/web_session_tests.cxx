@@ -150,7 +150,10 @@ TEST_CASE("WebSession opens a CSV file and pages through its rows")
     REQUIRE(columns.size() == 9);
     CHECK(*columns[1]["name"].string() == "Name");
     CHECK(*columns[0]["mark"].string() == "#");
-    CHECK((events & WebSession::ROWS) != 0);
+    // The worker reports the rows after they are in the model, so the info
+    // may be ready before the event has come.
+    CHECK(waitFor([&]
+                  { return (events & WebSession::ROWS) != 0; }));
 
     const JsonValue rows = client.rows(id, 0, 2);
     REQUIRE(rows["rows"].array()->size() == 3);

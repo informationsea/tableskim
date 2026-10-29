@@ -475,8 +475,12 @@ namespace
                    const std::string &view_error, unsigned view_error_id)
     {
         const ModelState state = model.state();
-        const RowCount rows = model.rowCount();
+        // The view before the rows: a view applied in between then shows
+        // as pending (requestedView() differs from it), whereas the other
+        // order could pair the new view with the old row count and say it
+        // is applied.
         const ViewSpec view = model.view();
+        const RowCount rows = model.rowCount();
         json.beginObject()
             .key("sheet")
             .value(id)
