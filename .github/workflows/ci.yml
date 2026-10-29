@@ -268,10 +268,17 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # Its own cache (actions-cache-folder) is stored with the retired cache
+      # service, so emsdk is installed afresh in every run, in a new
+      # directory with new file times.
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: ${{ env.EMSDK_VERSION }}
-          actions-cache-folder: emsdk-cache
+      # ccache checks the compiler (em++, a script) by its file time by
+      # default, which a fresh install changes, so no object compiled in an
+      # earlier run would be found. The cache key holds the version.
+      - name: Check the compiler by its version in ccache
+        run: echo "CCACHE_COMPILERCHECK=string:emsdk-$EMSDK_VERSION" >> "$GITHUB_ENV"
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
