@@ -354,15 +354,21 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      # Its own cache (actions-cache-folder) is stored with the retired cache
-      # service, so emsdk is installed afresh in every run, in a new
-      # directory with new file times.
-      - uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: ${{ env.EMSDK_VERSION }}
+      # emsdk is installed afresh in every run, at a fixed path: ccache
+      # hashes the paths of the system headers (the sysroot is inside emsdk),
+      # and setup-emsdk put them in a new temporary directory each time, so
+      # nothing compiled in an earlier run was found.
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          echo "$HOME/emsdk" >> "$GITHUB_PATH"
+          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
       # ccache checks the compiler (em++, a script) by its file time by
-      # default, which a fresh install changes, so no object compiled in an
-      # earlier run would be found. The cache key holds the version.
+      # default, which a fresh install changes. The cache key holds the
+      # version.
       - name: Check the compiler by its version in ccache
         run: echo "CCACHE_COMPILERCHECK=string:emsdk-$EMSDK_VERSION" >> "$GITHUB_ENV"
       # The ccache CI saved on main (see ci.yml).
