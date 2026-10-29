@@ -417,10 +417,13 @@ read their header comments before changing anything in `src/common/`.
   (Linux: `share/doc/tableskim/html`; macOS and Windows: `Manual/`).
 - The GitHub Pages site is the introduction page in `site/` (`index.html`,
   `ja/index.html`, `style.css`) plus the manual converted by
-  `tableskim-html-manual` into `manual/`. `tools/build-site.sh [dir
-  [release.json]]` builds it (only the converter is compiled, without
-  CMake), and `.github/workflows/pages.yml` deploys it from main and again
-  after each release. Keep the two landing pages in step, and link to
+  `tableskim-html-manual` into `manual/` and the latest release's web app
+  in `app/`. `tools/build-site.sh [dir [release.json [web.zip]]]` builds it
+  (only the converter is compiled, without CMake), and
+  `.github/workflows/pages.yml` deploys it from main and again after each
+  release. `tools/place-web-app.py` unpacks the release's web ZIP into
+  `app/` and shows the links to it (elements marked `data-web-app hidden`
+  in the pages, so that a site without the app links to nothing missing). Keep the two landing pages in step, and link to
   manual pages by their `.html` names. The download pages
   (`download.html`, `ja/download.html`) describe each release file; their
   links, names, sizes and the version are filled in at build time from
