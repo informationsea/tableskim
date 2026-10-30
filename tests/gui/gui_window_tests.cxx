@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <fstream>
 
+#include <FL/Fl_Input.H>
+
 #include "file_util.hxx"
 #include "gui_test_helpers.hxx"
 
@@ -288,6 +290,29 @@ TEST_CASE("GUI: the first row is the header when it looks like one, unless chose
     window->open(utf8String(path));
     CHECK(window->first_row() == OpenOptions::Header::Auto);
     CHECK(waitFor([&] { return currentRows(window, 2); }));
+}
+
+TEST_CASE("GUI: clearing the narrowing leaves the conditions being edited", "[regression]")
+{
+    Window window(kDemoData / "normal.parquet");
+    auto *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 54));
+    const ViewSpec spec{.filter = Filter{.narrowing = {{0, FilterOp::GreaterEqual, "2"}}}};
+    view->model()->setView(spec);
+    REQUIRE(window.waitForRows(view, 53));
+    window->show_filter();
+    window->filter_pane->update();
+    // A condition typed but not applied, which matches no row.
+    window->filter_pane->addCondition(1);
+    auto *value = dynamic_cast<Fl_Input *>(Fl::focus());
+    REQUIRE(value);
+    value->value("no such name");
+    REQUIRE(pressButton(*window->main_window, "Additional narrowing (1) - Clear"));
+    REQUIRE(window.waitForRows(view, 54));
+    CHECK_FALSE(view->model()->view().filtered());
+    // Still there to apply.
+    REQUIRE(pressButton(*window->main_window, "Apply"));
+    REQUIRE(window.waitForRows(view, 0));
 }
 
 TEST_CASE("GUI: filter editing preserves chart narrowing and clears it separately", "[regression]")

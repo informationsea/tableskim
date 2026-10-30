@@ -7,6 +7,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "table_types.hxx"
@@ -49,6 +50,19 @@ private:
 
     void flush();
 };
+
+// Excel writes characters that XML cannot hold as _xHHHH_, and the "_" of
+// text that looks like such an escape as _x005F_. Whether one starts at
+// text[pos].
+bool isXlsxEscapePattern(std::string_view text, size_t pos);
+// Whether a byte is written as _xHHHH_: control characters but tab and line
+// feed (a raw CR would be read back as LF, by XML's line-end handling).
+inline bool needsXlsxEscape(unsigned char c)
+{
+    return c < 0x20 && c != '\t' && c != '\n';
+}
+// Appends the byte as _xHHHH_.
+void appendXlsxEscape(std::string &out, unsigned char c);
 
 // A valid Excel sheet name: no []:*?/\, at most 31 characters, not empty.
 std::string xlsxSheetName(const std::string &name);

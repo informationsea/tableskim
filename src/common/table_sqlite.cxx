@@ -10,41 +10,12 @@
 
 #include <sqlite3.h>
 
+#include "file_util.hxx"
 #include "sql_text.hxx"
 
 namespace
 {
     using StatementPtr = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
-
-    std::string quoteIdentifier(const std::string &name)
-    {
-        std::string quoted = "\"";
-        for (const char c : name)
-        {
-            quoted += c;
-            if (c == '"')
-                quoted += '"';
-        }
-        return quoted + "\"";
-    }
-
-    std::string stringLiteral(const std::string &text)
-    {
-        std::string quoted = "'";
-        for (const char c : text)
-        {
-            quoted += c;
-            if (c == '\'')
-                quoted += '\'';
-        }
-        return quoted + "'";
-    }
-
-    std::string utf8Path(const std::filesystem::path &path)
-    {
-        const std::u8string u8 = path.u8string();
-        return std::string(u8.begin(), u8.end());
-    }
 
     bool equalsIgnoreCase(std::string_view a, std::string_view b)
     {
@@ -218,7 +189,7 @@ namespace
 
         explicit Database(const std::filesystem::path &path)
         {
-            const int rc = sqlite3_open_v2(utf8Path(path).c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
+            const int rc = sqlite3_open_v2(utf8String(path).c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
             if (rc != SQLITE_OK)
             {
                 const std::string message = db ? sqlite3_errmsg(db) : sqlite3_errstr(rc);
@@ -342,7 +313,7 @@ namespace
         {
             const std::string cell = condition.column < refs_.size() ? refs_[condition.column] : "NULL";
             return "tableskim_match(" + cell + ", " + std::to_string(static_cast<int>(condition.op)) + ", " +
-                   stringLiteral(condition.value) + ")";
+                   quoteSqlString(condition.value) + ")";
         }
 
         std::string whereClause() const
@@ -393,7 +364,7 @@ namespace
                 return true;
             if (stop.stop_requested())
                 return false;
-            const std::string table = "temp." + quoteIdentifier("tableskim_snapshot_" + std::to_string(db_->next_temp_id++));
+            const std::string table = "temp." + quoteSqlIdentifier("tableskim_snapshot_" + std::to_string(db_->next_temp_id++));
             std::string columns;
             for (size_t i = 0; i < refs_.size(); ++i)
                 columns += (i > 0 ? ", c" : "c") + std::to_string(i);
@@ -431,7 +402,7 @@ namespace
                 return true;
             if (!ensureSnapshot(stop) || stop.stop_requested())
                 return false;
-            const std::string table = "temp." + quoteIdentifier("tableskim_view_" + std::to_string(db_->next_temp_id++));
+            const std::string table = "temp." + quoteSqlIdentifier("tableskim_view_" + std::to_string(db_->next_temp_id++));
             const std::string sql = "CREATE TABLE " + table + " (pos INTEGER PRIMARY KEY, src INTEGER); "
                                     "INSERT INTO " + table + " SELECT row_number() OVER (ORDER BY " +
                                     orderTerms("t." + rowid_) + "), t." + rowid_ + " FROM " + from_ + whereClause() + ";";
@@ -482,7 +453,7 @@ namespace
         SqliteSheetSource(std::shared_ptr<Database> db, const Relation &relation)
             : db_(std::move(db)), name_(relation.name), is_table_(relation.is_table)
         {
-            const std::string table = relation.schema + "." + quoteIdentifier(relation.schema == "main" ? name_ : kSqlResultView);
+            const std::string table = relation.schema + "." + quoteSqlIdentifier(relation.schema == "main" ? name_ : kSqlResultView);
             auto stmt = db_->prepare("SELECT * FROM " + table);
             const int count = sqlite3_column_count(stmt.get());
             if (count == 0)
@@ -515,7 +486,7 @@ namespace
             {
                 from_ = table + " AS t";
                 for (const auto &column : columns_)
-                    refs_.push_back("t." + quoteIdentifier(column.name));
+                    refs_.push_back("t." + quoteSqlIdentifier(column.name));
             }
             else
             {
@@ -647,12 +618,12 @@ namespace
         // Replaces the TEMP view; on failure the previous one is kept.
         void replaceResultView(const std::string &query)
         {
-            const std::string view = "temp." + quoteIdentifier(kSqlResultView);
+            const std::string view = "temp." + quoteSqlIdentifier(kSqlResultView);
             db_->execTransaction("SAVEPOINT tableskim_sql");
             try
             {
                 db_->exec("DROP VIEW IF EXISTS " + view);
-                db_->exec("CREATE TEMP VIEW " + quoteIdentifier(kSqlResultView) + " AS " + query);
+                db_->exec("CREATE TEMP VIEW " + quoteSqlIdentifier(kSqlResultView) + " AS " + query);
                 // Some errors (e.g. unknown functions) show only when the view is used.
                 db_->prepare("SELECT * FROM " + view);
                 db_->execTransaction("RELEASE tableskim_sql");
@@ -714,7 +685,7 @@ namespace
             {
                 try
                 {
-                    auto columns = db_->prepare("SELECT name FROM pragma_table_info(" + stringLiteral(table.name) + ")");
+                    auto columns = db_->prepare("SELECT name FROM pragma_table_info(" + quoteSqlString(table.name) + ")");
                     while (db_->step(columns.get()))
                     {
                         const auto *column = reinterpret_cast<const char *>(sqlite3_column_text(columns.get(), 0));

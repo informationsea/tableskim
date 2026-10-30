@@ -98,6 +98,8 @@ private:
     std::filesystem::path path_; // the open file
     OpenOptions options_;        // as it was opened, which a conversion reads it with
     std::shared_ptr<TableBook> book_;
+    // The last Group By's rows, shown again when the file is opened again.
+    std::shared_ptr<const ResultRows> group_result_;
     std::vector<std::unique_ptr<Sheet>> sheets_; // destroyed before book_ by close()
     int next_sheet_id_ = 1;
     std::optional<std::vector<SqlTable>> schema_; // for completion, until the next query

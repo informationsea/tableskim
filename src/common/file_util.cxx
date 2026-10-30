@@ -2,6 +2,7 @@
 
 #include "spdlog/spdlog.h"
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdio>
@@ -58,6 +59,14 @@ std::string utf8String(const std::filesystem::path &path)
 {
     const std::u8string s = path.u8string();
     return std::string(s.begin(), s.end());
+}
+
+std::string lowerExtension(const std::filesystem::path &path)
+{
+    std::string ext = utf8String(path.extension());
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
+                   { return static_cast<char>(std::tolower(c)); });
+    return ext;
 }
 
 std::filesystem::path userDataDirectory()

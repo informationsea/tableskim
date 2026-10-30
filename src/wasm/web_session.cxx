@@ -893,6 +893,12 @@ void WebSession::open(const Params &params, JsonWriter &result)
     path_ = utf8Path(params.text("path"));
     book_ = TableBook::open(path_, options);
     options_ = options;
+    // The same file with other options: a Group By's rows are kept in
+    // memory, and the new book shows them again, as in the other UIs.
+    if (!params.flag("keepGroupBy"))
+        group_result_.reset();
+    else if (group_result_)
+        book_->addResultSheet(GROUP_BY_SHEET, group_result_);
     result.beginObject().key("sheets");
     writeSheetNames(result);
     result.key("usesHeaderOption")
@@ -1624,7 +1630,8 @@ void WebSession::jobState(const Params &, JsonWriter &result)
     // the sheets.
     if (done && job.group_rows && book_)
     {
-        job.sheet = book_->addResultSheet(GROUP_BY_SHEET, ResultRows::make(std::move(*job.group_rows)));
+        group_result_ = ResultRows::make(std::move(*job.group_rows));
+        job.sheet = book_->addResultSheet(GROUP_BY_SHEET, group_result_);
         job.group_rows.reset();
         dropSheets(job.sheet);
     }

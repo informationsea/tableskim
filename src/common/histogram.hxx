@@ -35,7 +35,8 @@ enum class TimeUnit
 struct Histogram
 {
     HistogramKind kind = HistogramKind::None;
-    // Bin i holds [edges[i], edges[i + 1]); the last one also its upper edge.
+    // Bin i holds [edges[i], edges[i + 1]); the last one also its upper edge,
+    // unless it holds one integer (see numberHistogramEdges()).
     // Times are microseconds since 1970-01-01 (UTC).
     std::vector<double> edges;
     std::vector<size_t> counts; // one per bin
@@ -99,7 +100,8 @@ private:
 
 // Bins of "nice" widths (1, 2 or 5 times a power of ten) covering [min, max],
 // about `target` of them; integers get widths of at least 1, and a bin per
-// value when they span at most `target` values.
+// value when they span at most `target` + 1 values. A bin of integers of
+// width 1 holds only its lower edge, the last one too.
 std::vector<double> numberHistogramEdges(double min, double max, bool integers, size_t target, int *decimals = nullptr);
 // Bins of whole seconds, minutes, hours, days, weeks (from Monday), months
 // or years covering [min, max] (microseconds), about `target` of them.

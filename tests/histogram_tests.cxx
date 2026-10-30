@@ -496,6 +496,35 @@ TEST_CASE("a time on the last edge is outside every bin, as its filter says", "[
     CHECK(counter.result().others == 1);
 }
 
+TEST_CASE("an integer past a bin per value is outside every bin", "[regression]")
+{
+    HistogramRange range;
+    for (int64_t value = 1; value <= 5; ++value)
+        range.add(value);
+    HistogramCounter counter(range.layout(30));
+    const Histogram &layout = counter.result();
+    REQUIRE(layout.edges == std::vector<double>{1, 2, 3, 4, 5, 6});
+    const size_t last = layout.binCount() - 1;
+    CHECK(histogramBinLabel(layout, last) == "5");
+    CHECK(histogramBinRange(layout, last) == "[5, 6)");
+    // Rows appended while following: a new maximum or a fraction needs
+    // other bins, so the histogram must start over.
+    const auto conditions = histogramBinConditions(layout, 0, last);
+    CHECK(std::all_of(conditions.begin(), conditions.end(), [](const FilterCondition &condition)
+                      { return cellMatchesCondition(CellValue{int64_t{5}}, condition); }));
+    CHECK_FALSE(std::all_of(conditions.begin(), conditions.end(), [](const FilterCondition &condition)
+                            { return cellMatchesCondition(CellValue{int64_t{6}}, condition); }));
+    CHECK(counter.fits(int64_t{5}));
+    CHECK_FALSE(counter.fits(int64_t{6}));
+    CHECK_FALSE(counter.fits(4.5));
+
+    // As many steps as bins wanted: a bin per value too, not a last bin of
+    // width 1 holding two values.
+    const auto edges = numberHistogramEdges(0, 30, true, 30);
+    REQUIRE(edges.size() == 32);
+    CHECK(edges.back() == 31);
+}
+
 TEST_CASE("time bins ending past the year 9999 keep their rows", "[regression]")
 {
     // 9999-12-31 as a "no end" date: the last edge is in the year 10000.

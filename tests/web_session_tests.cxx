@@ -670,6 +670,17 @@ TEST_CASE("WebSession exports a view and groups it as jobs")
         const JsonValue info = client.readyInfo(grouped);
         CHECK(*info["rows"].number() == 12);
         CHECK(*(*info["columns"].array())[2]["name"].string() == "Age mean");
+
+        // Opened again with another option, the file shows the result again;
+        // another file does not.
+        const std::string open = "{\"path\":\"" + path("normal.csv") + "\",\"header\":\"no\"";
+        const JsonValue again = client.result("open", open + ",\"keepGroupBy\":true}");
+        CHECK(std::any_of(again["sheets"].array()->begin(), again["sheets"].array()->end(),
+                          [&](const JsonValue &name) { return *name.string() == *job["sheet"].string(); }));
+        const int kept = static_cast<int>(*client.result("sheet", "{\"name\":\"" + *job["sheet"].string() + "\"}")["sheet"].number());
+        CHECK(*client.readyInfo(kept)["rows"].number() == 12);
+        CHECK(client.result("open", open + "}")["sheets"].array()->size() == 1);
+        CHECK(client.result("open", open + ",\"keepGroupBy\":true}")["sheets"].array()->size() == 1);
     }
 
     SECTION("only one job at a time")

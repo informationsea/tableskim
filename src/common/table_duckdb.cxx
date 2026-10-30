@@ -19,6 +19,7 @@
 #include <duckdb/parser/statement/drop_statement.hpp>
 
 #include "sql_text.hxx"
+#include "file_util.hxx"
 
 // In-memory databases spill to ".tmp" in the current directory by default,
 // which may be unwritable (e.g. "/" for a macOS app) or the user's files.
@@ -42,24 +43,6 @@ namespace
     constexpr const char *kAttachedName = "tableskim_src";
 
     void registerFunctions(duckdb::Connection &connection);
-
-    std::string quoteIdentifier(const std::string &name)
-    {
-        std::string quoted = "\"";
-        for (const char c : name)
-        {
-            quoted += c;
-            if (c == '"')
-                quoted += '"';
-        }
-        return quoted + "\"";
-    }
-
-    std::string utf8Path(const std::filesystem::path &path)
-    {
-        const std::u8string u8 = path.u8string();
-        return std::string(u8.begin(), u8.end());
-    }
 
     std::filesystem::path reserveTempDirectory()
     {
@@ -181,7 +164,7 @@ namespace
                 config.SetOptionByName("autoload_known_extensions", duckdb::Value::BOOLEAN(false));
                 config.file_system = duckdb::make_uniq<duckdb::VirtualFileSystem>(
                     duckdb::make_uniq<ProtectedFileSystem>(temp_directory));
-                config.SetOptionByName("temp_directory", duckdb::Value(utf8Path(temp_directory)));
+                config.SetOptionByName("temp_directory", duckdb::Value(utf8String(temp_directory)));
                 config.SetOptionByName("allow_persistent_secrets", duckdb::Value::BOOLEAN(false));
                 config.SetOptionByName("allow_community_extensions", duckdb::Value::BOOLEAN(false));
                 db = std::make_unique<duckdb::DuckDB>(nullptr, &config);
@@ -626,7 +609,7 @@ namespace
     std::string untypedComparison(const Column &column, const FilterCondition &condition)
     {
         const std::string text = textExpression(column);
-        const std::string value = duckDbStringLiteral(condition.value);
+        const std::string value = quoteSqlString(condition.value);
         const std::string op = sqlOperator(condition.op);
         const std::string text_compare = "(" + text + " " + op + " " + value + ")";
         if (!parseNumber(condition.value))
@@ -688,7 +671,7 @@ namespace
             return sqlBool(emptyMatches(condition));
         const Column &column = columns[condition.column];
         const std::string text = textExpression(column);
-        const std::string value = duckDbStringLiteral(condition.value);
+        const std::string value = quoteSqlString(condition.value);
 
         switch (condition.op)
         {
@@ -819,7 +802,7 @@ namespace
                 return true;
             // A view has no persistent row identity. Evaluate it once so that
             // both paging and repeated sorts share the same rows and tie order.
-            const std::string name = quoteIdentifier("tableskim_snapshot_" + std::to_string(db_->next_snapshot_id++));
+            const std::string name = quoteSqlIdentifier("tableskim_snapshot_" + std::to_string(db_->next_snapshot_id++));
             if (!query("CREATE TEMP TABLE " + name + " AS SELECT * FROM " + from_, stop))
                 return false;
             snapshot_table_ = name;
@@ -832,6 +815,10 @@ namespace
 
         std::unique_ptr<duckdb::MaterializedQueryResult> query(const std::string &sql, std::stop_token stop)
         {
+            // DuckDB clears an interrupt when a query starts: one requested
+            // before would be lost.
+            if (stop.stop_requested())
+                return nullptr;
             std::stop_callback interrupt(stop, [this]
                                          { db_->conn->Interrupt(); });
             auto result = db_->conn->Query(sql);
@@ -939,6 +926,10 @@ namespace
                                                 std::stop_token stop) override
         {
             if (column >= columns_.size())
+                return std::nullopt;
+            // A view (JSON) is evaluated once, not again for every column
+            // (--summary asks before reading any row).
+            if (!ensureSnapshot(stop))
                 return std::nullopt;
             // The same expression as read(), so that values convert alike.
             auto result = query("SELECT " + columns_[column].select + ", count(*) FROM " + from_ + where_ +
@@ -1178,18 +1169,6 @@ std::string escapeDuckDbGlob(const std::string &path)
     return result;
 }
 
-std::string duckDbStringLiteral(const std::string &text)
-{
-    std::string quoted = "'";
-    for (const char c : text)
-    {
-        quoted += c;
-        if (c == '\'')
-            quoted += '\'';
-    }
-    return quoted + "'";
-}
-
 std::unique_ptr<DataSource> openDuckDbRelations(std::vector<DuckDbRelation> relations)
 {
     auto db = std::make_shared<Database>();
@@ -1199,7 +1178,7 @@ std::unique_ptr<DataSource> openDuckDbRelations(std::vector<DuckDbRelation> rela
         db->query("SELECT * FROM " + relation.from_sql + " LIMIT 0");
         if (!relation.sql_name.empty())
         {
-            db->query("CREATE TEMP VIEW " + quoteIdentifier(relation.sql_name) + " AS SELECT * FROM " + relation.from_sql);
+            db->query("CREATE TEMP VIEW " + quoteSqlIdentifier(relation.sql_name) + " AS SELECT * FROM " + relation.from_sql);
             supports_sql = true;
         }
     }
@@ -1211,8 +1190,8 @@ std::unique_ptr<DataSource> openDuckDbDataSource(const std::filesystem::path &pa
     try
     {
         auto db = std::make_shared<Database>();
-        db->query("ATTACH " + duckDbStringLiteral(utf8Path(path)) + " AS " + kAttachedName + " (READ_ONLY)");
-        const std::string database = duckDbStringLiteral(kAttachedName);
+        db->query("ATTACH " + quoteSqlString(utf8String(path)) + " AS " + kAttachedName + " (READ_ONLY)");
+        const std::string database = quoteSqlString(kAttachedName);
         auto result = db->query(
             "SELECT schema_name, name, is_table FROM ("
             "SELECT schema_name, table_name AS name, TRUE AS is_table FROM duckdb_tables() "
@@ -1233,7 +1212,7 @@ std::unique_ptr<DataSource> openDuckDbDataSource(const std::filesystem::path &pa
             // and SQL reaches the other.
             relations.push_back({
                 .sheet_name = schema == "main" ? name : schema + "." + name,
-                .from_sql = std::string(kAttachedName) + "." + quoteIdentifier(schema) + "." + quoteIdentifier(name),
+                .from_sql = std::string(kAttachedName) + "." + quoteSqlIdentifier(schema) + "." + quoteSqlIdentifier(name),
                 .order_column = is_table ? "rowid" : "",
                 .cheap_count = is_table,
             });

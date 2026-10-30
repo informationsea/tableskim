@@ -80,6 +80,10 @@ std::string_view byteOrderMark(TextEncoding encoding);
 // CP932 has twice become the code Windows writes.
 std::optional<std::string> encodeText(std::string_view utf8, TextEncoding encoding);
 
+// Length of the valid UTF-8 sequence at text[i] (1 to 4), or 0 if it is
+// invalid: overlong, a surrogate, beyond U+10FFFF, or cut off.
+size_t utf8SequenceLength(std::string_view text, size_t i);
+
 // For consumers that refuse invalid UTF-8 (DuckDB): `text` with each byte
 // that starts no valid sequence replaced by U+FFFD, or nothing if `text` is
 // valid already.

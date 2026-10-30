@@ -103,7 +103,9 @@ public:
                 owner_->run();
                 return 1;
             }
-            if ((key == FL_Up || key == FL_Down) && Fl::event_state(FL_CTRL | FL_ALT))
+            // Cmd on macOS, as the manual says; Ctrl there is often taken
+            // by Mission Control, and Alt (Option) works everywhere.
+            if ((key == FL_Up || key == FL_Down) && Fl::event_state(FL_COMMAND | FL_CTRL | FL_ALT))
             {
                 owner_->recallHistory(key == FL_Up ? -1 : 1);
                 return 1;

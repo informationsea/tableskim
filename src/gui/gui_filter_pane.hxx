@@ -69,6 +69,7 @@ private:
     void removeRow(Fl_Widget *button);
     Filter editedFilter() const;
     void apply();
+    void clearNarrowing();
     void clear();
     void layout();
     void updateState();

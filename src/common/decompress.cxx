@@ -21,6 +21,8 @@
 #include <zlib.h>
 #include <zstd.h>
 
+#include "file_util.hxx"
+
 namespace
 {
     // Turns a compressed byte stream into plain bytes. A file may hold several
@@ -296,7 +298,7 @@ namespace
 #endif
             file_.open(path, std::ios::binary);
             if (!file_)
-                throw std::runtime_error("Cannot open file: " + path.string());
+                throw std::runtime_error("Cannot open file: " + utf8String(path));
 #ifdef _MSC_VER
             file_.rdbuf()->pubsetbuf(file_buffer_.data(), static_cast<std::streamsize>(file_buffer_.size()));
 #endif
@@ -351,9 +353,7 @@ Compression detectCompression(const std::filesystem::path &path)
 
 Compression compressionFromExtension(const std::filesystem::path &path)
 {
-    std::string ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
-                   { return static_cast<char>(std::tolower(c)); });
+    const std::string ext = lowerExtension(path);
     if (ext == ".gz" || ext == ".gzip" || ext == ".bgz")
         return Compression::Gzip;
     if (ext == ".bz2")

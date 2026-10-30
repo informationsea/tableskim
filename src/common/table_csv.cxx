@@ -26,18 +26,11 @@
 
 #include "compress.hxx"
 #include "decompress.hxx"
+#include "file_util.hxx"
 #include "text_encoding.hxx"
 
 namespace
 {
-    std::string lowerExtension(const std::filesystem::path &path)
-    {
-        std::string ext = path.extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
-        return ext;
-    }
-
     std::optional<char> delimiterFor(const std::filesystem::path &path, const OpenOptions &options)
     {
         if (options.delimiter)

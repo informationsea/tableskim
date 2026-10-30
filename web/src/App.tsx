@@ -202,6 +202,10 @@ export function App({ client }: { client: TableSkimClient }) {
     const selectSheet = useCallback(
         async (name: string) => {
             const epoch = ++flow.current.epoch;
+            // The search of the sheet left would keep running and marking
+            // its hits, which the search box no longer shows.
+            const left = flow.current.info;
+            if (flow.current.searchActive && left) client.call('cancelSearch', { sheet: left.sheet }).catch(() => {});
             resetSearch();
             try {
                 const next = await client.call('sheet', { name });
@@ -229,6 +233,8 @@ export function App({ client }: { client: TableSkimClient }) {
             const epoch = ++flow.current.epoch;
             flow.current.fileEpoch++;
             setFileEpoch(flow.current.fileEpoch);
+            // Opened again, the sheet shown stays if it is still there.
+            const shown = again ? flow.current.info?.name : undefined;
             flow.current.info = null;
             resetSearch();
             setFile(opened);
@@ -246,7 +252,7 @@ export function App({ client }: { client: TableSkimClient }) {
             setPhase({ kind: 'opening', name: opened.name });
             document.title = `${opened.name} – TableSkim`;
             try {
-                const next = await client.call('open', { ...options, file: opened });
+                const next = await client.call('open', { ...options, file: opened, keepGroupBy: again });
                 if (epoch !== flow.current.epoch) return;
                 if (again && flow.current.lastSql && next.supportsSql) {
                     // The result's view died with the book.
@@ -261,7 +267,7 @@ export function App({ client }: { client: TableSkimClient }) {
                 setOptionsBook(next);
                 if (next.sheets.length === 0) throw new Error('The file has no sheets.');
                 setPhase({ kind: 'open' });
-                await selectSheet(next.sheets[0]);
+                await selectSheet(shown && next.sheets.includes(shown) ? shown : next.sheets[0]);
             } catch (error) {
                 if (epoch !== flow.current.epoch) return;
                 setPhase({ kind: 'failed', name: opened.name });
@@ -613,6 +619,9 @@ export function App({ client }: { client: TableSkimClient }) {
     useEffect(() => {
         let depth = 0;
         const keyDown = (event: KeyboardEvent) => {
+            // A modal dialog has the keys: Ctrl+G would close it, cancelling
+            // the job it runs.
+            if (document.querySelector('dialog[open]')) return;
             const ctrl = event.ctrlKey || event.metaKey;
             if (ctrl && event.shiftKey && event.key.toLowerCase() === 'f') {
                 event.preventDefault();

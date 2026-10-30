@@ -7,6 +7,11 @@
 
 // Helpers for DataSource::executeSql() in the SQL backends.
 
+// "name" with its double quotes doubled, as SQLite and DuckDB read it.
+std::string quoteSqlIdentifier(std::string_view name);
+// 'text' with its single quotes doubled.
+std::string quoteSqlString(std::string_view text);
+
 // Base name of the sheet that shows a query's rows.
 inline constexpr const char *SQL_RESULT_SHEET = "SQL Result";
 

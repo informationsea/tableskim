@@ -73,6 +73,31 @@ namespace
     }
 } // namespace
 
+namespace
+{
+    std::string quoted(std::string_view text, char quote)
+    {
+        std::string result(1, quote);
+        for (const char c : text)
+        {
+            result += c;
+            if (c == quote)
+                result += quote;
+        }
+        return result + quote;
+    }
+} // namespace
+
+std::string quoteSqlIdentifier(std::string_view name)
+{
+    return quoted(name, '"');
+}
+
+std::string quoteSqlString(std::string_view text)
+{
+    return quoted(text, '\'');
+}
+
 std::string trimSqlStatement(std::string_view sql)
 {
     size_t first = 0;
@@ -213,18 +238,6 @@ namespace
     bool equalIgnoringCase(std::string_view a, std::string_view b)
     {
         return a.size() == b.size() && lowerAscii(a) == lowerAscii(b);
-    }
-
-    std::string quoteName(std::string_view name)
-    {
-        std::string quoted = "\"";
-        for (const char c : name)
-        {
-            quoted += c;
-            if (c == '"')
-                quoted += '"';
-        }
-        return quoted + "\"";
     }
 
     // Where the cursor is: in code, or inside a string, a comment or a
@@ -489,7 +502,7 @@ std::string sqlIdentifier(std::string_view name)
                  std::all_of(name.begin(), name.end(), [](char c)
                              { return isIdentifierChar(c); }) &&
                  !keywords().contains(lowerAscii(name));
-    return plain ? std::string(name) : quoteName(name);
+    return plain ? std::string(name) : quoteSqlIdentifier(name);
 }
 
 SqlCompletion completeSql(std::string_view sql, size_t cursor, const std::vector<SqlTable> &schema)
@@ -567,7 +580,7 @@ SqlCompletion completeSql(std::string_view sql, size_t cursor, const std::vector
             result.candidates.push_back(candidate);
     };
     auto render = [&](std::string_view name)
-    { return quoted ? quoteName(name) : sqlIdentifier(name); };
+    { return quoted ? quoteSqlIdentifier(name) : sqlIdentifier(name); };
     auto offerColumns = [&](const SqlTable &table)
     {
         for (const auto &column : table.columns)
@@ -623,7 +636,7 @@ SqlCompletion completeSql(std::string_view sql, size_t cursor, const std::vector
         for (const auto &table : schema)
         {
             if (startsWithIgnoringCase(table.name, prefix))
-                offer(quoted ? quoteName(table.name) : tableIdentifier(table.name));
+                offer(quoted ? quoteSqlIdentifier(table.name) : tableIdentifier(table.name));
         }
     };
     auto offerKeywords = [&]

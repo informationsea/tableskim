@@ -698,6 +698,23 @@ describe('the web app', () => {
         await page.context().close();
     });
 
+    test('cancels the search of a sheet left', async () => {
+        const page = await newPage();
+        await open(page, demo('demo.sqlite3'));
+        await page.fill('#search-text', '1');
+        await page.press('#search-text', 'Enter');
+        await page.locator('.cell.hit').first().waitFor();
+        const tabs = page.locator('#tabs button');
+        await tabs.nth(1).click();
+        await page.waitForSelector('#tabs button:nth-child(2)[aria-selected=true]');
+        await tabs.nth(0).click();
+        await page.waitForSelector('#tabs button:nth-child(1)[aria-selected=true]');
+        // The rows come with their hits: none, as the search was cancelled.
+        await cell(page, 0, 0).and(page.locator(':not(.k-l)')).waitFor();
+        assert.equal(await page.locator('.cell.hit').count(), 0);
+        await page.context().close();
+    });
+
     test('switches between the sheets of a database', async () => {
         const page = await newPage();
         await open(page, demo('demo.sqlite3'));
@@ -849,6 +866,14 @@ describe('the web app', () => {
 
         await page.selectOption('#histogram-column', '3');
         await waitForText(page.locator('#histogram-summary'), '9 numbers');
+        // Typed key by key, "15" passes through "1", which is no count of bins.
+        await page.locator('#histogram-bins').selectText();
+        await page.locator('#histogram-bins').pressSequentially('15');
+        assert.equal(await page.locator('#histogram-bins').inputValue(), '15');
+        // Shortcuts of the page wait while the dialog is open.
+        await page.keyboard.press('Control+g');
+        assert.equal(await page.locator('#go-to-dialog').count(), 0);
+        await page.locator('#histogram-dialog').waitFor();
         await page.locator('#histogram-table').waitFor({ state: 'detached' });
         await page.locator('#histogram-dialog button', { hasText: 'Table' }).click();
         const rows = page.locator('#histogram-table tbody tr');
@@ -1025,6 +1050,13 @@ describe('the web app', () => {
         );
         await waitForText(page.locator('#status-rows'), '12 rows');
         await waitForText(page.locator('.header .name'), 'Age mean');
+
+        // Opened again with another option, the file shows the result again.
+        await page.selectOption('#header-mode', 'no');
+        await page.waitForFunction(
+            () => document.querySelector('#tabs [aria-selected=true]')?.textContent === 'Group By',
+        );
+        await waitForText(page.locator('#status-rows'), '12 rows');
         await page.context().close();
     });
 

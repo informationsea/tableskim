@@ -1,5 +1,6 @@
 #include "xlsx_writer.hxx"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -7,6 +8,8 @@
 #include <vector>
 
 #include <zlib.h>
+
+#include "text_encoding.hxx"
 
 namespace
 {
@@ -75,42 +78,12 @@ namespace
         R"(<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>)"
         R"(</styleSheet>)";
 
-    bool isHex(char c)
-    {
-        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-    }
-
-    // Length of the valid UTF-8 sequence at `text[i]`, or 0.
+    // Length of the valid UTF-8 sequence at `text[i]`, or 0; U+FFFE and
+    // U+FFFF (EF BF BE / BF), which XML does not allow, are invalid too.
     size_t utf8Length(std::string_view text, size_t i)
     {
-        const auto byte = [&](size_t k)
-        { return static_cast<unsigned char>(text[k]); };
-        const unsigned char c = byte(i);
-        size_t length = 0;
-        uint32_t code = 0;
-        if (c < 0x80)
-            return 1;
-        if (c >= 0xC2 && c <= 0xDF)
-            length = 2, code = c & 0x1F;
-        else if (c >= 0xE0 && c <= 0xEF)
-            length = 3, code = c & 0x0F;
-        else if (c >= 0xF0 && c <= 0xF4)
-            length = 4, code = c & 0x07;
-        else
-            return 0;
-        if (i + length > text.size())
-            return 0;
-        for (size_t k = 1; k < length; ++k)
-        {
-            if ((byte(i + k) & 0xC0) != 0x80)
-                return 0;
-            code = (code << 6) | (byte(i + k) & 0x3F);
-        }
-        // Overlong forms, surrogates, beyond U+10FFFF, and U+FFFE/U+FFFF,
-        // which XML does not allow.
-        static const uint32_t minimum[] = {0, 0, 0x80, 0x800, 0x10000};
-        if (code < minimum[length] || (code >= 0xD800 && code <= 0xDFFF) || code > 0x10FFFF || code == 0xFFFE ||
-            code == 0xFFFF)
+        const size_t length = utf8SequenceLength(text, i);
+        if (length == 3 && text.compare(i, 2, "\xEF\xBF") == 0 && (static_cast<unsigned char>(text[i + 2]) & 0xFE) == 0xBE)
             return 0;
         return length;
     }
@@ -147,20 +120,14 @@ namespace
                 out += "&gt;";
                 break;
             case '_':
-                if (i + 6 < text.size() && text[i + 1] == 'x' && isHex(text[i + 2]) && isHex(text[i + 3]) &&
-                    isHex(text[i + 4]) && isHex(text[i + 5]) && text[i + 6] == '_')
-                    out += "_x005F_";
+                if (isXlsxEscapePattern(text, i))
+                    appendXlsxEscape(out, '_');
                 else
                     out += c;
                 break;
             default:
-                // A raw CR would be read back as LF (XML line-end handling).
-                if (static_cast<unsigned char>(c) < 0x20 && c != '\t' && c != '\n')
-                {
-                    char buf[8];
-                    std::snprintf(buf, sizeof(buf), "_x%04X_", static_cast<unsigned>(c));
-                    out += buf;
-                }
+                if (needsXlsxEscape(static_cast<unsigned char>(c)))
+                    appendXlsxEscape(out, static_cast<unsigned char>(c));
                 else
                     out.append(text.substr(i, length));
             }
@@ -540,6 +507,21 @@ void XlsxWriter::finish()
     zip_->end();
     zip_->close();
     finished_ = true;
+}
+
+bool isXlsxEscapePattern(std::string_view text, size_t pos)
+{
+    const auto hex = [&](size_t k)
+    { return std::isxdigit(static_cast<unsigned char>(text[k])) != 0; };
+    return pos + 6 < text.size() && text[pos] == '_' && text[pos + 1] == 'x' && hex(pos + 2) && hex(pos + 3) &&
+           hex(pos + 4) && hex(pos + 5) && text[pos + 6] == '_';
+}
+
+void appendXlsxEscape(std::string &out, unsigned char c)
+{
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "_x%04X_", static_cast<unsigned>(c));
+    out += buf;
 }
 
 std::string xlsxSheetName(const std::string &name)

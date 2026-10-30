@@ -575,6 +575,10 @@ void TuiApp::revertIfChanged()
                 readFileStamp(utf8Path(path_), file_mtime_, file_size_);
             else if (result == AppendResult::Changed)
             {
+                // An edit, save or export may have started since the
+                // request; a reopen would lose it. The next poll asks again.
+                if (converting_ || saving_ || edit_prompt_ || editing() || book_->modified())
+                    return;
                 std::filesystem::file_time_type mtime;
                 std::uintmax_t size;
                 // Being replaced: tried again on the next poll.
@@ -733,7 +737,10 @@ void TuiApp::setTextEncoding(TextEncoding encoding)
 void TuiApp::convertTo(ExportFormat format)
 {
     if (converting_)
+    {
+        setStatus("Another export or conversion is running (Esc: cancel it)", true);
         return;
+    }
     if (!book_ || !book_->isTextFormat())
     {
         setStatus(std::string("Only CSV / TSV files can be converted to ") + exportFormatName(format), true);

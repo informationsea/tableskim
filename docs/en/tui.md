@@ -217,8 +217,8 @@ Filter pane.
 | `Tab`         | Move between the fields of a condition: column, operator, value |
 | `←` / `→`     | Change the column or the operator; on the Match line, switch between all (AND) and any (OR) |
 | typing        | Edit the value                                                |
-| `Ctrl+N`      | Add a condition                                               |
-| `Ctrl+D`      | Delete the condition                                          |
+| `Ctrl+N`, `Insert` | Add a condition                                          |
+| `Ctrl+D`, `Delete` | Delete the condition                                     |
 | `Ctrl+U`      | Clear the value                                               |
 | `Ctrl+X`      | Clear additional chart narrowing                              |
 | `Enter`       | Apply the filter (on "Add condition": add a condition)        |

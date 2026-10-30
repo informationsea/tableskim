@@ -9,6 +9,8 @@
 #include <system_error>
 
 #include "decompress.hxx"
+#include "file_util.hxx"
+#include "sql_text.hxx"
 #include "table_duckdb.hxx"
 
 namespace
@@ -17,17 +19,9 @@ namespace
     // of another type after the sample would make reading fail later on.
     constexpr std::uintmax_t FULL_SAMPLE_BYTES = 128 * 1024 * 1024;
 
-    std::string utf8(const std::filesystem::path &path)
-    {
-        const std::u8string u8 = path.u8string();
-        return std::string(u8.begin(), u8.end());
-    }
-
     bool hasJsonExtension(const std::filesystem::path &path)
     {
-        std::string ext = utf8(stripCompressionExtension(path).extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        const std::string ext = lowerExtension(stripCompressionExtension(path));
         return ext == ".json" || ext == ".jsonl" || ext == ".ndjson";
     }
 
@@ -85,15 +79,15 @@ std::unique_ptr<DataSource> openJsonDataSource(const std::filesystem::path &path
     try
     {
         return openDuckDbRelations({{
-            .sheet_name = utf8(path.filename()),
-            .from_sql = "read_json(" + duckDbStringLiteral(escapeDuckDbGlob(utf8(path))) +
+            .sheet_name = utf8String(path.filename()),
+            .from_sql = "read_json(" + quoteSqlString(escapeDuckDbGlob(utf8String(path))) +
                         ", compression = '" + compression + "', hive_partitioning = false" + format +
                         (full_sample ? ", sample_size = -1" : "") + ")",
             // No row number to page by: snapshotted in file order.
             .order_column = "",
             .cheap_count = false,
             // SELECT * FROM data for data.json
-            .sql_name = utf8(stripCompressionExtension(path.filename()).stem()),
+            .sql_name = utf8String(stripCompressionExtension(path.filename()).stem()),
         }});
     }
     catch (const std::exception &e)

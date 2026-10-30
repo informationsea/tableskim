@@ -3,32 +3,25 @@
 #include <stdexcept>
 #include <string>
 
+#include "file_util.hxx"
+#include "sql_text.hxx"
 #include "table_duckdb.hxx"
-
-namespace
-{
-    std::string utf8(const std::filesystem::path &path)
-    {
-        const std::u8string u8 = path.u8string();
-        return std::string(u8.begin(), u8.end());
-    }
-} // namespace
 
 std::unique_ptr<DataSource> openParquetDataSource(const std::filesystem::path &path, const OpenOptions &)
 {
     try
     {
         return openDuckDbRelations({{
-            .sheet_name = utf8(path.filename()),
+            .sheet_name = utf8String(path.filename()),
             // Without hive_partitioning = false, "key=value" directories in
             // the path would be added as columns.
-            .from_sql = "read_parquet(" + duckDbStringLiteral(escapeDuckDbGlob(utf8(path))) +
+            .from_sql = "read_parquet(" + quoteSqlString(escapeDuckDbGlob(utf8String(path))) +
                         ", hive_partitioning = false)",
             // read_parquet() exposes the row position as a virtual column.
             .order_column = "file_row_number",
             .cheap_count = true, // stored in the footer
             // SELECT * FROM data for data.parquet
-            .sql_name = utf8(path.stem()),
+            .sql_name = utf8String(path.stem()),
         }});
     }
     catch (const std::exception &e)

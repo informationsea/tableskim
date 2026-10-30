@@ -275,7 +275,8 @@ type SheetParams = { sheet: number };
 
 /** Each method's parameters and result. */
 export interface Methods {
-    open: { params: OpenOptions & { file: File }; result: BookInfo };
+    // keepGroupBy: the same file again, showing the last Group By's result again
+    open: { params: OpenOptions & { file: File; keepGroupBy?: boolean }; result: BookInfo };
     close: { params: Empty; result: Empty };
     sheet: { params: { name: string }; result: SheetInfo };
     info: { params: SheetParams; result: SheetInfo };

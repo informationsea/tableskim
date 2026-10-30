@@ -522,6 +522,11 @@ std::optional<std::string> encodeText(std::string_view utf8, TextEncoding encodi
     return out;
 }
 
+size_t utf8SequenceLength(std::string_view text, size_t i)
+{
+    return utf8SequenceLength(reinterpret_cast<const unsigned char *>(text.data()), text.size(), i, false);
+}
+
 std::optional<std::string> repairUtf8(std::string_view text)
 {
     const auto *data = reinterpret_cast<const unsigned char *>(text.data());

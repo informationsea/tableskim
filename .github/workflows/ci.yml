@@ -2,9 +2,9 @@ name: CI
 
 # Builds and tests pushes to main and all pull requests on each platform, and on
 # Rocky Linux 10 and 8 (in containers) like the release workflow, and the
-# WebAssembly core with the web app. The build without the GUI
-# (-DTABLESKIM_BUILD_GUI=OFF) is only built for releases. The Linux ZIPs come
-# from Rocky Linux 8 only, as in the release workflow.
+# WebAssembly core with the web app, and the build without the GUI
+# (-DTABLESKIM_BUILD_GUI=OFF) on Ubuntu, which releases include. The Linux
+# ZIPs come from Rocky Linux 8 only, as in the release workflow.
 on:
   push:
     branches:
@@ -120,6 +120,56 @@ jobs:
           name: tableskim-zip-${{ matrix.os }}
           path: build/${{ env.PRESET }}/*.zip
           if-no-files-found: error
+
+  # The build without the GUI, so that GUI code that leaks into src/main.cxx,
+  # src/tui/ or src/common/ fails here, not only when a release is tagged.
+  # Its ccache is its own (ccache-no-gui-*): the GUI build defines
+  # TABLESKIM_HAS_GUI, so few objects would be shared. The dependency
+  # sources are the Ubuntu build's.
+  no-gui:
+    name: ubuntu-24.04 (no GUI)
+    runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 1G
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache libfontconfig1-dev python3-pyte
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-no-gui-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-no-gui-
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
+      - name: Find the CMake version
+        id: cmake
+        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency sources
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/release/_deps/*-src
+            build/release/_deps/*-subbuild
+          key: deps-ubuntu-24.04-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
+      - name: Configure
+        run: cmake --preset release -DTABLESKIM_BUILD_GUI=OFF -DTABLESKIM_TUI_TESTS=ON
+      - name: Build
+        run: cmake --build --preset release
+      - name: Show ccache statistics
+        run: ccache --show-stats
+      - name: Save ccache
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-no-gui-${{ github.sha }}-${{ github.run_id }}
+      - name: Test
+        run: ctest --preset release
 
   # The distributions the release workflow builds its RPM (Rocky Linux 10)
   # and its Linux ZIPs (Rocky Linux 8: glibc 2.28, gcc-toolset; with Wayland

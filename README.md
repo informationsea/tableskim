@@ -116,6 +116,7 @@ line (it exits with an error otherwise).
 | `-t`, `--tui`     | Use the terminal UI even if a graphical display is available |
 | `--log <file>`    | Write log messages to a file                              |
 | `--encoding <name>` | Encoding of CSV / TSV files: `auto` (default), `utf-8`, `utf-16le`, `utf-16be` or `cp932` (`shift_jis`) |
+| `--header <when>` | Whether the first row of CSV / TSV files and Excel sheets holds the column names: `auto` (default), `yes` or `no` |
 | `-v`, `--verbose` | Enable verbose (debug) logging                            |
 | `-V`, `--version` | Show version information and exit                         |
 
