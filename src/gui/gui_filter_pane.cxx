@@ -96,10 +96,7 @@ GuiFilterPane::GuiFilterPane(int x, int y, int w, int h, const char *label)
     narrowing_button_->tooltip("Chart selections are ANDed with the conditions above. Click to remove the additional narrowing.");
     narrowing_button_->callback([](Fl_Widget *, void *data)
     {
-        auto *pane = static_cast<GuiFilterPane *>(data);
-        pane->narrowing_.clear();
-        pane->layout();
-        pane->apply();
+        static_cast<GuiFilterPane *>(data)->clearNarrowing();
     }, this);
 
     scroll_ = new Fl_Scroll(x, y, w, h);
@@ -406,6 +403,27 @@ void GuiFilterPane::apply()
         else
             spec.filter = std::move(filter);
         model_->setView(std::move(spec));
+    }
+    updateState();
+}
+
+void GuiFilterPane::clearNarrowing()
+{
+    narrowing_.clear();
+    layout();
+    // Only the narrowing goes: conditions being edited wait for Apply, and
+    // one Apply would refuse must not keep the narrowing in the model.
+    if (model_ && model_->viewCapabilities().filter)
+    {
+        ViewSpec spec = model_->requestedView();
+        if (spec.filter && !spec.filter->narrowing.empty())
+        {
+            spec.filter->narrowing.clear();
+            if (spec.filter->empty())
+                spec.filter.reset();
+            synced_ = spec.filter.value_or(Filter{});
+            model_->setView(std::move(spec));
+        }
     }
     updateState();
 }
