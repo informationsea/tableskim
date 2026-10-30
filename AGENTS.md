@@ -71,10 +71,10 @@ ctest --preset debug -j 8            # test cases in parallel
   disables it). CI and the release workflow keep its cache (`.ccache`) with
   `actions/cache`; the release builds read the cache CI saved for the same
   runner or Rocky Linux container (`ccache-<runner>-*`, `ccache-rocky10-*`,
-  `ccache-rocky8-*`, the last shared by both Rocky Linux 8 GUI builds); CI's
-  build without the GUI on Ubuntu keeps its own (`ccache-no-gui-*`). Only
-  CI's runs on main save the caches; pull requests and the release workflow
-  just read them. CI also keeps
+  `ccache-rocky8-*`, the last saved by both Rocky Linux 8 GUI builds and
+  read by the build without the GUI too, which CI also builds on Rocky
+  Linux 8 but saves nothing for). Only CI's runs on main save the caches;
+  pull requests and the release workflow just read them. CI also keeps
   the FetchContent sources (`build/<preset>/_deps/*-src` and `*-subbuild`)
   under a key of the CMake version and the hash of `cmake/Dependencies.cmake`
   and `cmake/patches/`, restored on an exact match only. Configure again

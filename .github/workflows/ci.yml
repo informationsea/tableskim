@@ -2,9 +2,9 @@ name: CI
 
 # Builds and tests pushes to main and all pull requests on each platform, and on
 # Rocky Linux 10 and 8 (in containers) like the release workflow, and the
-# WebAssembly core with the web app, and the build without the GUI
-# (-DTABLESKIM_BUILD_GUI=OFF) on Ubuntu, which releases include. The Linux
-# ZIPs come from Rocky Linux 8 only, as in the release workflow.
+# WebAssembly core with the web app. The Linux ZIPs, including the build
+# without the GUI (-DTABLESKIM_BUILD_GUI=OFF), come from Rocky Linux 8
+# only, as in the release workflow.
 on:
   push:
     branches:
@@ -121,61 +121,12 @@ jobs:
           path: build/${{ env.PRESET }}/*.zip
           if-no-files-found: error
 
-  # The build without the GUI, so that GUI code that leaks into src/main.cxx,
-  # src/tui/ or src/common/ fails here, not only when a release is tagged.
-  # Its ccache is its own (ccache-no-gui-*): the GUI build defines
-  # TABLESKIM_HAS_GUI, so few objects would be shared. The dependency
-  # sources are the Ubuntu build's.
-  no-gui:
-    name: ubuntu-24.04 (no GUI)
-    runs-on: ubuntu-24.04
-    env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 1G
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build ccache libfontconfig1-dev python3-pyte
-      - name: Restore ccache
-        uses: actions/cache/restore@v4
-        with:
-          path: .ccache
-          key: ccache-no-gui-${{ github.sha }}-${{ github.run_id }}
-          restore-keys: ccache-no-gui-
-      - name: Reset ccache statistics
-        run: ccache --zero-stats
-      - name: Find the CMake version
-        id: cmake
-        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
-      - name: Restore dependency sources
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            build/release/_deps/*-src
-            build/release/_deps/*-subbuild
-          key: deps-ubuntu-24.04-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
-      - name: Configure
-        run: cmake --preset release -DTABLESKIM_BUILD_GUI=OFF -DTABLESKIM_TUI_TESTS=ON
-      - name: Build
-        run: cmake --build --preset release
-      - name: Show ccache statistics
-        run: ccache --show-stats
-      - name: Save ccache
-        if: github.event_name != 'pull_request'
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: ccache-no-gui-${{ github.sha }}-${{ github.run_id }}
-      - name: Test
-        run: ctest --preset release
-
   # The distributions the release workflow builds its RPM (Rocky Linux 10)
-  # and its Linux ZIPs (Rocky Linux 8: glibc 2.28, gcc-toolset; with Wayland
-  # and for X11 only) on. Their ccache is what those release jobs start
-  # from. The terminal UI's and the GUI's tests are left to Ubuntu (AUTO:
-  # neither pyte nor xvfb-run is installed here).
+  # and its Linux ZIPs (Rocky Linux 8: glibc 2.28, gcc-toolset; with Wayland,
+  # for X11 only, and without the GUI) on. Their ccache is what those
+  # release jobs start from. The GUI's tests are left to Ubuntu (AUTO:
+  # xvfb-run is not installed here); the terminal UI's run in the build
+  # without the GUI, whose main() always runs the TUI.
   rocky:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -193,6 +144,7 @@ jobs:
             x11_only: "OFF"
             cache: rocky10
             restore: rocky10
+            save_cache: true
             save_deps: true
             zip: false
           - name: rockylinux-8
@@ -204,6 +156,7 @@ jobs:
             x11_only: "OFF"
             cache: rocky8-wayland
             restore: rocky8
+            save_cache: true
             save_deps: true
             zip: true
           - name: rockylinux-8-x11
@@ -213,12 +166,30 @@ jobs:
             x11_only: "ON"
             cache: rocky8-x11
             restore: rocky8
+            save_cache: true
             # Same sources as rockylinux-8, which saves them.
             save_deps: false
             zip: true
-    # The two Rocky Linux 8 builds differ in FLTK alone (same compiler and
-    # flags), so each starts from whichever of their caches is newer
-    # (restore: the shared key prefix).
+          # The build without the GUI, so that GUI code that leaks into
+          # src/main.cxx, src/tui/ or src/common/ fails here, not only when
+          # a release is tagged. It starts from the GUI builds' ccache (the
+          # dependencies' objects are the same) and saves none of its own.
+          - name: rockylinux-8-no-gui
+            version: "8"
+            repo: powertools
+            packages: gcc-toolset-14 python3.11 python3.11-pip
+            gui: "OFF"
+            x11_only: "OFF"
+            tui_tests: true
+            cache: rocky8-tui
+            restore: rocky8
+            save_cache: false
+            save_deps: false
+            zip: true
+    # The two Rocky Linux 8 GUI builds differ in FLTK alone (same compiler
+    # and flags), so each starts from whichever of their caches is newer
+    # (restore: the shared key prefix), and so does the build without the
+    # GUI.
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
     # the path on the host, not the one mounted in the container.
     env:
@@ -261,7 +232,12 @@ jobs:
           if [ -f /opt/rh/gcc-toolset-14/enable ]; then
             source /opt/rh/gcc-toolset-14/enable
           fi
-          cmake --preset release -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
+          if [ "${{ matrix.tui_tests }}" = true ]; then
+            python3.11 -m pip install -r tests/tui/requirements.txt
+            tui_tests="-DPython3_EXECUTABLE=/usr/bin/python3.11 -DTABLESKIM_TUI_TESTS=ON"
+          fi
+          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui || 'ON' }} \
+            -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }} $tui_tests
       - name: Save dependency sources
         if: github.event_name != 'pull_request' && matrix.save_deps && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -281,7 +257,7 @@ jobs:
           ccache --show-stats
           ctest --preset release
       - name: Save ccache
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && matrix.save_cache
         uses: actions/cache/save@v4
         with:
           path: .ccache
