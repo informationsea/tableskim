@@ -949,10 +949,12 @@ TEST_CASE("in-memory sort orders as compareCells() does")
         std::numeric_limits<int64_t>::max(), 2.0, 2.5, -0.0, std::numeric_limits<double>::quiet_NaN(),
         std::numeric_limits<double>::infinity(), true, false, Date{0}, Date{1}, Date{-1}, DateTime{0},
         DateTime{1}, DateTime{-1}, DateTime{86400LL * 1000000}, Date{2}, std::string("1970-01-01"),
+        DateTime{std::numeric_limits<int64_t>::min()}, DateTime{std::numeric_limits<int64_t>::min() + 1},
+        DateTime{std::numeric_limits<int64_t>::max()}, -106751991.0, -106751992.0, 106751992.0,
     };
     std::vector<TableRow> values;
     for (size_t i = 0; i < kinds.size() * 3; ++i)
-        values.push_back({kinds[(i * 7) % kinds.size()], kinds[(i * 5 + 3) % kinds.size()], int64_t(i)});
+        values.push_back({kinds[i % kinds.size()], kinds[(i * 5 + 3) % kinds.size()], int64_t(i)});
     auto data = std::make_unique<FakeData>();
     data->values = std::make_shared<const std::vector<TableRow>>(values);
     TableBook book(std::move(data));

@@ -122,7 +122,9 @@ async function regressionPage() {
                         return;
                     }
                     this.sheet++;
+                    this.firstSheet = this.sheet;
                     this.columns = params.file.name === 'second.csv' ? 2 : 600;
+                    this.wideColumns = this.columns;
                     this.name = 'wide';
                     return this.reply(request, {
                         sheets: ['wide', 'narrow'],
@@ -134,13 +136,33 @@ async function regressionPage() {
                 }
                 if (method === 'sheet') {
                     this.name = params.name;
-                    if (params.name === 'narrow') {
-                        this.columns = 2;
-                        this.sheet++;
-                    }
+                    this.columns = params.name === 'narrow' ? 2 : this.wideColumns;
+                    this.sheet = this.firstSheet + (params.name === 'narrow' ? 1 : 0);
                     return this.reply(request, this.info());
                 }
                 if (method === 'info') return this.reply(request, this.info());
+                if (method === 'search') {
+                    this.searchActive = true;
+                    if (this.holdSearch) {
+                        this.pendingSearch = request;
+                        return;
+                    }
+                    return this.reply(request, {});
+                }
+                if (method === 'cancelSearch') {
+                    this.searchActive = false;
+                    return this.reply(request, {});
+                }
+                if (method === 'findHit') {
+                    const result = { index: null, pending: false };
+                    if (this.holdFindHit) {
+                        this.pendingFindHit = request;
+                        return;
+                    }
+                    return this.reply(request, result);
+                }
+                if (method === 'searchState')
+                    return this.reply(request, { done: true, hits: this.searchActive ? 1 : 0, error: '' });
                 if (method === 'cellFilter')
                     return this.reply(request, {
                         conditions: [{ column: params.column, op: 'equals', value: `value-${params.column}` }],
@@ -293,6 +315,91 @@ async function regressionPage() {
 }
 
 describe('frontend regressions', () => {
+    for (const change of ['query', 'option', 'sheet', 'file']) {
+        test(`cancels a pending search when changing the ${change}`, async () => {
+            const page = await regressionPage();
+            await page.evaluate(() => {
+                window.regressionWorker.holdSearch = true;
+            });
+            await page.fill('#search-text', 'old');
+            await page.press('#search-text', 'Enter');
+            await page.waitForFunction(() => !!window.regressionWorker.pendingSearch);
+            if (change === 'query') await page.fill('#search-text', 'new');
+            else if (change === 'option') await page.locator('#search-case').check();
+            else if (change === 'sheet') await page.getByRole('tab', { name: 'narrow', exact: true }).click();
+            else
+                await page.setInputFiles('#file-input', {
+                    name: 'second.csv',
+                    mimeType: 'text/csv',
+                    buffer: Buffer.from('test'),
+                });
+            await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'cancelSearch'));
+            await page.evaluate(() => {
+                const worker = window.regressionWorker;
+                worker.reply(worker.pendingSearch, {});
+                worker.holdSearch = false;
+            });
+            // A new query also proves the late reply has not reactivated the
+            // old search: Enter must start one, rather than move to its hit.
+            await page.press('#search-text', 'Enter');
+            await page.waitForFunction(
+                () => window.regressionWorker.requests.filter((r) => r.method === 'search').length === 2,
+            );
+            const requests = await page.evaluate(() => window.regressionWorker.requests);
+            const firstFind = requests.findIndex((r) => r.method === 'findHit');
+            const secondSearch = requests.findIndex(
+                (r, i) => r.method === 'search' && i > requests.findIndex((r) => r.method === 'search'),
+            );
+            assert.ok(firstFind > secondSearch, 'the old search reply must not request a hit');
+            assert.equal(requests.find((r) => r.method === 'cancelSearch').params.sheet, 2);
+            await page.context().close();
+        });
+    }
+
+    test('ignores a pending hit after the query changes', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            window.regressionWorker.holdFindHit = true;
+        });
+        await page.fill('#search-text', 'old');
+        await page.press('#search-text', 'Enter');
+        await page.waitForFunction(() => !!window.regressionWorker.pendingFindHit);
+        await page.fill('#search-text', 'new');
+        await page.evaluate(async () => {
+            const worker = window.regressionWorker;
+            worker.reply(worker.pendingFindHit, { index: 0, row: 0, column: 1, pending: false });
+            // Pass through the worker after the delayed reply was delivered.
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        });
+        assert.equal(await page.locator('.cell.cursor').getAttribute('data-column'), '0');
+        assert.equal(await page.locator('#search-status').textContent(), '');
+        await page.context().close();
+    });
+
+    test('restores hidden and frozen columns per sheet and resets them for a new file', async () => {
+        const page = await regressionPage();
+        await page.locator('.header[data-column="2"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Hide Column', { exact: true }).click();
+        await page.locator('.header[data-column="1"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Freeze Up to This Column').click();
+        await page.getByRole('tab', { name: 'narrow', exact: true }).click();
+        await page.waitForSelector('#tabs button[aria-selected=true]:nth-child(2)');
+        assert.equal(await page.locator('.header.frozen').count(), 0);
+        await page.getByRole('tab', { name: 'wide', exact: true }).click();
+        await page.waitForSelector('.header.frozen[data-column="1"]');
+        assert.equal(await page.locator('.header[data-column="2"]').count(), 0);
+        await waitForText(page.locator('#status-rows'), '1 column hidden');
+        await page.setInputFiles('#file-input', {
+            name: 'second.csv',
+            mimeType: 'text/csv',
+            buffer: Buffer.from('test'),
+        });
+        await page.waitForFunction(() => document.querySelectorAll('.header').length === 2);
+        assert.equal(await page.locator('.header.frozen').count(), 0);
+        assert.ok(!(await page.locator('#status-rows').textContent()).includes('hidden'));
+        await page.context().close();
+    });
+
     test('consumes column filter requests when opening or remounting the pane', async () => {
         const page = await regressionPage();
         const add = async (column) => {
