@@ -126,6 +126,7 @@ export function App({ client }: { client: TableSkimClient }) {
     const [searchStatus, setSearchStatus] = useState('');
     const [dragging, setDragging] = useState(false);
     const [layout, setLayout] = useState<Layout>(NO_LAYOUT);
+    const layouts = useRef(new Map<number, Layout>());
     const [cursorColumn, setCursorColumn] = useState(0);
     const [sidebar, setSidebar] = useState<SidebarTab | null>(null); // the tab shown, or closed
     const [sidebarWidth, setSidebarWidth] = useState(() =>
@@ -146,6 +147,8 @@ export function App({ client }: { client: TableSkimClient }) {
         infoLoading: false,
         infoDirty: false,
         searchActive: false,
+        searchGeneration: 0,
+        searchSheet: null as number | null, // includes a search whose start reply is pending
         pendingFind: null as { forward: boolean } | null,
         fileEpoch: 0, // SQL results belong to the file on which they were started
         lastSql: '', // run again after the file is opened again
@@ -193,26 +196,36 @@ export function App({ client }: { client: TableSkimClient }) {
         }
     }, [client, showInfo]);
 
+    const changeLayout = (next: Layout) => {
+        const current = flow.current.info;
+        if (current) layouts.current.set(current.sheet, next);
+        setLayout(next);
+    };
+
     const resetSearch = useCallback(() => {
+        flow.current.searchGeneration++;
+        const sheet = flow.current.searchSheet;
+        if (sheet !== null)
+            client
+                .call('cancelSearch', { sheet })
+                .then(() => setDataVersion((version) => version + 1))
+                .catch(() => {});
+        flow.current.searchSheet = null;
         flow.current.searchActive = false;
         flow.current.pendingFind = null;
         setSearchStatus('');
-    }, []);
+    }, [client]);
 
     const selectSheet = useCallback(
         async (name: string) => {
             const epoch = ++flow.current.epoch;
-            // The search of the sheet left would keep running and marking
-            // its hits, which the search box no longer shows.
-            const left = flow.current.info;
-            if (flow.current.searchActive && left) client.call('cancelSearch', { sheet: left.sheet }).catch(() => {});
             resetSearch();
             try {
                 const next = await client.call('sheet', { name });
                 if (epoch !== flow.current.epoch) return;
                 showInfo(next);
                 setSheetKey((key) => key + 1);
-                setLayout(NO_LAYOUT);
+                setLayout(layouts.current.get(next.sheet) ?? NO_LAYOUT);
                 setCursorColumn(0);
                 setContentCell({ row: 0, column: 0 });
                 setDialog(null);
@@ -236,6 +249,7 @@ export function App({ client }: { client: TableSkimClient }) {
             // Opened again, the sheet shown stays if it is still there.
             const shown = again ? flow.current.info?.name : undefined;
             flow.current.info = null;
+            layouts.current.clear();
             resetSearch();
             setFile(opened);
             setBook(null);
@@ -281,7 +295,9 @@ export function App({ client }: { client: TableSkimClient }) {
     const updateSearchStatus = useCallback(async () => {
         const current = flow.current.info;
         if (!current || !flow.current.searchActive) return null;
+        const generation = flow.current.searchGeneration;
         const state = await client.call('searchState', { sheet: current.sheet });
+        if (generation !== flow.current.searchGeneration) return null;
         if (state.error) setSearchStatus(state.error);
         else if (!state.done) setSearchStatus(`${state.hits.toLocaleString()} hits so far…`);
         else if (state.hits === 0) setSearchStatus('No hits');
@@ -296,6 +312,7 @@ export function App({ client }: { client: TableSkimClient }) {
             const current = flow.current.info;
             const cursor = grid.current?.cursor();
             if (!current || !cursor || !flow.current.searchActive) return;
+            const generation = flow.current.searchGeneration;
             const hit = await client.call('findHit', {
                 sheet: current.sheet,
                 row: cursor.row,
@@ -303,6 +320,7 @@ export function App({ client }: { client: TableSkimClient }) {
                 forward,
                 includeFrom,
             });
+            if (generation !== flow.current.searchGeneration) return;
             if (hit.index !== null) {
                 flow.current.pendingFind = null;
                 grid.current?.select({ row: hit.row, column: hit.column });
@@ -315,6 +333,7 @@ export function App({ client }: { client: TableSkimClient }) {
     // The search went on: show it, and move to the hit that was asked for
     // before the search had found one.
     const searchProgressed = useCallback(async () => {
+        const generation = flow.current.searchGeneration;
         try {
             const state = await updateSearchStatus();
             const pending = flow.current.pendingFind;
@@ -323,13 +342,16 @@ export function App({ client }: { client: TableSkimClient }) {
                 if (state.hits > 0) await findHit(pending.forward, true);
             }
         } catch (error) {
-            setSearchStatus(errorText(error));
+            if (generation === flow.current.searchGeneration) setSearchStatus(errorText(error));
         }
     }, [findHit, updateSearchStatus]);
 
     const startSearch = async () => {
         const current = flow.current.info;
         if (!current || !search.text) return;
+        resetSearch();
+        const generation = flow.current.searchGeneration;
+        flow.current.searchSheet = current.sheet;
         try {
             await client.call('search', {
                 sheet: current.sheet,
@@ -337,22 +359,16 @@ export function App({ client }: { client: TableSkimClient }) {
                 caseSensitive: search.caseSensitive,
                 regex: search.regex,
             });
+            if (generation !== flow.current.searchGeneration) return;
             flow.current.searchActive = true;
             await findHit(true, true);
         } catch (error) {
-            setSearchStatus(errorText(error));
+            if (generation === flow.current.searchGeneration) setSearchStatus(errorText(error));
         }
     };
 
     const changeSearch = (change: Partial<typeof search>) => {
         // A changed query or option is a new search.
-        const current = flow.current.info;
-        // The rows are fetched again, without the hits marked.
-        if (flow.current.searchActive && current)
-            client
-                .call('cancelSearch', { sheet: current.sheet })
-                .then(() => setDataVersion((version) => version + 1))
-                .catch(() => {});
         resetSearch();
         setSearch((previous) => ({ ...previous, ...change }));
     };
@@ -435,7 +451,7 @@ export function App({ client }: { client: TableSkimClient }) {
             setMessage('At least one column stays shown.');
             return;
         }
-        setLayout({ ...layout, hidden });
+        changeLayout({ ...layout, hidden });
     };
 
     const showResult = async (sheet: string, sheets: string[]) => {
@@ -473,11 +489,14 @@ export function App({ client }: { client: TableSkimClient }) {
         if (layout.hidden.size > 0)
             items.push({
                 label: `Show ${layout.hidden.size} Hidden Column${layout.hidden.size > 1 ? 's' : ''}`,
-                onSelect: () => setLayout({ ...layout, hidden: new Set() }),
+                onSelect: () => changeLayout({ ...layout, hidden: new Set() }),
             });
-        items.push({ label: 'Freeze Up to This Column', onSelect: () => setLayout({ ...layout, frozen: column + 1 }) });
+        items.push({
+            label: 'Freeze Up to This Column',
+            onSelect: () => changeLayout({ ...layout, frozen: column + 1 }),
+        });
         if (layout.frozen > 0)
-            items.push({ label: 'Unfreeze Columns', onSelect: () => setLayout({ ...layout, frozen: 0 }) });
+            items.push({ label: 'Unfreeze Columns', onSelect: () => changeLayout({ ...layout, frozen: 0 }) });
         return items;
     };
 

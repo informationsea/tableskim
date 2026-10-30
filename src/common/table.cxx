@@ -543,7 +543,14 @@ namespace
             case Kind::Date:
                 return day;
             case Kind::DateTime:
-                return static_cast<double>(day * (86400LL * 1000000) + micros) / (86400.0 * 1000000);
+            {
+                constexpr int64_t micros_per_day = 86400LL * 1000000;
+                // The start of the day containing INT64_MIN is below it.
+                // Reconstruct negative timestamps from the next midnight.
+                const int64_t timestamp = day < 0 ? (day + 1) * micros_per_day - (micros_per_day - micros)
+                                                  : day * micros_per_day + micros;
+                return static_cast<double>(timestamp) / (86400.0 * 1000000);
+            }
             default:
                 return number;
             }
