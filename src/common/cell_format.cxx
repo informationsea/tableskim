@@ -614,6 +614,17 @@ namespace
     }
 } // namespace
 
+namespace
+{
+    // Numbers can end on the last edge, unless the last bin holds a single
+    // integer: its upper edge is the next one, past every value.
+    bool lastEdgeIncluded(const Histogram &histogram, size_t bin)
+    {
+        return histogram.kind == HistogramKind::Number && bin + 2 == histogram.edges.size() &&
+               !(histogram.integers && histogram.edges[bin + 1] - histogram.edges[bin] == 1);
+    }
+} // namespace
+
 std::string histogramEdgeText(const Histogram &histogram, double edge)
 {
     if (histogram.kind != HistogramKind::Time)
@@ -646,7 +657,7 @@ std::string histogramBinRange(const Histogram &histogram, size_t bin)
 {
     if (bin + 1 >= histogram.edges.size())
         return {};
-    const bool last = bin + 2 == histogram.edges.size() && histogram.kind == HistogramKind::Number;
+    const bool last = lastEdgeIncluded(histogram, bin);
     return "[" + histogramEdgeText(histogram, histogram.edges[bin]) + ", " +
            histogramEdgeText(histogram, histogram.edges[bin + 1]) + (last ? "]" : ")");
 }
@@ -665,8 +676,7 @@ std::vector<FilterCondition> histogramBinConditions(const Histogram &histogram, 
         addTimeBound(conditions, column, FilterOp::Less, histogram.edges[bin + 1], dates);
         return conditions;
     }
-    // Numbers can end on the last edge.
-    const bool last = bin + 2 == histogram.edges.size();
+    const bool last = lastEdgeIncluded(histogram, bin);
     return {
         // Values of another kind (counted as others) can still pass the
         // comparisons: "15 kg" as text, a boolean or a date as a number.

@@ -116,8 +116,10 @@ std::vector<double> numberHistogramEdges(double min, double max, bool integers, 
     target = std::clamp<size_t>(target, 1, MAX_BINS);
     int digits = 0;
     std::vector<double> edges;
-    // Integers spanning no more values than bins wanted get a bin each.
-    if (integers && max - min < static_cast<double>(target))
+    // Integers spanning no more values than bins wanted get a bin each. Up
+    // to one more: steps of 1 would otherwise end on the maximum, making
+    // the last bin of width 1 hold two values.
+    if (integers && max - min <= static_cast<double>(target))
     {
         const size_t bins = static_cast<size_t>(max - min) + 1;
         for (size_t i = 0; i <= bins; ++i)
@@ -379,7 +381,13 @@ std::optional<size_t> HistogramCounter::binOf(const CellValue &value) const
 
 bool HistogramCounter::fits(const CellValue &value) const
 {
-    return !histogramCoordinate(histogram_.kind, value) || binOf(value).has_value();
+    const auto coordinate = histogramCoordinate(histogram_.kind, value);
+    if (!coordinate)
+        return true;
+    // A fraction makes a new layout's bins those of non-integers.
+    if (histogram_.integers && *coordinate != std::floor(*coordinate))
+        return false;
+    return binOf(value).has_value();
 }
 
 std::optional<double> histogramCoordinate(HistogramKind kind, const CellValue &value)
