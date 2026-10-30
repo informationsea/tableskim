@@ -303,6 +303,29 @@ TEST_CASE("GroupByAccumulator: whole numbers keep their 16th digit", "[regressio
     CHECK(rowText(sheet.rows[0]) == std::vector<std::string>{"1", "1234567890123456", "1234567890123456"});
 }
 
+TEST_CASE("GroupByAccumulator: finite means survive an overflowing sum", "[regression]")
+{
+    const double value = GENERATE(1e308, -1e308);
+    GroupByAccumulator accumulator({.values = {0}, .aggregates = {Aggregate::Mean}});
+    accumulator.add({value});
+    accumulator.add({value});
+    accumulator.add({std::monostate{}});
+    accumulator.add({std::string("text")});
+    const ResultSheet sheet = accumulator.result(letters);
+    REQUIRE(sheet.rows.size() == 1);
+    CHECK(std::get<double>(sheet.rows[0][1]) == value);
+}
+
+TEST_CASE("GroupByAccumulator: means retain compensated cancellation", "[regression]")
+{
+    GroupByAccumulator accumulator({.values = {0}, .aggregates = {Aggregate::Mean}});
+    for (const double value : {1e16, 1.0, -1e16})
+        accumulator.add({value});
+    const ResultSheet sheet = accumulator.result(letters);
+    REQUIRE(sheet.rows.size() == 1);
+    CHECK(rowText(sheet.rows[0]) == std::vector<std::string>{"3", "0.333333333333333"});
+}
+
 TEST_CASE("ResultRows: blocks shared with the model, other reads copied")
 {
     ResultSheet sheet;

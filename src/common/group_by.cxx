@@ -143,9 +143,11 @@ ResultSheet GroupByAccumulator::result(const std::function<std::string(size_t co
                     row.push_back(number(stats.sum));
                     break;
                 case Aggregate::Mean:
-                    // From the compensated sum, as a spreadsheet's AVERAGE.
-                    row.push_back(number(stats.sum ? std::optional(*stats.sum / static_cast<double>(stats.numbers))
-                                                   : std::nullopt));
+                    // Keep the compensated sum's precision when finite; the
+                    // running mean also works when that sum overflows.
+                    row.push_back(number(stats.sum && std::isfinite(*stats.sum)
+                                             ? std::optional(*stats.sum / static_cast<double>(stats.numbers))
+                                             : stats.mean));
                     break;
                 case Aggregate::Min:
                     row.push_back(stats.min.value_or(CellValue{}));

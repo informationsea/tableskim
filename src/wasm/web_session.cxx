@@ -574,6 +574,9 @@ namespace
                    size_t first_column, size_t last_column)
     {
         model.requestRange(first, last);
+        // Opening publishes the columns before Ready. Read the state first
+        // so that columns read before that transition cannot look like EOF.
+        bool loading = model.state() == ModelState::Opening;
         const size_t columns = model.columnCount();
         // The search's hits among these cells, for the page to mark them as
         // the other UIs do; the hits are in view rows, in scan order.
@@ -583,7 +586,6 @@ namespace
         std::vector<std::string> kinds;
         std::vector<std::vector<size_t>> hits;
         // A sheet being opened has no columns yet; its rows come later.
-        bool loading = model.state() == ModelState::Opening;
         bool end = columns == 0 && !loading;
         for (size_t row = first; columns > 0 && row <= last; ++row)
         {
