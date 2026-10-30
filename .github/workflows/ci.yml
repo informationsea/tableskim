@@ -318,18 +318,35 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      # emsdk is installed afresh in every run, at a fixed path: ccache
-      # hashes the paths of the system headers (the sysroot is inside emsdk),
-      # and setup-emsdk put them in a new temporary directory each time, so
-      # nothing compiled in an earlier run was found.
+      # emsdk is installed at a fixed path: ccache hashes the paths of the
+      # system headers (the sysroot is inside emsdk), and setup-emsdk put
+      # them in a new temporary directory each time, so nothing compiled in
+      # an earlier run was found. The installed emsdk is cached by its
+      # version, which spares its download.
+      - name: Restore emsdk
+        id: emsdk
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ runner.os }}-${{ env.EMSDK_VERSION }}
       - name: Install emsdk
         run: |
-          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
-          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          if [ "${{ steps.emsdk.outputs.cache-hit }}" != true ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+            "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          fi
           "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
           echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
           echo "$HOME/emsdk" >> "$GITHUB_PATH"
           echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+      # Saved right after installing, before a build adds to its cache of
+      # system libraries; only on main, like the other caches.
+      - name: Save emsdk
+        if: github.event_name != 'pull_request' && steps.emsdk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/emsdk
+          key: ${{ steps.emsdk.outputs.cache-primary-key }}
       # ccache checks the compiler (em++, a script) by its file time by
       # default, which a fresh install changes. The cache key holds the
       # version.
@@ -385,8 +402,10 @@ jobs:
         with:
           path: .ccache
           key: ccache-wasm-${{ env.EMSDK_VERSION }}-${{ github.sha }}-${{ github.run_id }}
+      # Two at a time: the tests in Node.js and the end-to-end tests in
+      # Chromium are the long ones, and each uses about a core.
       - name: Test
-        run: ctest --preset wasm-release
+        run: ctest --preset wasm-release -j 2
       # As the release packs it (tableskim-<version>-web.zip); the artifact
       # holds the ZIP's folder, as GitHub zips artifacts itself.
       - name: Pack the web app

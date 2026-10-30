@@ -147,8 +147,10 @@ validator against both surfaces. The end-to-end tests find elements by the ids a
 classes the app gives them (`#file-input`, `.cell[data-row]`, `.header`,
 `#status-rows`, ...): keep them when changing the markup.
 
-The probe in Node.js sees the host file system under `/host`; in Chromium,
-`web/probe/run-browser.cjs` runs the probe page through Playwright:
+The probe is not built by default (`cmake --build --preset wasm-release
+--target tableskim-wasm-probe`). In Node.js it sees the host file system
+under `/host`; in Chromium, `web/probe/run-browser.cjs` runs the probe page
+through Playwright:
 
 ```sh
 node build/wasm-release/tableskim-wasm-probe.js /host$PWD/demo/data/normal.parquet \
