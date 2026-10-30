@@ -1025,6 +1025,13 @@ describe('the web app', () => {
         );
         await waitForText(page.locator('#status-rows'), '12 rows');
         await waitForText(page.locator('.header .name'), 'Age mean');
+
+        // Opened again with another option, the file shows the result again.
+        await page.selectOption('#header-mode', 'no');
+        await page.waitForFunction(
+            () => document.querySelector('#tabs [aria-selected=true]')?.textContent === 'Group By',
+        );
+        await waitForText(page.locator('#status-rows'), '12 rows');
         await page.context().close();
     });
 

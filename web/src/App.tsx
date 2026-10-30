@@ -229,6 +229,8 @@ export function App({ client }: { client: TableSkimClient }) {
             const epoch = ++flow.current.epoch;
             flow.current.fileEpoch++;
             setFileEpoch(flow.current.fileEpoch);
+            // Opened again, the sheet shown stays if it is still there.
+            const shown = again ? flow.current.info?.name : undefined;
             flow.current.info = null;
             resetSearch();
             setFile(opened);
@@ -246,7 +248,7 @@ export function App({ client }: { client: TableSkimClient }) {
             setPhase({ kind: 'opening', name: opened.name });
             document.title = `${opened.name} – TableSkim`;
             try {
-                const next = await client.call('open', { ...options, file: opened });
+                const next = await client.call('open', { ...options, file: opened, keepGroupBy: again });
                 if (epoch !== flow.current.epoch) return;
                 if (again && flow.current.lastSql && next.supportsSql) {
                     // The result's view died with the book.
@@ -261,7 +263,7 @@ export function App({ client }: { client: TableSkimClient }) {
                 setOptionsBook(next);
                 if (next.sheets.length === 0) throw new Error('The file has no sheets.');
                 setPhase({ kind: 'open' });
-                await selectSheet(next.sheets[0]);
+                await selectSheet(shown && next.sheets.includes(shown) ? shown : next.sheets[0]);
             } catch (error) {
                 if (epoch !== flow.current.epoch) return;
                 setPhase({ kind: 'failed', name: opened.name });

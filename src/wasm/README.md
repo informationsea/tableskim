@@ -191,7 +191,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 
 | Method | Params | Result |
 | --- | --- | --- |
-| `open` | `file` (a `File`), `header` (`auto`, `yes`, `no`), `encoding` (a name `textEncoding` gives; left out: detected), `skipMetaLines` (drop lines starting with `##`; left out: only for VCF files) | `sheets`, `usesHeaderOption`, `isTextFormat`, `skipsMetaLines`, `supportsSql`, `textEncoding` |
+| `open` | `file` (a `File`), `header` (`auto`, `yes`, `no`), `encoding` (a name `textEncoding` gives; left out: detected), `skipMetaLines` (drop lines starting with `##`; left out: only for VCF files), `keepGroupBy` (the same file again: the last Group By's sheet is added again) | `sheets`, `usesHeaderOption`, `isTextFormat`, `skipsMetaLines`, `supportsSql`, `textEncoding` |
 | `close` | | |
 | `sheet` | `name` | the sheet's info (below), with its `sheet` id |
 | `info` | `sheet` | `state` (`opening`, `ready`, `error`), `error`, `rows`, `rowsExact`, `displayRows`, `rowsText`, `hasHeader`, `columns` (`name`, `mark`), `capabilities`, `view`, `pending`, `filterText`, `viewError` and `viewErrorId` (the last failed view, until another is asked for; the id tells a new failure), `checkpoint`, `readingStopped` |
