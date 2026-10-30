@@ -2279,10 +2279,15 @@ bool TableModel::stepApplyView(std::unique_lock<std::mutex> &lock, std::stop_tok
     if (!allRowsCachedLocked())
     {
         const size_t B = options_.block_rows;
+        // Sequential sources read on from where they are; looking for the
+        // first missing block from the start would take a step per block
+        // cached, on every block read.
+        if (!capabilities_.random_access)
+            return loadBlock(sequential_rows_ / B, lock, stop, events);
         for (size_t b = 0;; ++b)
         {
             if (!blocks_.contains(b))
-                return loadBlock(capabilities_.random_access ? b : sequential_rows_ / B, lock, stop, events);
+                return loadBlock(b, lock, stop, events);
         }
     }
 
