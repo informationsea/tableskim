@@ -166,14 +166,49 @@ Requirements:
 
 - A C++20 compiler (GCC, Clang, AppleClang or MSVC 2026)
 - CMake 3.26 or newer (Ninja recommended)
-- On Linux: fontconfig development files
+- On Linux: the system development packages listed below (GUI builds need
+  fontconfig, X11 and the Wayland/Cairo/Pango stack)
 
-All other dependencies (FLTK, DuckDB, SQLite, OpenXLSX, csv-parser, CLI11,
+The bundled dependencies (FLTK, DuckDB, SQLite, OpenXLSX, csv-parser, CLI11,
 spdlog, zlib, bzip2, xz, zstd, RE2, Abseil, Catch2, FTXUI) are downloaded with CMake's
 `FetchContent` during the first configure. The first build compiles DuckDB
 and therefore takes a while.
 
 ### Linux / macOS
+
+On Ubuntu 24.04, install the build tools first (for both GUI and TUI):
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build git pkg-config
+```
+
+For the default GUI build, also install these system development packages,
+as in CI. FetchContent builds FLTK itself, but does not install its system
+libraries:
+
+```sh
+sudo apt-get install -y \
+  libfontconfig1-dev libx11-dev libxext-dev libxft-dev libxinerama-dev \
+  libxcursor-dev libxrender-dev libxfixes-dev libpango1.0-dev libcairo2-dev \
+  libwayland-dev wayland-protocols libxkbcommon-dev libdbus-1-dev \
+  libgtk-3-dev libdecor-0-dev libgl1-mesa-dev libglu1-mesa-dev
+```
+
+Other Linux distributions need the corresponding development packages;
+see `.github/workflows/ci.yml` for Rocky Linux 8 and 10. The TUI-only build
+needs none of these GUI packages:
+
+```sh
+cmake --preset release -DTABLESKIM_BUILD_GUI=OFF
+./build.sh
+```
+
+To enable the optional Linux UI tests, install `python3-pyte` (TUI) and
+`xvfb` (GUI). `ccache` is optional and speeds up repeated builds.
+
+On macOS, install the Xcode command line tools, CMake and Ninja. For the
+default GUI build on Linux or macOS, run:
 
 ```sh
 ./build.sh            # release build + tests

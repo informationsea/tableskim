@@ -20,18 +20,14 @@ esac
 if command -v ninja &> /dev/null
 then
     PRESET="${BUILD_TYPE}"
-    BUILD_DIR="build/${BUILD_TYPE}"
 else
     PRESET="make-${BUILD_TYPE}"
-    BUILD_DIR="build/make-${BUILD_TYPE}"
 fi
 
 cd "$(dirname "$0")"
 
-# Test the cache, not the directory: an interrupted first configure leaves a
-# directory that was never configured.
-if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
-    cmake --preset "${PRESET}"
-fi
+# A failed configure can leave CMakeCache.txt without build files. Retry
+# configuration each time, reusing the existing cache and dependencies.
+cmake --preset "${PRESET}"
 cmake --build --preset "${PRESET}"
 ctest --preset "${PRESET}"

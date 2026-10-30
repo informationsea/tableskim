@@ -138,20 +138,14 @@ if [ "${BUILD}" = 1 ]; then
     fi
     note "$(emcc --version 2> /dev/null | head -n 1) in ${EMSDK}"
 
-    # Configure once (as build.sh does), and again if the web app was left
-    # out of an earlier configure (TABLESKIM_WEB_APP).
+    # Retry configuration even if an earlier failure left CMakeCache.txt.
+    # Also enable the app if an earlier configure left it out.
     step "Configuring ${BUILD_DIR}"
     if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
         note "first time: CMake downloads DuckDB and the other dependencies (a few minutes)"
-        cmake --preset "${PRESET}" -DTABLESKIM_WEB_APP=ON -DFETCHCONTENT_QUIET=OFF
-        step_done
-    elif grep -qE '^TABLESKIM_WEB_APP:STRING=OFF|^TABLESKIM_NPM:FILEPATH=.*NOTFOUND' "${BUILD_DIR}/CMakeCache.txt"; then
-        note "again, with the web app"
-        cmake --preset "${PRESET}" -DTABLESKIM_WEB_APP=ON
-        step_done
-    else
-        note "configured already"
     fi
+    cmake --preset "${PRESET}" -DTABLESKIM_WEB_APP=ON -DFETCHCONTENT_QUIET=OFF
+    step_done
 
     if [ "${DEV}" = 1 ]; then
         # Vite builds the app itself; only the module is needed.

@@ -18,9 +18,7 @@ cd "$(dirname "$0")"
 
 if [ -n "${TABLESKIM_PRESET}" ]; then
     BUILD_DIR="build/${TABLESKIM_PRESET}"
-    if [ ! -f "${BUILD_DIR}/CMakeCache.txt" ]; then
-        cmake --preset "${TABLESKIM_PRESET}"
-    fi
+    cmake --preset "${TABLESKIM_PRESET}"
     cmake --build --preset "${TABLESKIM_PRESET}"
     ctest --preset "${TABLESKIM_PRESET}"
 else

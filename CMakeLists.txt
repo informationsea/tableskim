@@ -255,7 +255,13 @@ if(EMSCRIPTEN)
             COMMENT "Installing the web app's packages"
             VERBATIM
         )
-        file(GLOB_RECURSE TABLESKIM_WEB_SOURCES CONFIGURE_DEPENDS ${TABLESKIM_WEB_SOURCE_DIR}/src/*)
+        file(GLOB_RECURSE TABLESKIM_WEB_SOURCES CONFIGURE_DEPENDS
+            ${TABLESKIM_WEB_SOURCE_DIR}/src/*
+            ${TABLESKIM_WEB_SOURCE_DIR}/public/*
+        )
+        # A removed input must rebuild too, so Vite clears its old output.
+        file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web-inputs.txt
+            CONTENT "@TABLESKIM_WEB_SOURCES@\n" @ONLY)
         add_custom_command(
             OUTPUT ${TABLESKIM_WEB_OUTPUT_DIR}/index.html
             COMMAND ${CMAKE_COMMAND} -E env TABLESKIM_WASM_BUILD=${CMAKE_CURRENT_BINARY_DIR}
@@ -263,6 +269,7 @@ if(EMSCRIPTEN)
             DEPENDS
                 ${CMAKE_CURRENT_BINARY_DIR}/web-packages.stamp
                 ${TABLESKIM_WEB_SOURCES}
+                ${CMAKE_CURRENT_BINARY_DIR}/web-inputs.txt
                 ${TABLESKIM_WEB_SOURCE_DIR}/index.html
                 ${TABLESKIM_WEB_SOURCE_DIR}/vite.config.ts
                 ${TABLESKIM_WEB_SOURCE_DIR}/tsconfig.json
