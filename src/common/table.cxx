@@ -1344,9 +1344,15 @@ size_t TableModel::nextMemoryCheckpoint(const Options &options, size_t bytes)
         if (checkpoint > bytes)
             return checkpoint;
     }
-    if (options.memory_checkpoint_interval == 0)
+    const size_t interval = options.memory_checkpoint_interval;
+    if (interval == 0)
         return 0;
-    return (bytes / options.memory_checkpoint_interval + 1) * options.memory_checkpoint_interval;
+    // Past the last multiple that fits (2 GiB with a 32-bit size_t, as in
+    // WebAssembly), the product would wrap to 0, which means "never pause".
+    const size_t steps = bytes / interval + 1;
+    if (steps > std::numeric_limits<size_t>::max() / interval)
+        return std::numeric_limits<size_t>::max();
+    return steps * interval;
 }
 
 void TableModel::continueReading()

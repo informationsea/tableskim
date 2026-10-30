@@ -3,6 +3,7 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 #include "table.hxx"
@@ -149,8 +150,20 @@ TEST_CASE("memory checkpoints: 100 MB, 500 MB, 1 GB, then every 2 GB")
     CHECK(TableModel::nextMemoryCheckpoint(options, 100 * MB) == 500 * MB);
     CHECK(TableModel::nextMemoryCheckpoint(options, 600 * MB) == GB);
     CHECK(TableModel::nextMemoryCheckpoint(options, GB + 1) == 2 * GB);
-    CHECK(TableModel::nextMemoryCheckpoint(options, 2 * GB) == 4 * GB);
-    CHECK(TableModel::nextMemoryCheckpoint(options, 5 * GB) == 6 * GB);
+    if constexpr (sizeof(size_t) > 4)
+    {
+        CHECK(TableModel::nextMemoryCheckpoint(options, 2 * GB) == 4 * GB);
+        CHECK(TableModel::nextMemoryCheckpoint(options, 5 * GB) == 6 * GB);
+    }
+
+    // The next multiple does not fit (as 4 GiB with a 32-bit size_t): it
+    // must not wrap to 0, which would mean never pausing again.
+    TableModel::Options huge;
+    huge.memory_checkpoints.clear();
+    huge.memory_checkpoint_interval = std::numeric_limits<size_t>::max() / 2 + 1;
+    CHECK(TableModel::nextMemoryCheckpoint(huge, 0) == huge.memory_checkpoint_interval);
+    CHECK(TableModel::nextMemoryCheckpoint(huge, huge.memory_checkpoint_interval) ==
+          std::numeric_limits<size_t>::max());
 
     TableModel::Options never;
     never.memory_checkpoints.clear();
