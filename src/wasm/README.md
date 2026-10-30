@@ -15,6 +15,10 @@ as the GUI and the TUI share the core. The file never leaves the browser.
   font and, for text files, the character encoding, skipping `##` lines
   and converting to Parquet or DuckDB. What the native UIs have and it
   lacks: editing and Follow.
+- `tableskim-wasm-node` is the same module for Node.js, which the VS Code
+  extension (`vscode/`) runs in a worker_threads Worker: an "open" there
+  names a path on the host (`path`, not `file`), whose directory is mounted
+  with NODEFS. Not built by default.
 - `tableskim-wasm-probe` (`wasm_probe.cxx`, `web/probe/`) was the
   feasibility probe: it opens one file, reads it to the end, sorts it and
   runs an SQL query, timing each step, in Node.js, a browser or natively.

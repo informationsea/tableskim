@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { platform } from '../platform';
 import { type BookInfo, type HeaderMode, type OpenOptions, TEXT_ENCODINGS } from '../protocol';
 import { SearchBox, type SearchBoxProps } from './SearchBox';
 
@@ -27,7 +28,16 @@ export function Toolbar({ onOpen, book, options, onOptions, tools, search }: Too
     return (
         <header className="flex flex-wrap items-center gap-2 border-b border-line bg-chrome px-2.5 py-1.5">
             <span className="mr-1 font-bold">TableSkim</span>
-            <button type="button" id="open-button" className="control" onClick={() => input.current?.click()}>
+            <button
+                type="button"
+                id="open-button"
+                className="control"
+                onClick={() => {
+                    const pickFile = platform().pickFile;
+                    if (pickFile) pickFile();
+                    else input.current?.click();
+                }}
+            >
                 Open…
             </button>
             <input

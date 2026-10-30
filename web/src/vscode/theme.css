@@ -1,0 +1,29 @@
+/* The app's colour tokens (index.css) taken from the VS Code theme, which
+   gives the webview its colours as --vscode-* variables; the charts keep
+   their own, validated ones. */
+:root {
+    --surface: var(--vscode-editor-background, #ffffff);
+    --fg: var(--vscode-editor-foreground, #1d2129);
+    --muted: var(--vscode-descriptionForeground, #6b7280);
+    --chrome: var(--vscode-sideBar-background, var(--vscode-editorWidget-background, #f3f4f6));
+    --line: var(--vscode-panel-border, var(--vscode-widget-border, #d9dce1));
+    --grid-line: color-mix(in srgb, var(--vscode-editor-foreground, #1d2129) 10%, transparent);
+    --header: var(--vscode-editorGroupHeader-tabsBackground, #eef0f3);
+    --accent: var(--vscode-focusBorder, #2563eb);
+    --selection: var(--vscode-editor-selectionBackground, rgb(37 99 235 / 0.14));
+    --hit: var(--vscode-editor-findMatchHighlightBackground, #ffeb99);
+    --active: var(--vscode-list-inactiveSelectionBackground, #dbe5fb);
+    --banner: var(--vscode-inputValidation-warningBackground, #fff7db);
+    --danger: var(--vscode-errorForeground, #b42318);
+    --danger-bg: var(--vscode-inputValidation-errorBackground, #fdecea);
+}
+
+:root:has(body.vscode-dark),
+:root:has(body.vscode-high-contrast:not(.vscode-high-contrast-light)) {
+    color-scheme: dark;
+}
+
+:root:has(body.vscode-light),
+:root:has(body.vscode-high-contrast-light) {
+    color-scheme: light;
+}

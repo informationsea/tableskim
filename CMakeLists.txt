@@ -225,6 +225,30 @@ if(EMSCRIPTEN)
     set_property(TARGET tableskim-wasm APPEND PROPERTY LINK_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js)
 
+    # The same module for Node.js, run in a worker_threads Worker by the VS
+    # Code extension (vscode/), which opens files on the host with NODEFS.
+    # Not built by default: the extension's build asks for it.
+    add_executable(tableskim-wasm-node
+        src/wasm/wasm_api.cxx
+        src/wasm/web_session.hxx
+        src/wasm/web_session.cxx
+        src/wasm/web_json.hxx
+        src/wasm/web_json.cxx
+    )
+    target_link_libraries(tableskim-wasm-node PRIVATE tableskim-common tableskim-warnings)
+    set_target_properties(tableskim-wasm-node PROPERTIES EXCLUDE_FROM_ALL ON)
+    target_link_options(tableskim-wasm-node PRIVATE
+        ${TABLESKIM_WASM_LINK_OPTIONS}
+        -sEXIT_RUNTIME=0
+        -sENVIRONMENT=node
+        -sFORCE_FILESYSTEM=1
+        -sEXPORTED_RUNTIME_METHODS=stringToNewUTF8,UTF8ToString
+        -lnodefs.js
+        --pre-js ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js
+    )
+    set_property(TARGET tableskim-wasm-node APPEND PROPERTY LINK_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/wasm_worker_pre.js)
+
     # The web app itself (web/: React, TypeScript, Vite), built with npm into
     # <build>/web with the module next to it. AUTO builds it when npm is
     # found, ON requires it; npm ci fetches its packages the first time.

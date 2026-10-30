@@ -24,6 +24,7 @@ import { type Tool, Toolbar } from './components/Toolbar';
 import type { Cell, ContextTarget, Range } from './grid/controller';
 import { Grid, type GridHandle } from './grid/Grid';
 import { errorText } from './hooks';
+import { platform } from './platform';
 import {
     type BookInfo,
     type Condition,
@@ -97,14 +98,13 @@ function emptyTitle(phase: Phase, info: SheetInfo | null) {
     }
 }
 
-// Threads need SharedArrayBuffer, which only a cross-origin isolated page has.
-const ISOLATED = self.crossOriginIsolated;
 const ISOLATION_MESSAGE =
     'The engine needs SharedArrayBuffer: serve the page with the headers ' +
     'Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.';
 
-export function App({ client }: { client: TableSkimClient }) {
-    const [phase, setPhase] = useState<Phase>({ kind: ISOLATED ? 'starting' : 'unsupported' });
+// initialFile: opened once the engine is ready (the VS Code extension's document)
+export function App({ client, initialFile }: { client: TableSkimClient; initialFile?: File }) {
+    const [phase, setPhase] = useState<Phase>({ kind: platform().engineAvailable ? 'starting' : 'unsupported' });
     const [filterOps, setFilterOps] = useState<FilterOpInfo[]>([]);
     const [file, setFile] = useState<File | null>(null);
     const [fileEpoch, setFileEpoch] = useState(0);
@@ -118,7 +118,7 @@ export function App({ client }: { client: TableSkimClient }) {
     const [sheetKey, setSheetKey] = useState(0);
     const [dataVersion, setDataVersion] = useState(0);
     const [viewVersion, setViewVersion] = useState(0);
-    const [message, setMessage] = useState(ISOLATED ? '' : ISOLATION_MESSAGE);
+    const [message, setMessage] = useState(platform().engineAvailable ? '' : ISOLATION_MESSAGE);
     // A condition the Filter pane is to add ("Filter by This Column…").
     const [filterAdding, setFilterAdding] = useState<{ column: number; serial: number } | null>(null);
     const filterAdded = useCallback(() => setFilterAdding(null), []);
@@ -618,7 +618,7 @@ export function App({ client }: { client: TableSkimClient }) {
 
     // Start: the engine, then the filter operators it offers.
     useEffect(() => {
-        if (!ISOLATED) return;
+        if (!platform().engineAvailable) return;
         const unsubscribe = client.subscribeErrors((text) =>
             setMessage(`The engine stopped: ${text}. Reload the page to start again.`),
         );
@@ -639,6 +639,13 @@ export function App({ client }: { client: TableSkimClient }) {
             unsubscribe();
         };
     }, [client]);
+
+    const initialOpened = useRef(false);
+    useEffect(() => {
+        if (phase.kind !== 'idle' || !initialFile || initialOpened.current) return;
+        initialOpened.current = true;
+        void openFile(initialFile);
+    }, [phase.kind, initialFile, openFile]);
 
     // The model's events: look again at what changed.
     useEffect(
@@ -681,11 +688,13 @@ export function App({ client }: { client: TableSkimClient }) {
                 setDialog({ kind: 'goTo', column: 0 });
             } else if (ctrl && event.key.toLowerCase() === 'o') {
                 event.preventDefault();
-                document.getElementById('file-input')?.click();
+                const pickFile = platform().pickFile;
+                if (pickFile) pickFile();
+                else document.getElementById('file-input')?.click();
             }
         };
         const dragEnter = (event: DragEvent) => {
-            if (event.dataTransfer?.types.includes('Files')) {
+            if (platform().opensDroppedFiles && event.dataTransfer?.types.includes('Files')) {
                 depth++;
                 setDragging(true);
             }
@@ -700,7 +709,7 @@ export function App({ client }: { client: TableSkimClient }) {
             depth = 0;
             setDragging(false);
             const dropped = event.dataTransfer?.files[0];
-            if (dropped) void openFile(dropped);
+            if (dropped && platform().opensDroppedFiles) void openFile(dropped);
         };
         document.addEventListener('keydown', keyDown);
         window.addEventListener('dragenter', dragEnter);

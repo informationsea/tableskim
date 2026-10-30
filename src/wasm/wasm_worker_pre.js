@@ -1,22 +1,42 @@
-// The worker side of tableskim-wasm (see wasm_api.cxx). The module is the
-// worker's own script: Emscripten starts its threads from that script.
+// The worker side of tableskim-wasm and tableskim-wasm-node (see
+// wasm_api.cxx). The module is the worker's own script: Emscripten starts
+// its threads from that script. In a browser the worker is a Web Worker;
+// in Node.js (the VS Code extension, vscode/) a worker_threads Worker.
 //
 // The page posts requests {id, method, params} and gets back
 //   {type: 'ready'}                  once requests can be answered,
 //   {type: 'reply', json}            the reply to a request, as JSON text,
 //   {type: 'events', json}           {sheet id: WebSession::Event bits},
 //   {type: 'file', id, data}         the answer to "readFile".
-// An "open" request carries the File itself (params.file): it is mounted
-// here, read in place by WORKERFS, and the session gets its path.
+// In a browser an "open" request carries the File itself (params.file): it
+// is mounted here, read in place by WORKERFS. In Node.js it carries the
+// file's path on the host (params.path), whose directory is mounted with
+// NODEFS. Either way the session gets the mounted path.
 // "readFile" ({path}, a file the session wrote, such as an export) is
 // answered here, with the file's bytes as a transferred ArrayBuffer.
-if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
+if ((ENVIRONMENT_IS_WORKER || ENVIRONMENT_IS_NODE) && !ENVIRONMENT_IS_PTHREAD)
 {
     var tskStarted = false;
     var tskWaiting = [];
     var tskMounts = 0;
     var tskOpenMounts = {}; // request id -> mount directory
     var tskCloses = {}; // ids of "close" requests not answered yet
+    var tskPort = ENVIRONMENT_IS_NODE ? require('node:worker_threads').parentPort : null;
+
+    var tskPostToPage = function (message, transfer)
+    {
+        if (tskPort)
+            tskPort.postMessage(message, transfer);
+        else
+            postMessage(message, transfer);
+    };
+
+    // The directory to mount for a path on the host, and the file's name in it.
+    var tskHostPath = function (path)
+    {
+        var nodePath = require('node:path');
+        return { dir: nodePath.dirname(path), name: nodePath.basename(path) };
+    };
 
     var tskSend = function (message)
     {
@@ -26,21 +46,32 @@ if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
             try
             {
                 var data = FS.readFile(params.path);
-                postMessage({ type: 'file', id: message.id, data: data.buffer }, [data.buffer]);
+                tskPostToPage({ type: 'file', id: message.id, data: data.buffer }, [data.buffer]);
             }
             catch (e)
             {
-                postMessage({ type: 'reply', json: JSON.stringify({ id: message.id, error: 'cannot read ' + params.path }) });
+                tskPostToPage({ type: 'reply', json: JSON.stringify({ id: message.id, error: 'cannot read ' + params.path }) });
             }
             return;
         }
-        if (message.method === 'open' && params.file)
+        if (message.method === 'open' && (params.file || (ENVIRONMENT_IS_NODE && params.path)))
         {
             var dir = '/input/' + (++tskMounts);
             FS.mkdirTree(dir);
-            FS.mount(WORKERFS, { files: [params.file] }, dir);
+            var name;
+            if (params.file)
+            {
+                FS.mount(WORKERFS, { files: [params.file] }, dir);
+                name = params.file.name;
+            }
+            else
+            {
+                var host = tskHostPath(params.path);
+                FS.mount(NODEFS, { root: host.dir }, dir);
+                name = host.name;
+            }
             tskOpenMounts[message.id] = dir;
-            params = Object.assign({}, params, { path: dir + '/' + params.file.name });
+            params = Object.assign({}, params, { path: dir + '/' + name });
             delete params.file;
         }
         else if (message.method === 'close')
@@ -83,27 +114,31 @@ if (ENVIRONMENT_IS_WORKER && !ENVIRONMENT_IS_PTHREAD)
     Module['tskReply'] = function (json)
     {
         tskReleaseMounts(json);
-        postMessage({ type: 'reply', json: json });
+        tskPostToPage({ type: 'reply', json: json });
     };
     Module['tskEvents'] = function (json)
     {
-        postMessage({ type: 'events', json: json });
+        tskPostToPage({ type: 'events', json: json });
     };
     Module['tskReady'] = function ()
     {
         tskStarted = true;
         tskWaiting.splice(0).forEach(tskSend);
-        postMessage({ type: 'ready' });
+        tskPostToPage({ type: 'ready' });
     };
     Module['print'] = function (text) { console.log(text); };
     Module['printErr'] = function (text) { console.warn(text); };
 
     // Requests may come before the module is instantiated.
-    self.onmessage = function (event)
+    var tskReceive = function (data)
     {
         if (tskStarted)
-            tskSend(event.data);
+            tskSend(data);
         else
-            tskWaiting.push(event.data);
+            tskWaiting.push(data);
     };
+    if (tskPort)
+        tskPort.on('message', tskReceive);
+    else
+        self.onmessage = function (event) { tskReceive(event.data); };
 }

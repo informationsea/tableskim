@@ -1,0 +1,96 @@
+{
+  "name": "tableskim",
+  "displayName": "TableSkim",
+  "description": "A viewer for tables: CSV/TSV/VCF, Excel, Parquet, DuckDB, SQLite and JSON, with sorting, filters, statistics, charts and SQL",
+  "version": "0.3.3",
+  "publisher": "informationsea",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/informationsea/tableskim"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "tableskim.table",
+        "displayName": "TableSkim",
+        "selector": [
+          { "filenamePattern": "*.parquet" },
+          { "filenamePattern": "*.xlsx" },
+          { "filenamePattern": "*.xlsm" },
+          { "filenamePattern": "*.duckdb" },
+          { "filenamePattern": "*.sqlite" },
+          { "filenamePattern": "*.sqlite3" }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "tableskim.text",
+        "displayName": "TableSkim",
+        "selector": [
+          { "filenamePattern": "*.csv" },
+          { "filenamePattern": "*.tsv" },
+          { "filenamePattern": "*.vcf" },
+          { "filenamePattern": "*.json" },
+          { "filenamePattern": "*.ndjson" },
+          { "filenamePattern": "*.jsonl" },
+          { "filenamePattern": "*.db" },
+          { "filenamePattern": "*.gz" },
+          { "filenamePattern": "*.bz2" },
+          { "filenamePattern": "*.xz" },
+          { "filenamePattern": "*.zst" }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "tableskim.open",
+        "title": "Open in TableSkim",
+        "category": "TableSkim"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "tableskim.open",
+          "when": "!explorerResourceIsFolder",
+          "group": "navigation@20"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "tableskim.open",
+          "when": "resourceScheme == file",
+          "group": "navigation@20"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build:engine": "node scripts/copy-engine.mjs",
+    "build:webview": "npm --prefix ../web run build:vscode",
+    "compile": "tsc -p .",
+    "build": "npm run build:engine && npm run build:webview && npm run compile",
+    "test": "node --test tests/engine.test.cjs",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "~6.0.3"
+  }
+}
