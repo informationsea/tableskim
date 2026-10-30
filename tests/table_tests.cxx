@@ -338,7 +338,9 @@ TEST_CASE("events are delivered and subscriptions stop them")
                                          {
         if (event.kind == TableEvent::Kind::RowsLoaded)
             ++rows_loaded; });
-    model->requestRange(0, 10);
+    // Not the first rows: the worker loads them without a request, maybe
+    // before the subscription, and then requesting them emits nothing.
+    model->requestRange(50000, 50010);
     REQUIRE(waitFor([&]
                     { return rows_loaded > 0; }));
     subscription.reset();

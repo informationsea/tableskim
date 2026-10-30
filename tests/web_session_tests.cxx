@@ -155,10 +155,6 @@ TEST_CASE("WebSession opens a CSV file and pages through its rows")
     REQUIRE(columns.size() == 9);
     CHECK(*columns[1]["name"].string() == "Name");
     CHECK(*columns[0]["mark"].string() == "#");
-    // The worker reports the rows after they are in the model, so the info
-    // may be ready before the event has come.
-    CHECK(waitFor([&]
-                  { return (events & WebSession::ROWS) != 0; }));
 
     const JsonValue rows = client.rows(id, 0, 2);
     REQUIRE(rows["rows"].array()->size() == 3);
@@ -184,6 +180,10 @@ TEST_CASE("WebSession opens a CSV file and pages through its rows")
     {
         client.result("sortCycle", "{\"sheet\":" + std::to_string(id) + ",\"column\":0}");
         client.result("sortCycle", "{\"sheet\":" + std::to_string(id) + ",\"column\":0}");
+        // The sheet's events reach the sink. Not those of the first rows:
+        // the worker may load them before the sheet subscribes.
+        CHECK(waitFor([&]
+                      { return (events & WebSession::VIEW) != 0; }));
         const JsonValue sorted = client.readyInfo(id);
         const auto &sort = *sorted["view"]["sort"].array();
         REQUIRE(sort.size() == 1);
