@@ -737,7 +737,10 @@ void TuiApp::setTextEncoding(TextEncoding encoding)
 void TuiApp::convertTo(ExportFormat format)
 {
     if (converting_)
+    {
+        setStatus("Another export or conversion is running (Esc: cancel it)", true);
         return;
+    }
     if (!book_ || !book_->isTextFormat())
     {
         setStatus(std::string("Only CSV / TSV files can be converted to ") + exportFormatName(format), true);
