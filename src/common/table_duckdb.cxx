@@ -944,6 +944,10 @@ namespace
         {
             if (column >= columns_.size())
                 return std::nullopt;
+            // A view (JSON) is evaluated once, not again for every column
+            // (--summary asks before reading any row).
+            if (!ensureSnapshot(stop))
+                return std::nullopt;
             // The same expression as read(), so that values convert alike.
             auto result = query("SELECT " + columns_[column].select + ", count(*) FROM " + from_ + where_ +
                                     " GROUP BY 1 ORDER BY 2 DESC",
