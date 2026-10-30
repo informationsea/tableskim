@@ -114,6 +114,7 @@ export function App({ client }: { client: TableSkimClient }) {
     // open it, so that the options stay to choose another.
     const [optionsBook, setOptionsBook] = useState<BookInfo | null>(null);
     const [info, setInfo] = useState<SheetInfo | null>(null);
+    const [selectingSheet, setSelectingSheet] = useState(false);
     const [sheetKey, setSheetKey] = useState(0);
     const [dataVersion, setDataVersion] = useState(0);
     const [viewVersion, setViewVersion] = useState(0);
@@ -144,6 +145,7 @@ export function App({ client }: { client: TableSkimClient }) {
     const flow = useRef({
         epoch: 0, // bumped by every open and sheet change, so that late replies are dropped
         info: null as SheetInfo | null,
+        selectingSheet: false,
         infoLoading: false,
         infoDirty: false,
         searchActive: false,
@@ -216,9 +218,21 @@ export function App({ client }: { client: TableSkimClient }) {
         setSearchStatus('');
     }, [client]);
 
+    const isCurrentSearch = useCallback((generation: number, sheet: number) => {
+        const state = flow.current;
+        return (
+            !state.selectingSheet &&
+            state.searchGeneration === generation &&
+            state.searchSheet === sheet &&
+            state.info?.sheet === sheet
+        );
+    }, []);
+
     const selectSheet = useCallback(
         async (name: string) => {
             const epoch = ++flow.current.epoch;
+            flow.current.selectingSheet = true;
+            setSelectingSheet(true);
             resetSearch();
             try {
                 const next = await client.call('sheet', { name });
@@ -226,15 +240,18 @@ export function App({ client }: { client: TableSkimClient }) {
                 showInfo(next);
                 setSheetKey((key) => key + 1);
                 setLayout(layouts.current.get(next.sheet) ?? NO_LAYOUT);
-                setCursorColumn(0);
-                setContentCell({ row: 0, column: 0 });
                 setDialog(null);
                 grid.current?.focus();
                 // The event that it opened may have come before this reply,
                 // when another sheet was shown, and been dropped: ask again.
                 if (next.state === 'opening') void refreshInfo();
             } catch (error) {
-                setMessage(errorText(error));
+                if (epoch === flow.current.epoch) setMessage(errorText(error));
+            } finally {
+                if (epoch === flow.current.epoch) {
+                    flow.current.selectingSheet = false;
+                    setSelectingSheet(false);
+                }
             }
         },
         [client, refreshInfo, resetSearch, showInfo],
@@ -249,6 +266,8 @@ export function App({ client }: { client: TableSkimClient }) {
             // Opened again, the sheet shown stays if it is still there.
             const shown = again ? flow.current.info?.name : undefined;
             flow.current.info = null;
+            flow.current.selectingSheet = false;
+            setSelectingSheet(false);
             layouts.current.clear();
             resetSearch();
             setFile(opened);
@@ -296,14 +315,15 @@ export function App({ client }: { client: TableSkimClient }) {
         const current = flow.current.info;
         if (!current || !flow.current.searchActive) return null;
         const generation = flow.current.searchGeneration;
+        if (!isCurrentSearch(generation, current.sheet)) return null;
         const state = await client.call('searchState', { sheet: current.sheet });
-        if (generation !== flow.current.searchGeneration) return null;
+        if (!isCurrentSearch(generation, current.sheet)) return null;
         if (state.error) setSearchStatus(state.error);
         else if (!state.done) setSearchStatus(`${state.hits.toLocaleString()} hits so far…`);
         else if (state.hits === 0) setSearchStatus('No hits');
         else setSearchStatus(`${state.hits.toLocaleString()}${state.truncated ? '+' : ''} hits`);
         return state;
-    }, [client]);
+    }, [client, isCurrentSearch]);
 
     // Moves to the next (or previous) hit from the cursor; includeFrom
     // counts a hit at the cursor itself.
@@ -313,6 +333,7 @@ export function App({ client }: { client: TableSkimClient }) {
             const cursor = grid.current?.cursor();
             if (!current || !cursor || !flow.current.searchActive) return;
             const generation = flow.current.searchGeneration;
+            if (!isCurrentSearch(generation, current.sheet)) return;
             const hit = await client.call('findHit', {
                 sheet: current.sheet,
                 row: cursor.row,
@@ -320,20 +341,21 @@ export function App({ client }: { client: TableSkimClient }) {
                 forward,
                 includeFrom,
             });
-            if (generation !== flow.current.searchGeneration) return;
+            if (!isCurrentSearch(generation, current.sheet)) return;
             if (hit.index !== null) {
                 flow.current.pendingFind = null;
                 grid.current?.select({ row: hit.row, column: hit.column });
             } else if (hit.pending) flow.current.pendingFind = { forward }; // tried again as the search goes on
             await updateSearchStatus();
         },
-        [client, updateSearchStatus],
+        [client, isCurrentSearch, updateSearchStatus],
     );
 
     // The search went on: show it, and move to the hit that was asked for
     // before the search had found one.
     const searchProgressed = useCallback(async () => {
         const generation = flow.current.searchGeneration;
+        const sheet = flow.current.searchSheet;
         try {
             const state = await updateSearchStatus();
             const pending = flow.current.pendingFind;
@@ -342,13 +364,13 @@ export function App({ client }: { client: TableSkimClient }) {
                 if (state.hits > 0) await findHit(pending.forward, true);
             }
         } catch (error) {
-            if (generation === flow.current.searchGeneration) setSearchStatus(errorText(error));
+            if (sheet !== null && isCurrentSearch(generation, sheet)) setSearchStatus(errorText(error));
         }
-    }, [findHit, updateSearchStatus]);
+    }, [findHit, isCurrentSearch, updateSearchStatus]);
 
     const startSearch = async () => {
         const current = flow.current.info;
-        if (!current || !search.text) return;
+        if (!current || !search.text || flow.current.selectingSheet) return;
         resetSearch();
         const generation = flow.current.searchGeneration;
         flow.current.searchSheet = current.sheet;
@@ -359,11 +381,11 @@ export function App({ client }: { client: TableSkimClient }) {
                 caseSensitive: search.caseSensitive,
                 regex: search.regex,
             });
-            if (generation !== flow.current.searchGeneration) return;
+            if (!isCurrentSearch(generation, current.sheet)) return;
             flow.current.searchActive = true;
             await findHit(true, true);
         } catch (error) {
-            if (generation === flow.current.searchGeneration) setSearchStatus(errorText(error));
+            if (isCurrentSearch(generation, current.sheet)) setSearchStatus(errorText(error));
         }
     };
 
@@ -788,7 +810,7 @@ export function App({ client }: { client: TableSkimClient }) {
                 tools={tools}
                 search={{
                     ...search,
-                    enabled: !!info?.capabilities.search,
+                    enabled: !!info?.capabilities.search && !selectingSheet,
                     status: searchStatus,
                     onChange: changeSearch,
                     onFind: (forward) => void (flow.current.searchActive ? findHit(forward) : startSearch()),

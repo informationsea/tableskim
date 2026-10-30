@@ -176,7 +176,8 @@ export class GridController {
     }
 
     /** Hidden and frozen columns: part of the view, kept by the app. */
-    setLayout(hidden: Set<number>, frozen: number) {
+    setLayout(hidden: Set<number>, frozen: number, newSheet = false) {
+        let selectionChanged = newSheet;
         this.hidden = hidden;
         this.frozen = Math.min(frozen, this.columns.length);
         if (this.hidden.has(this.cursor.column)) {
@@ -184,9 +185,12 @@ export class GridController {
             if (column !== null) {
                 this.cursor = { ...this.cursor, column };
                 this.anchor = { ...this.anchor, column };
+                selectionChanged = true;
             }
         }
         this.updateExtent();
+        // Report the reset cursor only after hidden columns have moved it.
+        if (selectionChanged) this.callbacks().onSelect(this.cursor, this.selection());
         this.redraw();
     }
 
