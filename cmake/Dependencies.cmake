@@ -91,6 +91,17 @@ endif()
 
 FetchContent_MakeAvailable(duckdb)
 
+# Only duckdb_static is linked (below). The shared library and the loadable
+# extensions (with the local repository that collects them) would be built
+# by default, which costs a slow link each, most of all in WebAssembly.
+foreach(target IN ITEMS duckdb duckdb_local_extension_repo
+        core_functions_loadable_extension parquet_loadable_extension
+        json_loadable_extension)
+    if(TARGET ${target})
+        set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL ON)
+    endif()
+endforeach()
+
 # DuckDB forces the static MSVC runtime (/MT, /MTd) for its own directory,
 # which conflicts with the dynamic runtime (/MD, /MDd) used by everything else.
 # Switch every DuckDB target back to the dynamic runtime.
@@ -251,6 +262,12 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(csv-parser)
+# Its sample programs are not needed.
+foreach(target IN ITEMS csv_info csv_schema_info)
+    if(TARGET ${target})
+        set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL ON)
+    endif()
+endforeach()
 
 FetchContent_Declare(
     CLI11

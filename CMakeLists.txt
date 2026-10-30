@@ -172,13 +172,11 @@ if(WIN32)
 endif()
 
 # Opens a file, reads it through and sorts it, timing each step, in Node.js
-# or a browser (src/wasm/README.md); natively too, to compare (not built by
-# default there).
+# or a browser (src/wasm/README.md); natively too, to compare. Not built by
+# default: nothing runs it, and its link is slow in WebAssembly.
 add_executable(tableskim-wasm-probe src/wasm/wasm_probe.cxx)
 target_link_libraries(tableskim-wasm-probe PRIVATE tableskim-common tableskim-warnings)
-if(NOT EMSCRIPTEN)
-    set_target_properties(tableskim-wasm-probe PROPERTIES EXCLUDE_FROM_ALL ON)
-endif()
+set_target_properties(tableskim-wasm-probe PROPERTIES EXCLUDE_FROM_ALL ON)
 
 if(EMSCRIPTEN)
     # main() gets a thread of its own, so that the thread running the
@@ -608,7 +606,11 @@ if(EMSCRIPTEN)
     # Run by Node.js (ctest goes through the toolchain's emulator), reading
     # the host files directly. One ctest test for them all: each process
     # loads the whole module again, which per test case would take minutes.
-    target_link_options(tableskim-tests PRIVATE ${TABLESKIM_WASM_LINK_OPTIONS} -sNODERAWFS=1)
+    # -O1 after the build type's -O3 skips Binaryen's optimization of the
+    # linked module, which takes minutes and hardly speeds the tests up (the
+    # objects are optimized already).
+    target_link_options(tableskim-tests PRIVATE ${TABLESKIM_WASM_LINK_OPTIONS} -sNODERAWFS=1
+        $<$<NOT:$<CONFIG:Debug>>:-O1>)
     add_test(NAME tableskim-tests COMMAND tableskim-tests)
     set_tests_properties(tableskim-tests PROPERTIES TIMEOUT 1200)
 else()

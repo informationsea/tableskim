@@ -354,14 +354,23 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      # emsdk is installed afresh in every run, at a fixed path: ccache
-      # hashes the paths of the system headers (the sysroot is inside emsdk),
-      # and setup-emsdk put them in a new temporary directory each time, so
-      # nothing compiled in an earlier run was found.
+      # emsdk is installed at a fixed path: ccache hashes the paths of the
+      # system headers (the sysroot is inside emsdk), and setup-emsdk put
+      # them in a new temporary directory each time, so nothing compiled in
+      # an earlier run was found. The installed emsdk is cached by its
+      # version, which spares its download.
+      - name: Restore emsdk
+        id: emsdk
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ runner.os }}-${{ env.EMSDK_VERSION }}
       - name: Install emsdk
         run: |
-          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
-          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          if [ "${{ steps.emsdk.outputs.cache-hit }}" != true ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+            "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          fi
           "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
           echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
           echo "$HOME/emsdk" >> "$GITHUB_PATH"
@@ -403,7 +412,7 @@ jobs:
           export EMSDK="${EMSDK:-$(dirname "$(dirname "$(dirname "$(command -v emcc)")")")}"
           cmake --preset wasm-release -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
           cmake --build --preset wasm-release
-          ctest --preset wasm-release
+          ctest --preset wasm-release -j 2
           cmake --build --preset wasm-release --target tableskim-web-zip
       - name: Show ccache statistics
         run: ccache --show-stats
