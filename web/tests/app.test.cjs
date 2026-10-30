@@ -70,6 +70,7 @@ async function regressionPage() {
                 this.columns = 600;
                 this.view = { sort: [], filter: null };
                 this.sheet = 1;
+                this.pendingSheets = [];
                 setTimeout(() => this.onmessage({ data: { type: 'ready' } }), 0);
             }
             reply(request, result) {
@@ -138,9 +139,37 @@ async function regressionPage() {
                     this.name = params.name;
                     this.columns = params.name === 'narrow' ? 2 : this.wideColumns;
                     this.sheet = this.firstSheet + (params.name === 'narrow' ? 1 : 0);
+                    if (this.holdSheets) {
+                        this.pendingSheets.push({ request, info: this.info() });
+                        return;
+                    }
                     return this.reply(request, this.info());
                 }
                 if (method === 'info') return this.reply(request, this.info());
+                if (method === 'cell') return this.reply(request, { kind: 's', text: `value-${params.column}` });
+                if (method === 'statsState' || method === 'startStats') {
+                    this.stats ??= {};
+                    if (method === 'startStats')
+                        this.stats[params.sheet] = {
+                            active: true,
+                            done: true,
+                            column: params.column,
+                            scannedRows: 1,
+                            lines: [],
+                            top: [],
+                        };
+                    return this.reply(
+                        request,
+                        this.stats[params.sheet] ?? {
+                            active: false,
+                            done: false,
+                            column: 0,
+                            scannedRows: 0,
+                            lines: [],
+                            top: [],
+                        },
+                    );
+                }
                 if (method === 'search') {
                     this.searchActive = true;
                     if (this.holdSearch) {
@@ -211,12 +240,13 @@ async function regressionPage() {
                     );
                     return;
                 }
+                if (method === 'startHistogram') this.histogramColumn = params.column;
                 if (method === 'startHistogram' || method === 'histogramState')
                     return this.reply(request, {
                         active: true,
                         done: !!this.chartReady,
                         counting: false,
-                        column: 0,
+                        column: this.histogramColumn ?? 0,
                         scannedRows: 100,
                         histogram: this.chartReady
                             ? {
@@ -315,6 +345,119 @@ async function regressionPage() {
 }
 
 describe('frontend regressions', () => {
+    test('keeps cursor, content and analysis aligned after restoring hidden columns', async () => {
+        const page = await regressionPage();
+        await page.locator('#sidebar-toggle').click();
+        await waitForText(page.locator('#content-text'), 'value-0');
+        await page.locator('.header[data-column="0"]').click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Hide Column', { exact: true }).click();
+        await page.waitForSelector('.cell.cursor[data-column="1"]');
+        await waitForText(page.locator('#content-text'), 'value-1');
+
+        await page.getByRole('tab', { name: 'narrow', exact: true }).click();
+        await page.waitForSelector('#tabs button[aria-selected=true]:nth-child(2)');
+        await page.waitForSelector('.cell.cursor[data-column="0"]');
+        await waitForText(page.locator('#content-text'), 'value-0');
+        await page.getByRole('tab', { name: 'wide', exact: true }).click();
+        await page.waitForSelector('#tabs button[aria-selected=true]:nth-child(1)');
+        await page.waitForSelector('.cell.cursor[data-column="1"]');
+        await waitForText(page.locator('#content-text'), 'value-1');
+        await waitForText(page.locator('#content-pane h2'), 'c1 (B)');
+        await waitForText(page.locator('#status-cell'), 'Row 1, c1');
+
+        await page.locator('#sidebar-stats').click();
+        await waitForText(page.locator('#stats-panel h2'), 'c1 (B)');
+        await page.waitForFunction(() =>
+            window.regressionWorker.requests.some(
+                (r) => r.method === 'startStats' && r.params.sheet === 2 && r.params.column === 1,
+            ),
+        );
+        await page.locator('#histogram-button').click();
+        assert.equal(await page.locator('#histogram-column').inputValue(), '1');
+        await page.waitForFunction(() =>
+            window.regressionWorker.requests.some(
+                (r) => r.method === 'startHistogram' && r.params.sheet === 2 && r.params.column === 1,
+            ),
+        );
+        await page.context().close();
+    });
+
+    for (const outcome of ['success', 'failure']) {
+        test(`suspends searching until a pending sheet change finishes with ${outcome}`, async () => {
+            const page = await regressionPage();
+            await page.fill('#search-text', 'query');
+            await page.evaluate(() => {
+                window.regressionWorker.holdSheets = true;
+            });
+            await page.getByRole('tab', { name: 'narrow', exact: true }).click();
+            await page.waitForFunction(() => window.regressionWorker.pendingSheets.length === 1);
+            assert.equal(await page.locator('#search-text').isDisabled(), true);
+            assert.equal(await page.locator('#search-prev').isDisabled(), true);
+            assert.equal(await page.locator('#search-next').isDisabled(), true);
+            // Even a queued key event must not search the sheet being left.
+            await page.dispatchEvent('#search-text', 'keydown', { key: 'Enter' });
+            assert.equal(
+                await page.evaluate(() => window.regressionWorker.requests.some((r) => r.method === 'search')),
+                false,
+            );
+            await page.evaluate((outcome) => {
+                const worker = window.regressionWorker;
+                const { request, info } = worker.pendingSheets.shift();
+                if (outcome === 'success') worker.reply(request, info);
+                else
+                    worker.onmessage({
+                        data: {
+                            type: 'reply',
+                            json: JSON.stringify({
+                                id: request.id,
+                                error: 'cannot open sheet',
+                            }),
+                        },
+                    });
+            }, outcome);
+            await page.waitForFunction(() => !document.getElementById('search-text').disabled);
+            await page.press('#search-text', 'Enter');
+            await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'findHit'));
+            const requests = await page.evaluate(() =>
+                window.regressionWorker.requests.filter((r) => ['search', 'findHit', 'searchState'].includes(r.method)),
+            );
+            assert.ok(requests.length >= 2);
+            assert.ok(requests.every((r) => r.params.sheet === (outcome === 'success' ? 3 : 2)));
+            await page.context().close();
+        });
+    }
+
+    test('keeps searching disabled until the latest sheet change finishes', async () => {
+        const page = await regressionPage();
+        await page.fill('#search-text', 'query');
+        await page.evaluate(() => {
+            window.regressionWorker.holdSheets = true;
+        });
+        await page.getByRole('tab', { name: 'narrow', exact: true }).click();
+        await page.getByRole('tab', { name: 'wide', exact: true }).click();
+        await page.waitForFunction(() => window.regressionWorker.pendingSheets.length === 2);
+        await page.evaluate(async () => {
+            const worker = window.regressionWorker;
+            const { request, info } = worker.pendingSheets.shift();
+            worker.reply(request, info);
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+        });
+        assert.equal(await page.locator('#search-text').isDisabled(), true);
+        await page.evaluate(() => {
+            const worker = window.regressionWorker;
+            const { request, info } = worker.pendingSheets.shift();
+            worker.reply(request, info);
+        });
+        await page.waitForFunction(() => !document.getElementById('search-text').disabled);
+        await page.press('#search-text', 'Enter');
+        await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'findHit'));
+        assert.equal(
+            await page.evaluate(() => window.regressionWorker.requests.find((r) => r.method === 'search').params.sheet),
+            2,
+        );
+        await page.context().close();
+    });
+
     for (const change of ['query', 'option', 'sheet', 'file']) {
         test(`cancels a pending search when changing the ${change}`, async () => {
             const page = await regressionPage();

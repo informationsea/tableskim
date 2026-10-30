@@ -86,11 +86,11 @@ export function Grid({
             shownSheet.current = null;
             return;
         }
-        controller.setInfo(info, shownSheet.current !== sheetKey);
+        const newSheet = shownSheet.current !== sheetKey;
+        controller.setInfo(info, newSheet);
+        controller.setLayout(hidden, frozen, newSheet);
         shownSheet.current = sheetKey;
-    }, [controller, info, sheetKey]);
-
-    useLayoutEffect(() => controller.setLayout(hidden, frozen), [controller, hidden, frozen, info]);
+    }, [controller, info, sheetKey, hidden, frozen]);
 
     useLayoutEffect(() => controller.setMonospace(monospace), [controller, monospace]);
 
