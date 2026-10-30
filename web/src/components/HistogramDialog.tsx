@@ -31,6 +31,8 @@ export function HistogramDialog({
 }: HistogramDialogProps) {
     const [column, setColumn] = useState(initialColumn);
     const [bins, setBins] = useState(DEFAULT_BINS);
+    // As typed: "15" passes through "1", which is no count of bins.
+    const [binsText, setBinsText] = useState(String(DEFAULT_BINS));
     const [state, setState] = useState<HistogramState | null>(null);
     const [error, setError] = useState('');
     const [table, setTable] = useState(false);
@@ -93,11 +95,13 @@ export function HistogramDialog({
                         className="control w-20"
                         min={2}
                         max={200}
-                        value={bins}
+                        value={binsText}
                         onChange={(event) => {
+                            setBinsText(event.target.value);
                             const value = Number(event.target.value);
-                            if (value >= 2 && value <= 200) setBins(value);
+                            if (Number.isInteger(value) && value >= 2 && value <= 200) setBins(value);
                         }}
+                        onBlur={() => setBinsText(String(bins))}
                     />
                 </label>
                 <button type="button" className="control" aria-pressed={table} onClick={() => setTable(!table)}>

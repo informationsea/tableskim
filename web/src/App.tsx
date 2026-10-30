@@ -202,6 +202,10 @@ export function App({ client }: { client: TableSkimClient }) {
     const selectSheet = useCallback(
         async (name: string) => {
             const epoch = ++flow.current.epoch;
+            // The search of the sheet left would keep running and marking
+            // its hits, which the search box no longer shows.
+            const left = flow.current.info;
+            if (flow.current.searchActive && left) client.call('cancelSearch', { sheet: left.sheet }).catch(() => {});
             resetSearch();
             try {
                 const next = await client.call('sheet', { name });
@@ -615,6 +619,9 @@ export function App({ client }: { client: TableSkimClient }) {
     useEffect(() => {
         let depth = 0;
         const keyDown = (event: KeyboardEvent) => {
+            // A modal dialog has the keys: Ctrl+G would close it, cancelling
+            // the job it runs.
+            if (document.querySelector('dialog[open]')) return;
             const ctrl = event.ctrlKey || event.metaKey;
             if (ctrl && event.shiftKey && event.key.toLowerCase() === 'f') {
                 event.preventDefault();
