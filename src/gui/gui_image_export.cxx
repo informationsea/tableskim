@@ -20,14 +20,6 @@
 
 namespace
 {
-    std::string lowerExtension(const std::filesystem::path &path)
-    {
-        std::string ext = utf8String(path.extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
-        return ext;
-    }
-
     // The folder of the last image saved, for the next one.
     std::string &lastDirectory()
     {

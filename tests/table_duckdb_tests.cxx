@@ -11,6 +11,7 @@
 #include <duckdb.hpp>
 
 #include "cell_format.hxx"
+#include "sql_text.hxx"
 #include "table.hxx"
 #include "table_duckdb.hxx"
 #include "test_helpers.hxx"
@@ -676,7 +677,7 @@ TEST_CASE("DuckDB: filesystem protection also applies to internal queries", "[re
     const auto pathLiteral = [](const std::filesystem::path &path)
     {
         const auto text = path.generic_u8string();
-        return duckDbStringLiteral(std::string(text.begin(), text.end()));
+        return quoteSqlString(std::string(text.begin(), text.end()));
     };
     const auto rejectCopy = [&](const std::string &target, const std::string &options)
     {

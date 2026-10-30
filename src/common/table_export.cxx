@@ -13,6 +13,8 @@
 #include <duckdb.hpp>
 
 #include "decompress.hxx"
+#include "file_util.hxx"
+#include "sql_text.hxx"
 #include "table.hxx"
 #include "table_duckdb.hxx"
 #include "text_encoding.hxx"
@@ -22,24 +24,6 @@ namespace
 {
     // Rows read and appended at a time.
     constexpr size_t BLOCK_ROWS = 10000;
-
-    std::string utf8String(const std::filesystem::path &path)
-    {
-        const std::u8string u8 = path.u8string();
-        return std::string(u8.begin(), u8.end());
-    }
-
-    std::string quoteIdentifier(const std::string &name)
-    {
-        std::string quoted = "\"";
-        for (const char c : name)
-        {
-            quoted += c;
-            if (c == '"')
-                quoted += '"';
-        }
-        return quoted + "\"";
-    }
 
     // Staging columns are c0, c1, ...; the real names may be anything.
     std::string stagingColumn(size_t index)
@@ -95,14 +79,14 @@ namespace
             for (const auto &candidate : candidates)
             {
                 sql += ", bool_and(" + v + " IS NULL OR " + v + " = '' OR (regexp_full_match(" + v + ", " +
-                       duckDbStringLiteral(candidate.pattern) + ") AND TRY_CAST(" + v + " AS " + candidate.type +
+                       quoteSqlString(candidate.pattern) + ") AND TRY_CAST(" + v + " AS " + candidate.type +
                        ") IS NOT NULL";
                 // Text must round-trip through DOUBLE without losing digits:
                 // integers even when another row makes BIGINT unsuitable,
                 // decimals such as "1.10" only if they print back the same.
                 if (std::string_view(candidate.type) == "DOUBLE")
                     sql += " AND coalesce(CASE WHEN regexp_full_match(" + v + ", " +
-                           duckDbStringLiteral(candidates[0].pattern) + ") THEN TRY_CAST(TRY_CAST(" + v +
+                           quoteSqlString(candidates[0].pattern) + ") THEN TRY_CAST(TRY_CAST(" + v +
                            " AS DOUBLE) AS BIGINT) = TRY_CAST(" + v + " AS BIGINT) ELSE TRY_CAST(TRY_CAST(" + v +
                            " AS DOUBLE) AS VARCHAR) = " + v + " END, FALSE)";
                 sql += "))";
@@ -383,7 +367,7 @@ namespace
                     sql += v;
                 else
                     sql += "CAST(NULLIF(" + v + ", '') AS " + type + ")";
-                sql += " AS " + quoteIdentifier(names[i]);
+                sql += " AS " + quoteSqlIdentifier(names[i]);
             }
             if (columns.empty())
                 sql += "NULL AS A";
@@ -561,7 +545,7 @@ namespace
 
         if (format == ViewExportFormat::Parquet)
         {
-            staging->run("COPY (" + select + ") TO " + duckDbStringLiteral(utf8String(path)) +
+            staging->run("COPY (" + select + ") TO " + quoteSqlString(utf8String(path)) +
                          " (FORMAT parquet, COMPRESSION zstd)");
             return stop.stop_requested() ? std::nullopt : std::optional<size_t>(rows);
         }
@@ -602,13 +586,6 @@ namespace
         return rows;
     }
 
-    std::string lowerExtension(const std::filesystem::path &path)
-    {
-        std::string ext = utf8String(path.extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
-        return ext;
-    }
 } // namespace
 
 const char *exportFormatName(ExportFormat format)
@@ -682,13 +659,13 @@ std::optional<size_t> exportTextFile(const std::filesystem::path &source, const 
 
     if (format == ExportFormat::Parquet)
     {
-        staging.run("COPY (" + select + ") TO " + duckDbStringLiteral(utf8String(partial)) +
+        staging.run("COPY (" + select + ") TO " + quoteSqlString(utf8String(partial)) +
                     " (FORMAT parquet, COMPRESSION zstd)");
     }
     else
     {
-        staging.run("ATTACH " + duckDbStringLiteral(utf8String(partial)) + " AS export_target");
-        staging.run("CREATE TABLE export_target.main." + quoteIdentifier(exportTableName(source)) + " AS " + select);
+        staging.run("ATTACH " + quoteSqlString(utf8String(partial)) + " AS export_target");
+        staging.run("CREATE TABLE export_target.main." + quoteSqlIdentifier(exportTableName(source)) + " AS " + select);
         // Checkpoints and closes the file, so that it is complete without a WAL.
         staging.run("DETACH export_target");
     }

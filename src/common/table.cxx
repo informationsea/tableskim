@@ -3399,7 +3399,7 @@ std::unique_ptr<DataSource> BackendRegistry::open(const std::filesystem::path &p
 {
     std::ifstream stream(path, std::ios::binary);
     if (!stream)
-        throw std::runtime_error("Cannot open file: " + path.string());
+        throw std::runtime_error("Cannot open file: " + utf8String(path));
     std::vector<std::byte> head(4096);
     stream.read(reinterpret_cast<char *>(head.data()), static_cast<std::streamsize>(head.size()));
     head.resize(static_cast<size_t>(stream.gcount()));
@@ -3416,6 +3416,6 @@ std::unique_ptr<DataSource> BackendRegistry::open(const std::filesystem::path &p
         }
     }
     if (!best)
-        throw std::runtime_error("Unsupported file type: " + path.string());
+        throw std::runtime_error("Unsupported file type: " + utf8String(path));
     return best->open(path, options);
 }

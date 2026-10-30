@@ -43,7 +43,4 @@ std::filesystem::path duckDbTempDirectory();
 // escape: brackets make "*", "?" and "[" in it match only themselves.
 std::string escapeDuckDbGlob(const std::string &path);
 
-// 'text' with embedded quotes doubled.
-std::string duckDbStringLiteral(const std::string &text);
-
 #endif // _TABLE_DUCKDB_HXX_

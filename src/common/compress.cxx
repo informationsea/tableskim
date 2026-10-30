@@ -17,6 +17,8 @@
 #include <zlib.h>
 #include <zstd.h>
 
+#include "file_util.hxx"
+
 namespace
 {
     constexpr size_t OUT_CHUNK = 64 * 1024;
@@ -31,7 +33,7 @@ namespace
         explicit FileOutput(const std::filesystem::path &path) : file_(path, std::ios::binary | std::ios::trunc)
         {
             if (!file_)
-                throw std::runtime_error("Cannot create file: " + path.string());
+                throw std::runtime_error("Cannot create file: " + utf8String(path));
         }
         void write(const char *data, size_t size)
         {

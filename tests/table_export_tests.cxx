@@ -13,6 +13,7 @@
 
 #include "table_export.hxx"
 #include "xlsx_writer.hxx"
+#include "sql_text.hxx"
 #include "table.hxx"
 #include "table_duckdb.hxx"
 #include "test_helpers.hxx"
@@ -40,7 +41,7 @@ namespace
     {
         duckdb::DuckDB db(nullptr);
         duckdb::Connection conn(db);
-        const std::string literal = duckDbStringLiteral(utf8String(path));
+        const std::string literal = quoteSqlString(utf8String(path));
         std::unique_ptr<duckdb::MaterializedQueryResult> result;
         if (format == ExportFormat::Parquet)
             result = conn.Query("DESCRIBE SELECT * FROM read_parquet(" + literal + ")");
@@ -527,9 +528,9 @@ TEST_CASE("exportView: typed sources keep their types")
     {
         duckdb::DuckDB db(nullptr);
         duckdb::Connection conn(db);
-        const std::string literal = duckDbStringLiteral(utf8String(parquet));
+        const std::string literal = quoteSqlString(utf8String(parquet));
         auto original = conn.Query("SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM read_parquet(" +
-                                   duckDbStringLiteral(utf8String(kDemoData / "dates.parquet")) + "))");
+                                   quoteSqlString(utf8String(kDemoData / "dates.parquet")) + "))");
         auto exported = conn.Query("SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM read_parquet(" +
                                    literal + "))");
         REQUIRE_FALSE(original->HasError());

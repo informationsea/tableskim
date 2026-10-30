@@ -54,7 +54,7 @@ namespace
     std::string sqlPath(const std::filesystem::path &path)
     {
         const auto text = path.generic_u8string();
-        return duckDbStringLiteral(std::string(text.begin(), text.end()));
+        return quoteSqlString(std::string(text.begin(), text.end()));
     }
 } // namespace
 
@@ -336,7 +336,7 @@ TEST_CASE("SQL: external writes cannot replace source files or other files", "[r
                 reject("SELECT 1; " + copy);
                 reject("EXPLAIN ANALYZE " + copy);
                 reject("PREPARE overwrite_source AS " + copy);
-                reject("SELECT * FROM query(" + duckDbStringLiteral(copy) + ")");
+                reject("SELECT * FROM query(" + quoteSqlString(copy) + ")");
             }
         }
         const auto fresh = directory / "new-file";
@@ -366,7 +366,7 @@ TEST_CASE("SQL: external writes cannot replace source files or other files", "[r
             reject("SET lock_configuration = false");
             reject("PRAGMA temp_directory = " + sqlPath(directory));
             reject("SELECT * FROM enable_logging(storage='file', storage_path=" + sqlPath(source) + ")");
-            reject("SELECT * FROM query(" + duckDbStringLiteral(
+            reject("SELECT * FROM query(" + quoteSqlString(
                 "SELECT * FROM enable_logging(storage='file', storage_path=" + sqlPath(output) + ")") + ")");
         }
         CHECK_FALSE(std::filesystem::exists(fresh));

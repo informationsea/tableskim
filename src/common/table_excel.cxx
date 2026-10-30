@@ -12,6 +12,9 @@
 #include <XLXmlParser.hpp>
 #include <pugixml.hpp>
 
+#include "file_util.hxx"
+#include "xlsx_writer.hxx"
+
 namespace
 {
     // Serial number of 1970-01-01 in the 1900 date system.
@@ -25,14 +28,6 @@ namespace
         Time,    // time of day, e.g. "hh:mm:ss"; shown as text
         Elapsed, // elapsed time, e.g. "[h]:mm:ss"; shown as text
     };
-
-    std::string lowerExtension(const std::filesystem::path &path)
-    {
-        std::string ext = path.extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
-        return ext;
-    }
 
     // Built-in number formats (ECMA-376 18.8.30), including the CJK ones.
     DateKind builtinDateKind(uint32_t id)
@@ -182,15 +177,6 @@ namespace
         return serial;
     }
 
-    bool isEscapePattern(std::string_view text, size_t pos)
-    {
-        if (pos + 6 >= text.size() || text[pos] != '_' || text[pos + 1] != 'x' || text[pos + 6] != '_')
-            return false;
-        return std::all_of(text.begin() + static_cast<std::ptrdiff_t>(pos) + 2, text.begin() + static_cast<std::ptrdiff_t>(pos) + 6,
-                           [](char c)
-                           { return std::isxdigit(static_cast<unsigned char>(c)) != 0; });
-    }
-
     // The reverse of decodeEscapes(): control characters other than tab and
     // line feed, and "_" before an escape-like pattern, become _xHHHH_. A
     // raw CR would be read back as LF (XML end-of-line handling).
@@ -201,12 +187,8 @@ namespace
         for (size_t pos = 0; pos < text.size(); ++pos)
         {
             const auto c = static_cast<unsigned char>(text[pos]);
-            if ((c < 0x20 && c != '\t' && c != '\n') || isEscapePattern(text, pos))
-            {
-                char buf[16];
-                std::snprintf(buf, sizeof(buf), "_x%04X_", c);
-                result += buf;
-            }
+            if (needsXlsxEscape(c) || isXlsxEscapePattern(text, pos))
+                appendXlsxEscape(result, c);
             else
                 result += static_cast<char>(c);
         }
@@ -233,8 +215,7 @@ namespace
         std::string result = text.substr(0, pos);
         while (pos < text.size())
         {
-            if (pos + 6 < text.size() && text[pos] == '_' && text[pos + 1] == 'x' && text[pos + 6] == '_' &&
-                hex(text[pos + 2]) >= 0 && hex(text[pos + 3]) >= 0 && hex(text[pos + 4]) >= 0 && hex(text[pos + 5]) >= 0)
+            if (isXlsxEscapePattern(text, pos))
             {
                 const unsigned code = (hex(text[pos + 2]) << 12) | (hex(text[pos + 3]) << 8) |
                                       (hex(text[pos + 4]) << 4) | hex(text[pos + 5]);

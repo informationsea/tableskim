@@ -9,6 +9,8 @@
 // would use the ANSI code page on Windows.
 std::filesystem::path utf8Path(const std::string &path);
 std::string utf8String(const std::filesystem::path &path);
+// The extension (".csv"), ASCII letters lowercased, in UTF-8.
+std::string lowerExtension(const std::filesystem::path &path);
 
 // Modification time and size, used to tell whether a file has changed.
 bool readFileStamp(const std::filesystem::path &path, std::filesystem::file_time_type &mtime, std::uintmax_t &size);
