@@ -11,6 +11,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -463,6 +464,112 @@ namespace
         if (a_nan || b_nan)
             return a_nan == b_nan ? 0 : (a_nan ? 1 : -1);
         return ad < bd ? -1 : (ad > bd ? 1 : 0);
+    }
+
+    // A cell as compareCells() sees it, worked out once before a sort: the
+    // comparisons then neither parse text nor copy strings.
+    struct SortCell
+    {
+        enum class Kind : uint8_t
+        {
+            Integer, // integers, booleans and numeric text
+            Double,
+            Date,     // day: the day
+            DateTime, // day and micros: the day and the time in it
+            Text,     // text: the cell's own string
+            Null,
+        };
+        Kind kind = Kind::Null;
+        union
+        {
+            int64_t integer;
+            double number;
+            int64_t day;
+            const std::string *text;
+        };
+        int64_t micros = 0;
+
+        explicit SortCell(const CellValue &value) : integer(0)
+        {
+            if (isNull(value))
+                return;
+            if (const auto *date = std::get_if<Date>(&value))
+            {
+                kind = Kind::Date;
+                day = date->days_since_epoch;
+            }
+            else if (const auto *time = std::get_if<DateTime>(&value))
+            {
+                constexpr int64_t micros_per_day = 86400LL * 1000000;
+                kind = Kind::DateTime;
+                day = time->micros_since_epoch / micros_per_day;
+                micros = time->micros_since_epoch % micros_per_day;
+                if (micros < 0)
+                {
+                    --day;
+                    micros += micros_per_day;
+                }
+            }
+            else if (const auto number = numericValue(value))
+            {
+                if (const auto *i = std::get_if<int64_t>(&*number))
+                {
+                    kind = Kind::Integer;
+                    integer = *i;
+                }
+                else
+                {
+                    kind = Kind::Double;
+                    this->number = std::get<double>(*number);
+                }
+            }
+            else
+            {
+                // Everything else is numeric: only text is left.
+                kind = Kind::Text;
+                text = &std::get<std::string>(value);
+            }
+        }
+
+        bool temporal() const { return kind == Kind::Date || kind == Kind::DateTime; }
+
+        // sortNumber() of the cell.
+        NumericValue numeric() const
+        {
+            switch (kind)
+            {
+            case Kind::Integer:
+                return integer;
+            case Kind::Date:
+                return day;
+            case Kind::DateTime:
+                return static_cast<double>(day * (86400LL * 1000000) + micros) / (86400.0 * 1000000);
+            default:
+                return number;
+            }
+        }
+    };
+
+    // compareCells() of the cells the keys were made from.
+    int compareSortCells(const SortCell &a, const SortCell &b)
+    {
+        using Kind = SortCell::Kind;
+        const bool a_null = a.kind == Kind::Null, b_null = b.kind == Kind::Null;
+        if (a_null || b_null)
+            return a_null == b_null ? 0 : (a_null ? 1 : -1);
+        if (a.temporal() && b.temporal())
+        {
+            // compareTemporal(): a date is the start of its day.
+            if (a.day != b.day)
+                return a.day < b.day ? -1 : 1;
+            return a.micros < b.micros ? -1 : (a.micros > b.micros ? 1 : 0);
+        }
+        const bool a_text = a.kind == Kind::Text, b_text = b.kind == Kind::Text;
+        if (!a_text && !b_text)
+            return compareNumbers(a.numeric(), b.numeric());
+        if (!a_text || !b_text)
+            return a_text ? 1 : -1;
+        return a.text->compare(*b.text);
     }
 } // namespace
 
@@ -2306,29 +2413,45 @@ bool TableModel::stepApplyView(std::unique_lock<std::mutex> &lock, std::stop_tok
                 rows.emplace_back(block->first_row + i, &block->rows[i]);
         }
     }
+    auto order = std::make_shared<std::vector<size_t>>();
+    order->reserve(rows.size());
     if (!spec.sort.empty())
     {
-        std::stable_sort(rows.begin(), rows.end(), [&](const auto &a, const auto &b)
-                         {
+        // Each cell sorted by is worked out once, not in every comparison.
+        const size_t width = spec.sort.size();
+        std::vector<SortCell> keys;
+        keys.reserve(rows.size() * width);
+        for (const auto &[source_row, row] : rows)
+        {
             for (const auto &key : spec.sort)
+                keys.emplace_back(cellAt(*row, key.column));
+        }
+        std::vector<size_t> sorted(rows.size());
+        std::iota(sorted.begin(), sorted.end(), size_t{0});
+        std::stable_sort(sorted.begin(), sorted.end(), [&](size_t a, size_t b)
+                         {
+            for (size_t k = 0; k < width; ++k)
             {
-                const int cmp = compareCells(cellAt(*a.second, key.column), cellAt(*b.second, key.column));
+                const SortCell &a_cell = keys[a * width + k];
+                const SortCell &b_cell = keys[b * width + k];
+                const int cmp = compareSortCells(a_cell, b_cell);
                 if (cmp != 0)
                 {
-                    const bool a_null = isNull(cellAt(*a.second, key.column));
-                    const bool b_null = isNull(cellAt(*b.second, key.column));
                     // keep empty cells at the bottom in both directions
-                    if (a_null || b_null)
-                        return b_null;
-                    return key.ascending ? cmp < 0 : cmp > 0;
+                    if (a_cell.kind == SortCell::Kind::Null || b_cell.kind == SortCell::Kind::Null)
+                        return b_cell.kind == SortCell::Kind::Null;
+                    return spec.sort[k].ascending ? cmp < 0 : cmp > 0;
                 }
             }
             return false; });
+        for (const size_t i : sorted)
+            order->push_back(rows[i].first);
     }
-    auto order = std::make_shared<std::vector<size_t>>();
-    order->reserve(rows.size());
-    for (const auto &[source_row, row] : rows)
-        order->push_back(source_row);
+    else
+    {
+        for (const auto &[source_row, row] : rows)
+            order->push_back(source_row);
+    }
 
     lock.lock();
     if (!pending_view_ || !(*pending_view_ == spec))

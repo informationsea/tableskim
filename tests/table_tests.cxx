@@ -938,6 +938,57 @@ TEST_CASE("sort compares dates and date-times chronologically", "[regression]")
         CHECK(cellText(*model, row, 1) == expected[row]);
 }
 
+TEST_CASE("in-memory sort orders as compareCells() does")
+{
+    // Every kind of cell, ties included, in both directions and by two keys.
+    const std::vector<CellValue> kinds{
+        CellValue{}, std::string(), std::string("b"), std::string("a"), std::string("B"), std::string(" 2 "),
+        std::string("+3"), std::string("2.5"), std::string("1e400"), std::string("nan"), int64_t{2}, int64_t{-7},
+        std::numeric_limits<int64_t>::max(), 2.0, 2.5, -0.0, std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(), true, false, Date{0}, Date{1}, Date{-1}, DateTime{0},
+        DateTime{1}, DateTime{-1}, DateTime{86400LL * 1000000}, Date{2}, std::string("1970-01-01"),
+    };
+    std::vector<TableRow> values;
+    for (size_t i = 0; i < kinds.size() * 3; ++i)
+        values.push_back({kinds[(i * 7) % kinds.size()], kinds[(i * 5 + 3) % kinds.size()], int64_t(i)});
+    auto data = std::make_unique<FakeData>();
+    data->values = std::make_shared<const std::vector<TableRow>>(values);
+    TableBook book(std::move(data));
+    auto model = book.sheet("a");
+    REQUIRE(waitFor([&] { return model->viewCapabilities().sort; }));
+
+    auto isEmpty = [](const CellValue &value)
+    {
+        const auto *text = std::get_if<std::string>(&value);
+        return std::holds_alternative<std::monostate>(value) || (text && text->empty());
+    };
+    for (const bool ascending : {true, false})
+    {
+        const ViewSpec spec{.sort = {{0, ascending}, {1, !ascending}}};
+        std::vector<TableRow> expected = values;
+        std::stable_sort(expected.begin(), expected.end(), [&](const TableRow &a, const TableRow &b)
+                         {
+            for (const SortKey &key : spec.sort)
+            {
+                const int cmp = compareCells(a[key.column], b[key.column]);
+                if (cmp != 0)
+                {
+                    if (isEmpty(a[key.column]) || isEmpty(b[key.column]))
+                        return isEmpty(b[key.column]);
+                    return key.ascending ? cmp < 0 : cmp > 0;
+                }
+            }
+            return false; });
+        model->setView(spec);
+        REQUIRE(waitFor([&] { return model->view() == spec; }));
+        for (size_t r = 0; r < expected.size(); ++r)
+        {
+            INFO("row " << r);
+            CHECK(cellText(*model, r, 2) == formatCell(expected[r][2]));
+        }
+    }
+}
+
 TEST_CASE("block size must be positive")
 {
     TableModel::Options options;
