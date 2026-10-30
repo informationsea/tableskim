@@ -232,9 +232,13 @@ jobs:
           if [ -f /opt/rh/gcc-toolset-14/enable ]; then
             source /opt/rh/gcc-toolset-14/enable
           fi
+          # pyte goes into a venv: pip as root installs into /usr/local,
+          # which RHEL's Python leaves out in isolated mode (-I, as the
+          # tests run).
           if [ "${{ matrix.tui_tests }}" = true ]; then
-            python3.11 -m pip install -r tests/tui/requirements.txt
-            tui_tests="-DPython3_EXECUTABLE=/usr/bin/python3.11 -DTABLESKIM_TUI_TESTS=ON"
+            python3.11 -m venv /opt/tui-venv
+            /opt/tui-venv/bin/pip install -r tests/tui/requirements.txt
+            tui_tests="-DPython3_EXECUTABLE=/opt/tui-venv/bin/python -DTABLESKIM_TUI_TESTS=ON"
           fi
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui || 'ON' }} \
             -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }} $tui_tests
