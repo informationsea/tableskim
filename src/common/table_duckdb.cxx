@@ -832,6 +832,10 @@ namespace
 
         std::unique_ptr<duckdb::MaterializedQueryResult> query(const std::string &sql, std::stop_token stop)
         {
+            // DuckDB clears an interrupt when a query starts: one requested
+            // before would be lost.
+            if (stop.stop_requested())
+                return nullptr;
             std::stop_callback interrupt(stop, [this]
                                          { db_->conn->Interrupt(); });
             auto result = db_->conn->Query(sql);

@@ -235,7 +235,8 @@ namespace
             config.SetOptionByName("temp_directory", duckdb::Value(utf8String(cleanup_.directory)));
             db_ = std::make_unique<duckdb::DuckDB>(nullptr, &config);
             conn_ = std::make_unique<duckdb::Connection>(*db_);
-            // Cancels a running query; the next one fails as well.
+            // Cancels a running query. DuckDB clears the interrupt when the
+            // next query starts: check for a stop before a long one.
             interrupt_ = std::make_unique<std::stop_callback<std::function<void()>>>(
                 stop_, [this]
                 { conn_->Interrupt(); });
@@ -332,6 +333,8 @@ namespace
                     textual.push_back(i);
             }
             std::vector<std::string> types(width_, "VARCHAR");
+            if (stop_.stop_requested())
+                return types;
             std::vector<std::string> inferred;
             try
             {
@@ -553,6 +556,8 @@ namespace
         const std::vector<std::string> names = uniqueNames(header_names);
         const std::vector<std::string> types = staging->types();
         const std::string select = Staging::select(columns, names, types);
+        if (stop.stop_requested())
+            return std::nullopt;
 
         if (format == ViewExportFormat::Parquet)
         {
@@ -672,6 +677,8 @@ std::optional<size_t> exportTextFile(const std::filesystem::path &source, const 
         columns.push_back(i);
     }
     const std::string select = Staging::select(columns, uniqueNames(header_names), staging.types());
+    if (stop.stop_requested())
+        return std::nullopt;
 
     if (format == ExportFormat::Parquet)
     {
