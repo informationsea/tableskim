@@ -129,8 +129,9 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `↑` / `↓`  | Move between lines                                |
 | `Tab`      | Next field: column, operator, value               |
 | `←` / `→`  | Change the column, operator, or All / Any         |
-| `Ctrl+N`   | Add a condition                                   |
-| `Ctrl+D`   | Delete the condition                              |
+| `Ctrl+N`, `Insert` | Add a condition                           |
+| `Ctrl+D`, `Delete` | Delete the condition                      |
+| `Ctrl+X`   | Clear the additional chart narrowing              |
 | `Ctrl+U`   | Clear the value                                   |
 | `Enter`    | Apply                                             |
 | `Esc`      | Cancel                                            |
