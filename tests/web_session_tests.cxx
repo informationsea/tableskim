@@ -70,6 +70,11 @@ namespace
 
     std::string cell(const JsonValue &rows, size_t row, size_t column)
     {
+        REQUIRE(rows["rows"].array());
+        REQUIRE(row < rows["rows"].array()->size());
+        REQUIRE((*rows["rows"].array())[row].array());
+        REQUIRE(column < (*rows["rows"].array())[row].array()->size());
+        REQUIRE((*(*rows["rows"].array())[row].array())[column].string());
         return *(*(*rows["rows"].array())[row].array())[column].string();
     }
 
@@ -273,6 +278,24 @@ TEST_CASE("WebSession opens a CSV file and pages through its rows")
         const JsonValue copied = client.result("copy", "{\"sheet\":" + std::to_string(id) +
                                                            ",\"top\":0,\"left\":0,\"bottom\":1,\"right\":1}");
         CHECK(*copied["text"].string() == "1\tSakura Brown\n2\tHanako Suzuki\n");
+    }
+}
+
+TEST_CASE("WebSession does not report EOF while a nonempty sheet opens", "[regression]")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    // Repeat the opening transition: the worker can publish its columns
+    // between the individual model queries that build a rows reply.
+    for (int attempt = 0; attempt < 200; ++attempt)
+    {
+        INFO(attempt);
+        client.result("open", "{\"path\":\"" + path("cp932-sample.csv") + "\"}");
+        const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"cp932-sample.csv\"}")["sheet"].number());
+        const JsonValue rows = client.rows(id, 0, 0);
+        CHECK_FALSE(*rows["end"].boolean());
+        REQUIRE(rows["rows"].array()->size() == 1);
+        CHECK(cell(rows, 0, 1) == "表示,ソフト");
     }
 }
 

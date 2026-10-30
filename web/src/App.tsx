@@ -120,6 +120,7 @@ export function App({ client }: { client: TableSkimClient }) {
     const [message, setMessage] = useState(ISOLATED ? '' : ISOLATION_MESSAGE);
     // A condition the Filter pane is to add ("Filter by This Column…").
     const [filterAdding, setFilterAdding] = useState<{ column: number; serial: number } | null>(null);
+    const filterAdded = useCallback(() => setFilterAdding(null), []);
     const [cellStatus, setCellStatus] = useState('');
     const [search, setSearch] = useState({ text: '', caseSensitive: false, regex: false });
     const [searchStatus, setSearchStatus] = useState('');
@@ -821,6 +822,7 @@ export function App({ client }: { client: TableSkimClient }) {
                                 ops={filterOps}
                                 onApply={setFilter}
                                 adding={filterAdding}
+                                onAdded={filterAdded}
                                 cursorColumn={Math.min(cursorColumn, info.columns.length - 1)}
                             />
                         ) : (

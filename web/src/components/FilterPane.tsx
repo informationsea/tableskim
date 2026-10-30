@@ -9,6 +9,7 @@ interface FilterPaneProps {
     onApply: (filter: Filter | null) => Promise<string | null>;
     // A condition to add for a column ("Filter by This Column…"), new each time.
     adding: { column: number; serial: number } | null;
+    onAdded: () => void;
     cursorColumn: number; // "+ Add condition" starts with it
 }
 
@@ -46,7 +47,7 @@ function sameConditions(a: Filter | null, b: Filter | null) {
  * The GUI's Filter pane: Match All / Any, a column, an operator and a value
  * for each condition, edited here and applied with Apply (or Enter).
  */
-export function FilterPane({ info, ops, onApply, adding, cursorColumn }: FilterPaneProps) {
+export function FilterPane({ info, ops, onApply, adding, onAdded, cursorColumn }: FilterPaneProps) {
     const applied = info.view.filter;
     const [draft, setDraft] = useState(() => draftOf(applied));
     const [synced, setSynced] = useState<Filter | null>(applied);
@@ -96,15 +97,17 @@ export function FilterPane({ info, ops, onApply, adding, cursorColumn }: FilterP
         setDraft((current) => ({ ...current, rows: [...current.rows, row] }));
     };
 
-    const lastAdding = useRef(adding?.serial ?? 0);
+    const lastAdding = useRef<typeof adding>(null);
     useEffect(() => {
-        if (adding && adding.serial !== lastAdding.current && usable) {
-            lastAdding.current = adding.serial;
+        if (adding && adding !== lastAdding.current && usable) {
+            lastAdding.current = adding;
             addRow(adding.column);
+            // Consume the request so remounting the pane does not replay it.
+            onAdded();
         }
         // addRow only reads the sheet's column count.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [adding, usable]);
+    }, [adding, usable, onAdded]);
 
     useEffect(() => {
         if (focusRow.current === null) return;

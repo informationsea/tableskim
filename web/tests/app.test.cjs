@@ -293,6 +293,25 @@ async function regressionPage() {
 }
 
 describe('frontend regressions', () => {
+    test('consumes column filter requests when opening or remounting the pane', async () => {
+        const page = await regressionPage();
+        const add = async (column) => {
+            await cell(page, 0, column).click({ button: 'right' });
+            await page.locator('#context-menu').getByText('Filter by This Column…').click();
+            await page.waitForFunction(() => document.activeElement?.classList.contains('filter-value'));
+            assert.equal(await page.locator('.filter-column').inputValue(), String(column));
+            assert.equal(await page.locator('#filter-conditions li').count(), 1);
+        };
+        await add(1); // The sidebar is closed initially.
+        await page.locator('#sidebar-close').click();
+        await page.locator('#filter-toggle').click();
+        assert.equal(await page.locator('#filter-conditions li').count(), 0); // No request replay.
+        await add(2); // A second request while the pane is mounted.
+        await page.locator('#sidebar-content').click();
+        await add(3); // Mount the pane in place of another tab.
+        await page.context().close();
+    });
+
     test('keeps chart narrowing separate from editable OR conditions', async () => {
         const page = await regressionPage();
         await page.evaluate(() => {
