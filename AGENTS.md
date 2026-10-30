@@ -29,8 +29,9 @@ All third-party dependencies (FLTK, DuckDB, SQLite, OpenXLSX, csv-parser,
 Catch2, FTXUI, CLI11, spdlog, zlib, bzip2, xz, zstd, RE2, Abseil) are pulled with `FetchContent` in
 `cmake/Dependencies.cmake` and linked statically (OpenXLSX is patched at
 every configure by `cmake/patches/openxlsx.cmake`, which must leave patched
-files alone). There is no system package
-requirement except a compiler, CMake ≥ 3.26, and (on Linux) fontconfig.
+files alone). Linux GUI builds also need system development packages for
+fontconfig, X11 and Wayland/Cairo/Pango; see [Building](README.md#building)
+for the Ubuntu installation commands and the TUI-only alternative.
 On Linux, FLTK can optionally come from the system (FLTK ≥ 1.4 with its CMake
 config package) by configuring with `-DTABLESKIM_USE_SYSTEM_FLTK=ON`.
 Likewise `-DTABLESKIM_USE_SYSTEM_SQLITE=ON` and
@@ -55,7 +56,7 @@ available, otherwise Unix Makefiles) into `build/<preset>/`, builds, and then
 runs the tests. The individual steps are:
 
 ```sh
-cmake --preset debug                 # first time only
+cmake --preset debug                 # reuses the cache; retries failed configuration
 cmake --build --preset debug
 ctest --preset debug                 # output is shown on failure
 ctest --preset debug -j 8            # test cases in parallel

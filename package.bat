@@ -13,9 +13,8 @@ if "%KIND%"=="" set KIND=all
 
 cd /d "%~dp0"
 
-rem Test the cache, not the directory: an interrupted first configure leaves a
-rem directory that was never configured.
-if not exist build\%TABLESKIM_PRESET%\CMakeCache.txt cmake --preset %TABLESKIM_PRESET% || exit /b 1
+rem Retry configuration even if a failed configure left CMakeCache.txt.
+cmake --preset %TABLESKIM_PRESET% || exit /b 1
 cmake --build --preset %TABLESKIM_PRESET% || exit /b 1
 
 cd build\%TABLESKIM_PRESET%

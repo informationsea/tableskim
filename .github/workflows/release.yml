@@ -73,7 +73,6 @@ jobs:
       - name: Reset ccache statistics
         run: ccache --zero-stats
       - name: Build, test and package
-        # build.sh does not configure again when the cache exists.
         run: |
           cmake --preset release
           ./package.sh deb

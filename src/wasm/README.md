@@ -300,13 +300,7 @@ memory checkpoint) and sorting by the first column:
   pieces (posting output, mounting the `File`), which `tableskim-wasm`
   now uses.
 
-## Not done yet
-
-SQL, statistics, histograms, scatter plots, Group By, exports and editing
-(the core has them; the session and the app do not ask for them yet);
-publishing on the project's GitHub Pages site (the app is ready for it),
-offline use and file handlers (PWA); loading DuckDB only
-when needed. Follow cannot work on a `File`, which is a snapshot.
+## Filter semantics
 
 The filter has `combine` (`and` or `or`) and editable `conditions`, plus an
 optional `narrowing` array of conditions from chart selections. Its meaning is
@@ -318,3 +312,14 @@ and clearing the filter removes both groups.
 `setView.addNarrowing` appends chart conditions to the latest requested view,
 keeping pending sorts and filters, just as `addConditions` does for editable
 conditions. Both additions omit duplicate conditions.
+
+## Not done yet
+
+Editing, offline use and file handlers (PWA), and loading DuckDB only when
+needed are not implemented. Follow cannot work on a `File`, which is a
+snapshot.
+
+SQL, statistics, histograms, scatter plots, Group By, exports and text-file
+conversion are implemented in the session and the app. The latest release's
+web app is published on the project's GitHub Pages site (see
+[Using the Web App](../../docs/en/web.md)).
