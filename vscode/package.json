@@ -27,12 +27,24 @@
         "viewType": "tableskim.table",
         "displayName": "TableSkim",
         "selector": [
-          { "filenamePattern": "*.parquet" },
-          { "filenamePattern": "*.xlsx" },
-          { "filenamePattern": "*.xlsm" },
-          { "filenamePattern": "*.duckdb" },
-          { "filenamePattern": "*.sqlite" },
-          { "filenamePattern": "*.sqlite3" }
+          {
+            "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.xlsx"
+          },
+          {
+            "filenamePattern": "*.xlsm"
+          },
+          {
+            "filenamePattern": "*.duckdb"
+          },
+          {
+            "filenamePattern": "*.sqlite"
+          },
+          {
+            "filenamePattern": "*.sqlite3"
+          }
         ],
         "priority": "default"
       },
@@ -40,17 +52,39 @@
         "viewType": "tableskim.text",
         "displayName": "TableSkim",
         "selector": [
-          { "filenamePattern": "*.csv" },
-          { "filenamePattern": "*.tsv" },
-          { "filenamePattern": "*.vcf" },
-          { "filenamePattern": "*.json" },
-          { "filenamePattern": "*.ndjson" },
-          { "filenamePattern": "*.jsonl" },
-          { "filenamePattern": "*.db" },
-          { "filenamePattern": "*.gz" },
-          { "filenamePattern": "*.bz2" },
-          { "filenamePattern": "*.xz" },
-          { "filenamePattern": "*.zst" }
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.vcf"
+          },
+          {
+            "filenamePattern": "*.json"
+          },
+          {
+            "filenamePattern": "*.ndjson"
+          },
+          {
+            "filenamePattern": "*.jsonl"
+          },
+          {
+            "filenamePattern": "*.db"
+          },
+          {
+            "filenamePattern": "*.gz"
+          },
+          {
+            "filenamePattern": "*.bz2"
+          },
+          {
+            "filenamePattern": "*.xz"
+          },
+          {
+            "filenamePattern": "*.zst"
+          }
         ],
         "priority": "option"
       }
@@ -85,11 +119,13 @@
     "compile": "tsc -p .",
     "build": "npm run build:engine && npm run build:webview && npm run compile",
     "test": "node --test tests/engine.test.cjs",
+    "test:vscode": "node tests/integration/run.cjs",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
     "@types/vscode": "~1.90.0",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.6.0",
     "typescript": "~6.0.3"
   }

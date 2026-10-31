@@ -15,11 +15,21 @@ type FromWebview =
     | { type: 'save'; name: string; data: Uint8Array }
     | { type: 'pick' };
 
+/** A message relayed between a webview and its engine, for the integration tests. */
+export interface Relayed {
+    document: vscode.Uri;
+    direction: 'toEngine' | 'fromEngine';
+    message: unknown;
+}
+
 function escapeAttribute(text: string) {
     return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvider {
+    private readonly relayed = new vscode.EventEmitter<Relayed>();
+    readonly onDidRelay = this.relayed.event;
+
     constructor(private readonly context: vscode.ExtensionContext) {}
 
     openCustomDocument(uri: vscode.Uri): vscode.CustomDocument {
@@ -41,7 +51,10 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         const modulePath = vscode.Uri.joinPath(this.context.extensionUri, 'engine', 'tableskim-wasm-node.js').fsPath;
         const engine = new Engine(
             modulePath,
-            (message) => post({ type: 'engine', message }),
+            (message) => {
+                this.relayed.fire({ document: document.uri, direction: 'fromEngine', message });
+                post({ type: 'engine', message });
+            },
             (text) => post({ type: 'engineError', message: text }),
         );
         panel.onDidDispose(() => engine.dispose());
@@ -49,11 +62,12 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         panel.webview.onDidReceiveMessage((message: FromWebview) => {
             switch (message.type) {
                 case 'engine': {
-                    const request = message.message;
+                    let request = message.message;
                     // Only the document is opened, whatever the page asks for.
                     if (request.method === 'open')
-                        engine.post({ ...request, params: { ...request.params, path: document.uri.fsPath } });
-                    else engine.post(request);
+                        request = { ...request, params: { ...request.params, path: document.uri.fsPath } };
+                    this.relayed.fire({ document: document.uri, direction: 'toEngine', message: request });
+                    engine.post(request);
                     break;
                 }
                 case 'save':

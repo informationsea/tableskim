@@ -67,6 +67,18 @@ the extension does:
 LANG=C.UTF-8 node --test web/tests/vscode.test.cjs
 ```
 
+`npm run test:vscode` runs the extension in VS Code itself (downloaded by
+`@vscode/test-electron` into `.vscode-test/`, which needs
+`update.code.visualstudio.com` and `vscode.download.prss.microsoft.com`):
+`tests/integration/suite.cjs` opens demo files in the custom editor and
+waits until the webview has asked the engine for rows and got them,
+watching the messages the extension relays (`activate()` returns
+`onDidRelay` for this). On Linux without a display:
+
+```sh
+xvfb-run -a npm run test:vscode
+```
+
 To try the extension, open this directory in VS Code and run **Run >
 Start Debugging** (Extension Development Host), or install the VSIX with
 **Extensions: Install from VSIX…**.
