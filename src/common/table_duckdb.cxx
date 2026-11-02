@@ -1234,7 +1234,7 @@ void registerDuckDbBackend(BackendRegistry &registry)
         .probe = [](const std::filesystem::path &, std::span<const std::byte> head) -> int
         {
             // The main header follows an 8-byte checksum.
-            return hasMagic(head, 8, "DUCK") ? 100 : 0;
+            return hasMagic(head, 8, "DUCK") ? 200 : 0;
         },
         .open = [](const std::filesystem::path &path, const OpenOptions &options)
         { return openDuckDbDataSource(path, options); },

@@ -72,6 +72,32 @@ TEST_CASE("normal.csv: header and exact row count")
     CHECK(model->peek(54, 0).state == CellState::OutOfRange);
 }
 
+TEST_CASE("Binary signatures take priority over text extensions", "[regression]")
+{
+    for (const std::string source : {"normal.parquet", "demo.duckdb", "demo.sqlite3"})
+    {
+        for (const std::string suffix : {".csv", ".tsv", ".tab", ".vcf", ".txt"})
+        {
+            CAPTURE(source, suffix);
+            const auto path = tempFile(source + suffix);
+            std::filesystem::copy_file(kDemoData / source, path, std::filesystem::copy_options::overwrite_existing);
+            {
+                auto book = TableBook::open(path);
+                CHECK(book->supportsSql());
+                CHECK_FALSE(book->usesHeaderOption());
+                CHECK_FALSE(book->supportsEditing());
+                auto model = source == "normal.parquet" ? firstSheet(*book) : book->sheet("normal");
+                REQUIRE(model);
+                CHECK(cellText(*model, 0, 1) == "Sakura Brown");
+                CHECK(model->columnCount() == 9);
+                CHECK(model->columnName(0) == "ID");
+                CHECK(waitFor([&] { return model->rowCount() == RowCount{54, RowCount::Kind::Exact}; }));
+            }
+            std::filesystem::remove(path);
+        }
+    }
+}
+
 TEST_CASE("CSV: non-ASCII directories and filenames", "[regression]")
 {
     const auto directory = std::filesystem::temp_directory_path() / std::filesystem::path(u8"tableskim-test-表-😀");

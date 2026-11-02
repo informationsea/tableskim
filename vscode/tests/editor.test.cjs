@@ -125,12 +125,13 @@ test('save replies report the result and protect the source', async (t) => {
             },
         },
     );
+    receive({ type: 'hello', page: 'page-1' });
     let id = 0;
     const save = () => {
         const request = ++id;
         return new Promise((resolve) => {
             pending.set(request, resolve);
-            receive({ type: 'save', id: request, name: 'export.csv', data });
+            receive({ type: 'save', page: 'page-1', id: request, name: 'export.csv', data });
         });
     };
     t.beforeEach(() => {
@@ -204,7 +205,7 @@ test('save replies report the result and protect the source', async (t) => {
         await writing;
         assert.equal(replies.has(id), false);
         finish();
-        assert.deepEqual(await result, { type: 'saveResult', id, saved: true });
+        assert.deepEqual(await result, { type: 'saveResult', page: 'page-1', id, saved: true });
     });
     assert.equal(await fs.readFile(source.fsPath, 'utf8'), 'original data');
 });
@@ -269,13 +270,13 @@ test('each load of the page gets an engine of its own', async (t) => {
     assert.equal(editor.loads.length, 1);
     assert.doesNotMatch(editor.loads[0], /tableskim-test/);
     assert.equal(engines.length, 0, 'no engine before the page listens');
-    editor.receive({ type: 'hello' });
+    editor.receive({ type: 'hello', page: 'page-1' });
     assert.equal(engines.length, 1);
     editor.receive({ type: 'engine', message: { id: 1, method: 'open', params: { path: '/elsewhere' } } });
     assert.equal(engines[0].posted[0].params.path, editor.document.fsPath);
 
     // The page loaded again: the old engine stops, and nothing it still posts reaches the page.
-    editor.receive({ type: 'hello' });
+    editor.receive({ type: 'hello', page: 'page-1' });
     assert.equal(engines.length, 2);
     assert.equal(engines[0].disposed, true);
     engines[0].onMessage({ type: 'ready' });
@@ -297,7 +298,7 @@ test('each load of the page gets an engine of its own', async (t) => {
 
 test('a stopped engine offers to reload the page', async (t) => {
     const editor = await resolveEditor(t);
-    editor.receive({ type: 'hello' });
+    editor.receive({ type: 'hello', page: 'page-1' });
     let choose;
     answerError = () => new Promise((resolve) => (choose = resolve));
     engines[0].onError('the engine exited (1)');
@@ -307,9 +308,46 @@ test('a stopped engine offers to reload the page', async (t) => {
     await until(() => editor.loads.length === 2);
 });
 
+test('save results belong to the page that requested them', async (t) => {
+    for (const reload of ['hello', 'command']) {
+        await t.test(reload, async (t) => {
+            const editor = await resolveEditor(t);
+            t.after(editor.dispose);
+            chooseTarget = async () => new Uri(path.join(path.dirname(editor.document.fsPath), 'export.csv'));
+            const writes = [];
+            writeFile = () => new Promise((resolve) => writes.push(resolve));
+            const save = (page) => editor.receive({ type: 'save', page, id: 1, name: 'export.csv', data: [1] });
+            editor.receive({ type: 'hello', page: 'old' });
+            save('old');
+            await until(() => writes.length === 1);
+            if (reload === 'command') {
+                editor.provider.reloadActive();
+                // The old write may finish before the new page says hello.
+                writes.shift()();
+                await new Promise((resolve) => setImmediate(resolve));
+                assert.equal(editor.posted.length, 0);
+            }
+            editor.receive({ type: 'hello', page: 'new' });
+            save('new');
+            await until(() => writes.length === (reload === 'hello' ? 2 : 1));
+            if (reload === 'hello') {
+                writes.shift()();
+                await new Promise((resolve) => setImmediate(resolve));
+                assert.equal(editor.posted.length, 0);
+            }
+            // Even an obsolete request arriving late cannot start another write.
+            save('old');
+            writes.shift()();
+            await until(() => editor.posted.length === 1);
+            assert.deepEqual(editor.posted, [{ type: 'saveResult', page: 'new', id: 1, saved: true }]);
+            assert.equal(writes.length, 0);
+        });
+    }
+});
+
 test('a change on disk asks whether to reload, once per burst', async (t) => {
     const editor = await resolveEditor(t);
-    editor.receive({ type: 'hello' });
+    editor.receive({ type: 'hello', page: 'page-1' });
     assert.equal(watchers.length, 1);
     assert.equal(watchers[0].pattern.baseUri.fsPath, path.dirname(editor.document.fsPath));
     let choose;
@@ -358,4 +396,35 @@ test('a linked document is watched where it points too', async (t) => {
     watchers[1].fire('change', new Uri(path.join(directory, 'target', 'real.csv')));
     await until(() => editor.loads.length === 2);
     editor.dispose();
+});
+
+test('reloading a retargeted link watches its new target', async (t) => {
+    let editor;
+    try {
+        editor = await resolveEditor(t, { linked: true });
+    } catch (error) {
+        if (error.code === 'EPERM') return t.skip('Link creation requires permission on this system');
+        throw error;
+    }
+    t.after(editor.dispose);
+    editor.receive({ type: 'hello', page: 'old' });
+    const directory = path.dirname(editor.document.fsPath);
+    const target = new Uri(path.join(directory, 'new-target', 'real.csv'));
+    await fs.mkdir(path.dirname(target.fsPath));
+    await fs.writeFile(target.fsPath, 'a,b\n3,4\n');
+    await fs.unlink(editor.document.fsPath);
+    await fs.symlink(target.fsPath, editor.document.fsPath);
+    answerInformation = async () => 'Reload';
+    watchers[0].fire('create', editor.document);
+    await until(() => editor.loads.length === 2);
+    editor.receive({ type: 'hello', page: 'new' });
+    assert.equal(watchers[1].disposed, true, 'the previous target is no longer watched');
+    const current = watchers.find((watcher) => !watcher.disposed &&
+        watcher.pattern.baseUri.fsPath === path.dirname(target.fsPath));
+    assert.ok(current, 'the new target directory is watched');
+    current.fire('change', target);
+    await until(() => editor.loads.length === 3);
+    assert.equal(shownInformation.length, 2);
+    editor.dispose();
+    assert.ok(watchers.every((watcher) => watcher.disposed));
 });

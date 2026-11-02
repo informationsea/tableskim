@@ -263,6 +263,54 @@ TEST_CASE("GUI: edits are saved and the file is read again")
         return cell.state == CellState::Ready && formatCell(*cell.value) == "42"; }));
 }
 
+TEST_CASE("GUI: conversion preserves unsaved edits and opens unmodified results", "[regression]")
+{
+    TempDir dir;
+    const auto source = dir.write("t.csv", "a,b\n1,x\n2,y\n");
+    const auto target = dir.path() / "converted.parquet";
+    Window window(source, OpenOptions::Header::Yes);
+    REQUIRE(window.waitForRows(window.currentView(), 2));
+    bool edited = false;
+    SECTION("unsaved edits stay open")
+    {
+        edited = true;
+        window->set_editing(true);
+        REQUIRE(window.currentView()->model()->setCells({{0, 0, "42"}}) == 1);
+    }
+    SECTION("an unmodified file opens the result")
+    {
+    }
+
+    ModalAnswer choose([&](Fl_Window &dialog) { return chooseFile(dialog, target); });
+    ModalAnswer confirm([](Fl_Window &dialog)
+                        {
+        return ModalAnswer::message(dialog).find("unsaved changes are not converted") != std::string::npos &&
+               pressButton(dialog, "Convert"); });
+    ModalAnswer finished([](Fl_Window &dialog)
+                         {
+        return ModalAnswer::message(dialog).find("result was not opened") != std::string::npos &&
+               pressButton(dialog, "Close"); });
+    window->convert();
+    REQUIRE(choose.answered());
+    REQUIRE(std::filesystem::exists(target));
+    CHECK(confirm.answered() == edited);
+    CHECK(finished.answered() == edited);
+    if (edited)
+    {
+        CHECK(window->opened_path() == utf8String(source));
+        CHECK(window.currentView()->model()->modified());
+        CHECK(currentCell(window, 0, 0) == "42");
+        REQUIRE(window->save(false));
+        CHECK(readFile(source) == "a,b\n42,x\n2,y\n");
+    }
+    else
+    {
+        CHECK(window->opened_path() == utf8String(target));
+        REQUIRE(window.waitForRows(window.currentView(), 2));
+        CHECK(waitFor([&] { return currentCell(window, 0, 0) == "1"; }));
+    }
+}
+
 TEST_CASE("GUI: the first row is the header when it looks like one, unless chosen otherwise")
 {
     TempDir dir;
