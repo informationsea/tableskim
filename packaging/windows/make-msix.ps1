@@ -157,8 +157,18 @@ New-Item -ItemType Directory -Force $priRoot | Out-Null
 Copy-Item $assets $priRoot -Recurse
 & $makepri createconfig /cf $priConfig /dq en-US /pv 10.0.0 /o
 if ($LASTEXITCODE -ne 0) { throw "makepri createconfig failed" }
+# The default configuration splits the scale variants into
+# resources.scale-*.pri for the resource packages of a bundle; a single
+# package is read through resources.pri only, so keep them all in it.
+$config = [xml](Get-Content $priConfig -Raw)
+foreach ($node in @($config.SelectNodes("//packaging"))) {
+    [void]$node.ParentNode.RemoveChild($node)
+}
+$config.Save($priConfig)
 & $makepri new /pr $priRoot /cf $priConfig /mn $manifestPath /of (Join-Path $stage "resources.pri") /o
 if ($LASTEXITCODE -ne 0) { throw "makepri new failed" }
+$split = Get-ChildItem $stage -Filter "resources.*.pri"
+if ($split) { throw "makepri split the resources: $($split.Name -join ', ')" }
 
 # 5. Pack (and optionally sign for local testing)
 if (Test-Path $out) { Remove-Item $out -Force }
