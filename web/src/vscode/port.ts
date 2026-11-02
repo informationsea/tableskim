@@ -2,8 +2,7 @@
 // the extension host, in Node.js, and the messages go through the extension.
 //
 // To the extension:   {type: 'engine', message}   a request for the engine,
-//                     {type: 'save', name, data}  a file to save (Uint8Array),
-//                     {type: 'pick'}              let the user open another file.
+//                     {type: 'save', name, data}  a file to save (Uint8Array).
 // From the extension: {type: 'engine', message}   what the engine posted,
 //                     {type: 'engineError', message}.
 

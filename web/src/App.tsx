@@ -686,15 +686,13 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
             } else if (ctrl && event.key.toLowerCase() === 'g' && flow.current.info) {
                 event.preventDefault();
                 setDialog({ kind: 'goTo', column: 0 });
-            } else if (ctrl && event.key.toLowerCase() === 'o') {
+            } else if (ctrl && event.key.toLowerCase() === 'o' && platform().opensFiles) {
                 event.preventDefault();
-                const pickFile = platform().pickFile;
-                if (pickFile) pickFile();
-                else document.getElementById('file-input')?.click();
+                document.getElementById('file-input')?.click();
             }
         };
         const dragEnter = (event: DragEvent) => {
-            if (platform().opensDroppedFiles && event.dataTransfer?.types.includes('Files')) {
+            if (platform().opensFiles && event.dataTransfer?.types.includes('Files')) {
                 depth++;
                 setDragging(true);
             }
@@ -709,7 +707,7 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
             depth = 0;
             setDragging(false);
             const dropped = event.dataTransfer?.files[0];
-            if (dropped && platform().opensDroppedFiles) void openFile(dropped);
+            if (dropped && platform().opensFiles) void openFile(dropped);
         };
         document.addEventListener('keydown', keyDown);
         window.addEventListener('dragenter', dragEnter);

@@ -30,7 +30,8 @@ VS Code for the Web (vscode.dev) is not supported.
   `web/vscode.html` and `web/src/vscode/` (`npm run build:vscode` in `web/`)
   into `media/`. `web/src/vscode/port.ts` relays the engine's protocol
   (`web/src/protocol.ts`) through the extension; `web/src/platform.ts`
-  hands exports and Open… to it.
+  hands exports to it and hides Open… (the editor shows its document
+  only).
 - The engine is the web app's module built for Node.js (the CMake target
   `tableskim-wasm-node`; `src/wasm/wasm_worker_pre.js`). Its threads need
   `SharedArrayBuffer`, which a webview, not being cross-origin isolated,

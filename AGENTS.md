@@ -257,7 +257,7 @@ read their header comments before changing anything in `src/common/`.
   Worker, opening the document by its path with NODEFS
   (`wasm_worker_pre.js` serves both builds). `ExtensionPort` relays the
   protocol through the extension, and `web/src/platform.ts` hands saving
-  and Open… to it. `vscode/tests/` tests the engine in Node.js and
+  to it and hides Open…. `vscode/tests/` tests the engine in Node.js and
   `web/tests/vscode.test.cjs` the webview, with the test as the extension.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops

@@ -12,8 +12,7 @@ export const TEXT_VIEW_TYPE = 'tableskim.text';
 // What the webview posts (web/src/vscode/port.ts).
 type FromWebview =
     | { type: 'engine'; message: { id: number; method: string; params?: Record<string, unknown> } }
-    | { type: 'save'; name: string; data: Uint8Array }
-    | { type: 'pick' };
+    | { type: 'save'; name: string; data: Uint8Array };
 
 /** A message relayed between a webview and its engine, for the integration tests. */
 export interface Relayed {
@@ -73,9 +72,6 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
                 case 'save':
                     void this.save(document.uri, message.name, message.data);
                     break;
-                case 'pick':
-                    void this.pick(document.uri);
-                    break;
             }
         });
     }
@@ -112,14 +108,5 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         } catch (error) {
             void vscode.window.showErrorMessage(`Cannot save ${target.fsPath}: ${String(error)}`);
         }
-    }
-
-    private async pick(document: vscode.Uri) {
-        const picked = await vscode.window.showOpenDialog({
-            defaultUri: vscode.Uri.joinPath(document, '..'),
-            canSelectMany: false,
-            title: 'Open in TableSkim',
-        });
-        if (picked?.[0]) await vscode.commands.executeCommand('vscode.openWith', picked[0], TABLE_VIEW_TYPE);
     }
 }

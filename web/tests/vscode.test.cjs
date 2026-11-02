@@ -114,7 +114,7 @@ test('the webview opens a file whose name is not ASCII', async () => {
     }
 });
 
-test('the webview hands exports and Open… to the extension', async () => {
+test('the webview hands exports to the extension and has no Open…', async () => {
     const { page, sent, close } = await openWebview(demo('normal.csv'));
     try {
         await page.waitForSelector('.cell:not(.k-l)');
@@ -128,11 +128,7 @@ test('the webview hands exports and Open… to the extension', async () => {
         assert.equal(text.split(/\r?\n/)[0], source.split(/\r?\n/)[0]);
         assert.equal(text.trim().split(/\r?\n/).length, source.trim().split(/\r?\n/).length);
 
-        await page.keyboard.press('Escape');
-        await page.locator('#export-dialog').waitFor({ state: 'hidden' });
-        await page.locator('#open-button').click();
-        while (!sent.some((message) => message.type === 'pick'))
-            await new Promise((resolve) => setTimeout(resolve, 20));
+        assert.equal(await page.locator('#open-button').count(), 0);
     } finally {
         await close();
     }

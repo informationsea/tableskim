@@ -18,9 +18,9 @@ setPlatform({
     engineAvailable: true,
     saveFile: (blob, name) =>
         void blob.arrayBuffer().then((data) => postToExtension({ type: 'save', name, data: new Uint8Array(data) })),
-    pickFile: () => postToExtension({ type: 'pick' }),
-    // A dropped File has no path the engine could open.
-    opensDroppedFiles: false,
+    // The editor shows its document only: VS Code opens the others, and a
+    // File has no path the engine could open.
+    opensFiles: false,
 });
 
 // The extension names its document; only that name crosses, as the
