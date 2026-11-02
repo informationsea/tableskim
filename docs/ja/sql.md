@@ -66,6 +66,10 @@ SQL による外部ファイルへの書き込み（`COPY ... TO`、`EXPORT`、`
 | macOS            | `~/Library/Application Support/TableSkim/`                   |
 | Windows          | `%APPDATA%\TableSkim\`                                        |
 
+Microsoft Store 版は専用のフォルダー
+`%LOCALAPPDATA%\Packages\<パッケージ名>\LocalCache\Roaming\TableSkim\`
+に保存します。アプリをアンインストールすると Windows が削除します。
+
 ## 補完
 
 `Tab` でカーソル直前の単語を補完します。対象はテーブル名・ビュー名、列名、

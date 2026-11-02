@@ -324,6 +324,26 @@ jobs:
       - name: Run tests
         shell: cmd
         run: ctest --preset msvc-release
+      # The Microsoft Store package, once the repository variables hold the
+      # identity Partner Center gives (Product management > Product
+      # identity). It is unsigned, as the Store signs it on submission, so it
+      # is kept as an artifact of the run for uploading to Partner Center,
+      # not attached to the release.
+      - name: Package for the Microsoft Store
+        if: vars.MSIX_IDENTITY_NAME != ''
+        shell: cmd
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: package.bat msix
+      - name: Upload the Microsoft Store package
+        if: vars.MSIX_IDENTITY_NAME != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: microsoft-store
+          path: build/msvc-release/*.msix
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -452,6 +472,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # The Store package is unsigned and installs from Partner Center only.
+      - name: Leave out the Microsoft Store package
+        run: rm -f dist/*.msix
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

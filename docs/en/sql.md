@@ -81,6 +81,10 @@ The history is stored in a file named `sql_history`:
 | macOS    | `~/Library/Application Support/TableSkim/`                     |
 | Windows  | `%APPDATA%\TableSkim\`                                          |
 
+The Microsoft Store version keeps it in its own folder,
+`%LOCALAPPDATA%\Packages\<package name>\LocalCache\Roaming\TableSkim\`,
+which Windows removes when the app is uninstalled.
+
 ## Completion
 
 Press `Tab` to complete the word before the cursor: table and view names,

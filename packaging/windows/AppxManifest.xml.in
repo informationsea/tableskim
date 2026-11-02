@@ -19,44 +19,124 @@
     <DisplayName>TableSkim</DisplayName>
     <PublisherDisplayName>@MSIX_PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
-    <Description>A simple table viewer for CSV, Excel, Parquet, DuckDB and SQLite files.</Description>
+    <Description>A lightweight viewer for CSV/TSV, Excel, Parquet, DuckDB, SQLite and JSON files.</Description>
   </Properties>
 
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
 
+  <!-- The Store offers a listing only in the languages the package
+       declares; the manual and the listing are in English and Japanese. -->
   <Resources>
     <Resource Language="en-us" />
+    <Resource Language="ja-jp" />
   </Resources>
 
   <Applications>
     <Application Id="TableSkim" Executable="TableSkim.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="TableSkim"
-        Description="A simple table viewer for CSV and Excel files."
+        Description="A lightweight viewer for CSV/TSV, Excel, Parquet, DuckDB, SQLite and JSON files."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />
       <Extensions>
+        <!-- One association per format, as in the NSIS installer
+             (register_file_types.nsh): Explorer shows each its own name and
+             icon. make-msix.ps1 makes the icons from
+             src/images/filetypes/<name>.ico. -->
         <uap3:Extension Category="windows.fileTypeAssociation">
-          <uap3:FileTypeAssociation Name="tableskim">
-            <uap:DisplayName>TableSkim</uap:DisplayName>
+          <uap3:FileTypeAssociation Name="csv">
+            <uap:DisplayName>CSV File</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\csv.png</uap:Logo>
             <uap:SupportedFileTypes>
               <uap:FileType>.csv</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="tsv">
+            <uap:DisplayName>TSV File</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\tsv.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.tsv</uap:FileType>
               <uap:FileType>.tab</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="xlsx">
+            <uap:DisplayName>Excel Workbook</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\xlsx.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.xlsx</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="xlsm">
+            <uap:DisplayName>Excel Macro-Enabled Workbook</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\xlsm.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.xlsm</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="parquet">
+            <uap:DisplayName>Parquet File</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\parquet.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.parquet</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="duckdb">
+            <uap:DisplayName>DuckDB Database</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\duckdb.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.duckdb</uap:FileType>
               <uap:FileType>.ddb</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="sqlite">
+            <uap:DisplayName>SQLite Database</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\sqlite.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.sqlite</uap:FileType>
               <uap:FileType>.sqlite3</uap:FileType>
               <uap:FileType>.db3</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="json">
+            <uap:DisplayName>JSON File</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\json.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.json</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="jsonl">
+            <uap:DisplayName>JSON Lines File</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\json.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.jsonl</uap:FileType>
               <uap:FileType>.ndjson</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="vcf">
+            <uap:DisplayName>Variant Call Format File</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\vcf.png</uap:Logo>
+            <uap:SupportedFileTypes>
               <uap:FileType>.vcf</uap:FileType>
             </uap:SupportedFileTypes>
           </uap3:FileTypeAssociation>

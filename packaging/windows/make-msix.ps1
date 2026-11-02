@@ -4,8 +4,10 @@
 
 .DESCRIPTION
   Stages the "runtime" install component of a Release build, generates the
-  required logo assets from src/images/icon.png, fills in AppxManifest.xml
-  and packs everything with makeappx.exe (Windows SDK).
+  logo assets from src/images/icon*.png and the file type icons from
+  src/images/filetypes/*.ico, fills in AppxManifest.xml, indexes the assets
+  in resources.pri with makepri.exe and packs everything with makeappx.exe
+  (both from the Windows SDK).
 
   Values for -IdentityName, -Publisher and -PublisherDisplayName come from
   Partner Center (Product management > Product identity). The Store signs the
@@ -59,39 +61,106 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 cmake --install $BuildDir --config Release --component runtime --prefix $stage
 if ($LASTEXITCODE -ne 0) { throw "cmake --install failed" }
 
-# 2. Logo assets
+# 2. Logo assets. Windows picks the variant for the display scale
+# (scale-*) or the size it draws at (targetsize-*: taskbar, Start, Explorer)
+# through resources.pri (step 4); "unplated" ones are drawn without a
+# backplate. Sizes with a pixel-fitted icon (src/images/icon-<n>.png) use it.
 Add-Type -AssemblyName System.Drawing
 $assets = Join-Path $stage "Assets"
-New-Item -ItemType Directory -Force $assets | Out-Null
-$src = [System.Drawing.Image]::FromFile((Join-Path $root "src\images\icon.png"))
-function New-Logo([string] $name, [int] $w, [int] $h) {
-    $bmp = New-Object System.Drawing.Bitmap $w, $h
+$fileTypeAssets = Join-Path $assets "FileTypes"
+New-Item -ItemType Directory -Force $fileTypeAssets | Out-Null
+$images = Join-Path $root "src\images"
+$icon = [System.Drawing.Image]::FromFile((Join-Path $images "icon.png"))
+
+function Save-Png([System.Drawing.Image] $src, [string] $path, [int] $size) {
+    $bmp = New-Object System.Drawing.Bitmap $size, $size
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.InterpolationMode = "HighQualityBicubic"
     $g.SmoothingMode = "HighQuality"
     $g.PixelOffsetMode = "HighQuality"
     $g.Clear([System.Drawing.Color]::Transparent)
-    $side = [Math]::Min($w, $h)
-    $g.DrawImage($src, [int](($w - $side) / 2), [int](($h - $side) / 2), $side, $side)
+    $g.DrawImage($src, 0, 0, $size, $size)
     $g.Dispose()
-    $bmp.Save((Join-Path $assets $name), [System.Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
 }
-New-Logo "StoreLogo.png" 50 50
-New-Logo "Square44x44Logo.png" 44 44
-New-Logo "Square44x44Logo.targetsize-44_altform-unplated.png" 44 44
-New-Logo "Square150x150Logo.png" 150 150
-$src.Dispose()
+function New-Logo([string] $name, [int] $size) {
+    $fitted = Join-Path $images "icon-$size.png"
+    if (Test-Path $fitted) {
+        Copy-Item $fitted (Join-Path $assets $name)
+    } else {
+        Save-Png $icon (Join-Path $assets $name) $size
+    }
+}
+$scales = @(100, 125, 150, 200, 400)
+foreach ($scale in $scales) {
+    New-Logo "StoreLogo.scale-$scale.png" ([int][Math]::Ceiling(50 * $scale / 100))
+    New-Logo "Square44x44Logo.scale-$scale.png" ([int][Math]::Ceiling(44 * $scale / 100))
+    New-Logo "Square150x150Logo.scale-$scale.png" ([int][Math]::Ceiling(150 * $scale / 100))
+}
+foreach ($size in @(16, 24, 32, 48, 256)) {
+    New-Logo "Square44x44Logo.targetsize-$size.png" $size
+    New-Logo "Square44x44Logo.targetsize-$($size)_altform-unplated.png" $size
+}
+$icon.Dispose()
+
+# File type icons, for each Assets\FileTypes\<name>.png the manifest names:
+# the PNG images inside src/images/filetypes/<name>.ico (16 to 256 px, the
+# small ones pixel-fitted), written as they are.
+function Get-IcoImages([string] $path) {
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    $result = @{}
+    for ($i = 0; $i -lt [BitConverter]::ToUInt16($bytes, 4); $i++) {
+        $entry = 6 + 16 * $i
+        $size = if ($bytes[$entry] -eq 0) { 256 } else { [int]$bytes[$entry] }
+        $length = [BitConverter]::ToInt32($bytes, $entry + 8)
+        $png = New-Object byte[] $length
+        [Array]::Copy($bytes, [BitConverter]::ToInt32($bytes, $entry + 12), $png, 0, $length)
+        if ($png[0] -ne 0x89 -or $png[1] -ne 0x50) { throw "$path holds an image other than PNG" }
+        $result[$size] = $png
+    }
+    return $result
+}
+$template = Get-Content (Join-Path $PSScriptRoot "AppxManifest.xml.in") -Raw
+$fileTypes = [regex]::Matches($template, 'Assets\\FileTypes\\(\w+)\.png') |
+    ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+foreach ($name in $fileTypes) {
+    $ico = Get-IcoImages (Join-Path $images "filetypes\$name.ico")
+    foreach ($size in @(16, 24, 32, 48, 256)) {
+        if (-not $ico.ContainsKey($size)) { throw "$name.ico has no $size px image" }
+        [System.IO.File]::WriteAllBytes((Join-Path $fileTypeAssets "$name.targetsize-$size.png"), $ico[$size])
+    }
+    # The scale-100 size of a file type logo (44 px), for lookups by scale.
+    $stream = New-Object System.IO.MemoryStream (, $ico[256])
+    $large = [System.Drawing.Image]::FromStream($stream)
+    Save-Png $large (Join-Path $fileTypeAssets "$name.scale-100.png") 44
+    $large.Dispose()
+    $stream.Dispose()
+}
 
 # 3. Manifest
-$manifest = Get-Content (Join-Path $PSScriptRoot "AppxManifest.xml.in") -Raw
-$manifest = $manifest.Replace("@MSIX_IDENTITY_NAME@", $IdentityName).
+$manifest = $template.Replace("@MSIX_IDENTITY_NAME@", $IdentityName).
     Replace("@MSIX_PUBLISHER@", [System.Security.SecurityElement]::Escape($Publisher)).
     Replace("@MSIX_PUBLISHER_DISPLAY_NAME@", [System.Security.SecurityElement]::Escape($PublisherDisplayName)).
     Replace("@MSIX_VERSION@", $Version)
-Set-Content (Join-Path $stage "AppxManifest.xml") $manifest -Encoding UTF8
+$manifestPath = Join-Path $stage "AppxManifest.xml"
+Set-Content $manifestPath $manifest -Encoding UTF8
 
-# 4. Pack (and optionally sign for local testing)
+# 4. Resource index (resources.pri), which resolves the qualified logo names
+# above. Only Assets is indexed: the PRI's paths are relative to its root,
+# which therefore mirrors the stage.
+$makepri = Find-SdkTool "makepri.exe"
+$priRoot = Join-Path $BuildDir "msix-pri"
+$priConfig = Join-Path $BuildDir "msix-priconfig.xml"
+if (Test-Path $priRoot) { Remove-Item $priRoot -Recurse -Force }
+New-Item -ItemType Directory -Force $priRoot | Out-Null
+Copy-Item $assets $priRoot -Recurse
+& $makepri createconfig /cf $priConfig /dq en-US /pv 10.0.0 /o
+if ($LASTEXITCODE -ne 0) { throw "makepri createconfig failed" }
+& $makepri new /pr $priRoot /cf $priConfig /mn $manifestPath /of (Join-Path $stage "resources.pri") /o
+if ($LASTEXITCODE -ne 0) { throw "makepri new failed" }
+
+# 5. Pack (and optionally sign for local testing)
 if (Test-Path $out) { Remove-Item $out -Force }
 & $makeappx pack /d $stage /p $out /o
 if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }

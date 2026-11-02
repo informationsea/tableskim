@@ -120,6 +120,16 @@ jobs:
           name: tableskim-zip-${{ matrix.os }}
           path: build/${{ env.PRESET }}/*.zip
           if-no-files-found: error
+      # The Microsoft Store package, with a stand-in identity (the release
+      # uses Partner Center's), so that the manifest, the assets and
+      # resources.pri are checked by makepri and makeappx on every change.
+      - name: Package (MSIX)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          packaging/windows/make-msix.ps1 -IdentityName TableSkim.CI
+          -Publisher "CN=TableSkim CI" -PublisherDisplayName "TableSkim CI"
+          -BuildDir build/${{ env.PRESET }}
 
   # The distributions the release workflow builds its RPM (Rocky Linux 10)
   # and its Linux ZIPs (Rocky Linux 8: glibc 2.28, gcc-toolset; with Wayland,

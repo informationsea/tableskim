@@ -156,7 +156,12 @@ them. Their tests are hidden and run only on request:
 
 `./package.sh [deb|rpm|dmg|zip|all]` (Linux/macOS) and
 `package.bat [exe|zip|msix|all]` (Windows) build a release and run CPack.
-Packaging rules live in `cmake/Packaging.cmake` and `packaging/`. DEB and
+Packaging rules live in `cmake/Packaging.cmake` and `packaging/`. The
+Microsoft Store's MSIX is made by `packaging/windows/make-msix.ps1` from
+`AppxManifest.xml.in` (keep its file types in step with
+`register_file_types.nsh`); CI packs it with a stand-in identity, and the
+release only when the `MSIX_*` repository variables are set, as an
+artifact rather than a release file. DEB and
 RPM package names include the build distribution from `/etc/os-release`
 (e.g. `tableskim_0.2.2_ubuntu24.04_amd64.deb`); `-DTABLESKIM_PACKAGE_OS_TAG=`
 overrides it. ZIP names do not, since the release builds them on Rocky
