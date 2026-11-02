@@ -1,4 +1,4 @@
-# TableSkim for Visual Studio Code (prototype)
+# TableSkim for Visual Studio Code (preview)
 
 TableSkim as a custom editor in VS Code: CSV/TSV/VCF (optionally
 compressed), Excel, Parquet, DuckDB, SQLite and JSON / NDJSON files,
@@ -10,10 +10,19 @@ Group By, SQL and exports, as in the [web app](../src/wasm/README.md).
   TableSkim, choose **Open With… > TableSkim** or **Open in TableSkim** from
   the Explorer's context menu.
 - Exports and chart images are saved where you choose in a save dialog.
+- When the file changes on disk, TableSkim asks whether to read it again.
+  **TableSkim: Reload File** (the refresh button in the editor's title bar)
+  reads it again at any time, and so does **Reload** in the message shown
+  if the engine stops.
 
 It works with local files and, with Remote Development (SSH, WSL, Dev
 Containers), with files on the remote machine, where the extension runs.
-VS Code for the Web (vscode.dev) is not supported.
+VS Code for the Web (vscode.dev) and virtual workspaces are not supported.
+It works in Restricted Mode too: it only reads the file shown, and its SQL
+cannot write files.
+
+This is a preview (`"preview": true` in `package.json`): its features may
+still change.
 
 ## How it works
 
@@ -39,6 +48,14 @@ VS Code for the Web (vscode.dev) is not supported.
   editor, so that the extension host is not kept busy.
 - An "open" names the document's path: the extension sets it, whatever the
   page asks for, and the engine mounts its directory with NODEFS.
+- Each load of the page gets an engine of its own: the page says
+  `{type: 'hello'}` once it listens, and the extension then starts a new
+  engine, stopping the last one and dropping what it still posts. So a page
+  that VS Code loads again (Developer: Reload Webviews, a crashed webview)
+  starts over, and reloading a file is loading the page again.
+- The extension watches the document's directory (not a glob of the file's
+  name, which may hold glob characters) and, after a burst of changes to the
+  file, asks once whether to reload it, as the engine reads it in place.
 - Not there yet, as in the web app: editing and Follow.
 
 ## Building
@@ -53,7 +70,7 @@ cmake --build --preset wasm-release --target tableskim-wasm-node tableskim-web-z
 cd vscode
 npm ci
 npm run build          # engine/, media/ and out/
-npm test               # the engine in Node.js
+npm test               # the engine and the editor provider in Node.js
 npm run package        # tableskim-<version>-vscode.vsix
 ```
 
@@ -74,7 +91,11 @@ LANG=C.UTF-8 node --test web/tests/vscode.test.cjs
 `tests/integration/suite.cjs` opens demo files in the custom editor and
 waits until the webview has asked the engine for rows and got them,
 watching the messages the extension relays (`activate()` returns
-`onDidRelay` for this). On Linux without a display:
+`onDidRelay` for this). It also reloads pages, saves an export and changes a
+file on disk: in VS Code's extension test mode only, `activate()` returns
+`testing` too, which answers the save dialog and the reload question, and
+the page gets `<meta name="tableskim-test">`, on which it clicks elements
+and reads their text when the extension asks (`web/src/vscode/testHook.ts`). On Linux without a display:
 
 ```sh
 xvfb-run -a npm run test:vscode
@@ -85,6 +106,8 @@ in `package.json`. CI (the `wasm` job of `.github/workflows/ci.yml`)
 builds the extension, runs all three tests, the one in VS Code under
 `xvfb-run` (VS Code cached by its version, which
 `TABLESKIM_VSCODE_VERSION` gives the test), and uploads the package as the `tableskim-vscode` artifact;
+its `vscode` job runs `npm test` and `npm run test:vscode` on Windows and
+macOS with what the `wasm` job built;
 the release attaches `tableskim-<version>-vscode.vsix`.
 
 To try the extension, open this directory in VS Code and run **Run >

@@ -1,7 +1,8 @@
 // The webview's side of the VS Code extension (vscode/): the engine runs in
 // the extension host, in Node.js, and the messages go through the extension.
 //
-// To the extension:   {type: 'engine', message}   a request for the engine,
+// To the extension:   {type: 'hello'}             the page listens: start an engine,
+//                     {type: 'engine', message}   a request for the engine,
 //                     {type: 'save', id, name, data} a file to save (Uint8Array).
 // From the extension: {type: 'engine', message}   what the engine posted,
 //                     {type: 'engineError', message},
@@ -23,6 +24,10 @@ type FromExtension =
 // acquireVsCodeApi() may be called once only.
 const vscode = acquireVsCodeApi();
 
+export function postToExtension(message: unknown) {
+    vscode.postMessage(message);
+}
+
 export class ExtensionPort implements EnginePort {
     onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null = null;
     onerror: ((event: ErrorEvent) => void) | null = null;
@@ -41,6 +46,9 @@ export class ExtensionPort implements EnginePort {
                 else pending?.resolve(data.saved);
             }
         });
+        // Every load of the page gets an engine of its own (the extension
+        // starts it on this), so that a reloaded page starts from "ready".
+        vscode.postMessage({ type: 'hello' });
     }
 
     async saveFile(blob: Blob, name: string): Promise<boolean> {

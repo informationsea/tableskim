@@ -248,7 +248,7 @@ read their header comments before changing anything in `src/common/`.
   (`TableSkimClient.readFile()`) and removed. Hidden and frozen columns are
   the page's (`GridController.setLayout()`), sent with `copy`, exports and
   Group By. Not there yet: editing and Follow.
-- The VS Code extension (`vscode/`, a prototype; see `vscode/README.md`)
+- The VS Code extension (`vscode/`, published as a preview; see `vscode/README.md`)
   is a read-only custom editor showing the web app's frontend in a webview
   (`web/vscode.html`, `web/src/vscode/`, built by `npm run build:vscode` in
   `web/` into `vscode/media/`). A webview is not cross-origin isolated, so
@@ -257,10 +257,18 @@ read their header comments before changing anything in `src/common/`.
   Worker, opening the document by its path with NODEFS
   (`wasm_worker_pre.js` serves both builds). `ExtensionPort` relays the
   protocol through the extension, and `web/src/platform.ts` hands saving
-  to it and hides Open…. `vscode/tests/` tests the engine in Node.js and in VS Code itself
-  (`npm run test:vscode`, `@vscode/test-electron`), and
+  to it and hides Open…. Each load of the page says `hello` and gets a
+  new engine, so a reloaded webview starts over; reloading a file (on a
+  change on disk, after asking; the Reload File command; after the engine
+  stops) loads the page again. `vscode/tests/` tests the engine and the
+  provider in Node.js and the extension in VS Code itself
+  (`npm run test:vscode`, `@vscode/test-electron`; in extension test mode
+  `activate()` returns `testing`, and the page clicks for it,
+  `web/src/vscode/testHook.ts`), and
   `web/tests/vscode.test.cjs` the webview, with the test as the extension.
-  CI's `wasm` job runs the three and uploads the package
+  CI's `wasm` job runs the three and uploads what it built for the
+  `vscode` job, which runs the Node.js and VS Code tests on Windows and
+  macOS; it also uploads the package
   (`npm run package`: `tableskim-<version>-vscode.vsix`, the project's
   version), which the release attaches.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows

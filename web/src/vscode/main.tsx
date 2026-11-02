@@ -8,11 +8,13 @@ import { TableSkimClient } from '../client';
 import '../index.css';
 import { setPlatform } from '../platform';
 import { ExtensionPort } from './port';
+import { installTestHook } from './testHook';
 import './theme.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('no #root element');
 
+if (document.querySelector('meta[name="tableskim-test"]')) installTestHook();
 const port = new ExtensionPort();
 setPlatform({
     // Node.js has SharedArrayBuffer without cross-origin isolation.

@@ -6,6 +6,7 @@
   "publisher": "informationsea",
   "license": "AGPL-3.0-only",
   "private": true,
+  "preview": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/informationsea/tableskim"
@@ -17,6 +18,15 @@
     "Data Science",
     "Visualization"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "TableSkim reads files by their paths on disk."
+    }
+  },
   "extensionKind": [
     "workspace"
   ],
@@ -94,9 +104,29 @@
         "command": "tableskim.open",
         "title": "Open in TableSkim",
         "category": "TableSkim"
+      },
+      {
+        "command": "tableskim.reload",
+        "title": "Reload File",
+        "category": "TableSkim",
+        "icon": "$(refresh)",
+        "enablement": "activeCustomEditorId == tableskim.table || activeCustomEditorId == tableskim.text"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "tableskim.reload",
+          "when": "activeCustomEditorId == tableskim.table || activeCustomEditorId == tableskim.text"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "tableskim.reload",
+          "when": "activeCustomEditorId == tableskim.table || activeCustomEditorId == tableskim.text",
+          "group": "navigation"
+        }
+      ],
       "explorer/context": [
         {
           "command": "tableskim.open",
