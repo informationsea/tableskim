@@ -1,4 +1,4 @@
-# TableSkim for Visual Studio Code (prototype)
+# TableSkim for Visual Studio Code (preview)
 
 TableSkim as a custom editor in VS Code: CSV/TSV/VCF (optionally
 compressed), Excel, Parquet, DuckDB, SQLite and JSON / NDJSON files,
@@ -17,7 +17,12 @@ Group By, SQL and exports, as in the [web app](../src/wasm/README.md).
 
 It works with local files and, with Remote Development (SSH, WSL, Dev
 Containers), with files on the remote machine, where the extension runs.
-VS Code for the Web (vscode.dev) is not supported.
+VS Code for the Web (vscode.dev) and virtual workspaces are not supported.
+It works in Restricted Mode too: it only reads the file shown, and its SQL
+cannot write files.
+
+This is a preview (`"preview": true` in `package.json`): its features may
+still change.
 
 ## How it works
 
@@ -101,6 +106,8 @@ in `package.json`. CI (the `wasm` job of `.github/workflows/ci.yml`)
 builds the extension, runs all three tests, the one in VS Code under
 `xvfb-run` (VS Code cached by its version, which
 `TABLESKIM_VSCODE_VERSION` gives the test), and uploads the package as the `tableskim-vscode` artifact;
+its `vscode` job runs `npm test` and `npm run test:vscode` on Windows and
+macOS with what the `wasm` job built;
 the release attaches `tableskim-<version>-vscode.vsix`.
 
 To try the extension, open this directory in VS Code and run **Run >

@@ -248,7 +248,7 @@ read their header comments before changing anything in `src/common/`.
   (`TableSkimClient.readFile()`) and removed. Hidden and frozen columns are
   the page's (`GridController.setLayout()`), sent with `copy`, exports and
   Group By. Not there yet: editing and Follow.
-- The VS Code extension (`vscode/`, a prototype; see `vscode/README.md`)
+- The VS Code extension (`vscode/`, published as a preview; see `vscode/README.md`)
   is a read-only custom editor showing the web app's frontend in a webview
   (`web/vscode.html`, `web/src/vscode/`, built by `npm run build:vscode` in
   `web/` into `vscode/media/`). A webview is not cross-origin isolated, so
@@ -266,7 +266,9 @@ read their header comments before changing anything in `src/common/`.
   `activate()` returns `testing`, and the page clicks for it,
   `web/src/vscode/testHook.ts`), and
   `web/tests/vscode.test.cjs` the webview, with the test as the extension.
-  CI's `wasm` job runs the three and uploads the package
+  CI's `wasm` job runs the three and uploads what it built for the
+  `vscode` job, which runs the Node.js and VS Code tests on Windows and
+  macOS; it also uploads the package
   (`npm run package`: `tableskim-<version>-vscode.vsix`, the project's
   version), which the release attaches.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows

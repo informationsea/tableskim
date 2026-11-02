@@ -407,6 +407,18 @@ jobs:
           cd vscode
           npm ci --no-audit --no-fund
           npm run build
+      # What the extension builds is the same on every system: the jobs
+      # below test it on Windows and macOS without Emscripten.
+      - name: Upload the built VS Code extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-build
+          path: |
+            vscode/engine
+            vscode/media
+            vscode/out
+          if-no-files-found: error
+          retention-days: 1
       - name: Test the VS Code extension
         run: |
           (cd vscode && npm test)
@@ -446,3 +458,58 @@ jobs:
           name: tableskim-vscode
           path: vscode/tableskim-*-vscode.vsix
           if-no-files-found: error
+
+  # The VS Code extension, built by the wasm job, on the other systems:
+  # paths of their own (Windows drive letters, macOS's /private links)
+  # reach the engine and the file watcher there.
+  vscode:
+    name: VS Code extension (${{ matrix.os }})
+    needs: wasm
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - name: Download the built VS Code extension
+        uses: actions/download-artifact@v4
+        with:
+          name: vscode-build
+          path: vscode
+      - name: Test the VS Code extension
+        working-directory: vscode
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+      # Cached as in the wasm job, for each system.
+      - name: Find the VS Code version
+        id: vscode
+        run: echo "version=$(curl -fsS https://update.code.visualstudio.com/api/releases/stable | jq -r '.[0]')" >> "$GITHUB_OUTPUT"
+      - name: Restore VS Code
+        id: vscode-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vscode/.vscode-test/vscode-*
+          key: vscode-${{ runner.os }}-${{ runner.arch }}-${{ steps.vscode.outputs.version }}
+      - name: Test the VS Code extension in VS Code
+        working-directory: vscode
+        env:
+          TABLESKIM_VSCODE_VERSION: ${{ steps.vscode.outputs.version }}
+        run: npm run test:vscode
+      - name: Save VS Code
+        if: >-
+          !cancelled() && github.event_name != 'pull_request' &&
+          steps.vscode-cache.outputs.cache-hit != 'true' && hashFiles('vscode/.vscode-test/vscode-*/**/product.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: vscode/.vscode-test/vscode-*
+          key: ${{ steps.vscode-cache.outputs.cache-primary-key }}
