@@ -87,13 +87,13 @@ export async function pngOfSvg(svg: string, width: number, height: number): Prom
 
 /** Hands a file to the browser to save. */
 export function download(blob: Blob, name: string) {
-    platform().saveFile(blob, name);
+    return platform().saveFile(blob, name);
 }
 
 /** Saves a chart given as SVG text in the format asked for. */
 export async function saveChart(svg: string, width: number, height: number, format: ImageFormat, name: string) {
     const blob = format === 'svg' ? new Blob([svg], { type: 'image/svg+xml' }) : await pngOfSvg(svg, width, height);
-    download(blob, `${fileNamePart(name)}.${format}`);
+    return download(blob, `${fileNamePart(name)}.${format}`);
 }
 
 /** A name without the characters file systems reject. */

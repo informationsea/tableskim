@@ -3,6 +3,7 @@
 // which reads the document's file in place.
 
 import { readFileSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import * as vscode from 'vscode';
 import { Engine } from './engine';
 
@@ -12,7 +13,12 @@ export const TEXT_VIEW_TYPE = 'tableskim.text';
 // What the webview posts (web/src/vscode/port.ts).
 type FromWebview =
     | { type: 'engine'; message: { id: number; method: string; params?: Record<string, unknown> } }
-    | { type: 'save'; name: string; data: Uint8Array };
+    | { type: 'save'; id: number; name: string; data: Uint8Array };
+
+interface SaveResult {
+    saved: boolean;
+    error?: string;
+}
 
 /** A message relayed between a webview and its engine, for the integration tests. */
 export interface Relayed {
@@ -23,6 +29,20 @@ export interface Relayed {
 
 function escapeAttribute(text: string) {
     return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function isSource(document: vscode.Uri, target: vscode.Uri): Promise<boolean> {
+    if (document.toString() === target.toString()) return true;
+    if (target.scheme !== 'file') return false;
+    const [source, destination] = await Promise.all([
+        stat(document.fsPath, { bigint: true }),
+        stat(target.fsPath, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return null;
+            throw error;
+        }),
+    ]);
+    // stat follows symlinks; device and inode also catch hard links.
+    return destination !== null && source.dev === destination.dev && source.ino === destination.ino;
 }
 
 export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvider {
@@ -70,7 +90,9 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
                     break;
                 }
                 case 'save':
-                    void this.save(document.uri, message.name, message.data);
+                    void this.save(document.uri, message.name, message.data).then((result) =>
+                        post({ type: 'saveResult', id: message.id, ...result }),
+                    );
                     break;
             }
         });
@@ -97,16 +119,19 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         return page.replace('<head>', `<head>${head}`).replace(/ crossorigin/g, '');
     }
 
-    private async save(document: vscode.Uri, name: string, data: Uint8Array) {
-        const target = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.joinPath(document, '..', name),
-            title: `Save ${name}`,
-        });
-        if (!target) return;
+    private async save(document: vscode.Uri, name: string, data: Uint8Array): Promise<SaveResult> {
+        let target: vscode.Uri | undefined;
         try {
+            target = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.joinPath(document, '..', name),
+                title: `Save ${name}`,
+            });
+            if (!target) return { saved: false };
+            if (await isSource(document, target)) throw new Error('The file being viewed cannot be overwritten');
             await vscode.workspace.fs.writeFile(target, data instanceof Uint8Array ? data : new Uint8Array(data));
+            return { saved: true };
         } catch (error) {
-            void vscode.window.showErrorMessage(`Cannot save ${target.fsPath}: ${String(error)}`);
+            return { saved: false, error: `Cannot save ${target?.fsPath ?? name}: ${String(error)}` };
         }
     }
 }

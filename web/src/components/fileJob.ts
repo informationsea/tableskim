@@ -61,9 +61,12 @@ export function useFileJob(client: TableSkimClient, kind: 'export' | 'convert') 
                 }
                 const data = await client.readFile(state.file ?? '');
                 if (!isCurrent(run)) return;
-                download(new Blob([data]), state.fileName ?? kind);
+                const didSave = await download(new Blob([data]), state.fileName ?? kind);
+                if (!isCurrent(run)) return;
                 setSaved(
-                    `Saved ${state.fileName} (${(state.size ?? data.byteLength).toLocaleString()} bytes, ${state.rows.toLocaleString()} rows).`,
+                    didSave
+                        ? `Saved ${state.fileName} (${(state.size ?? data.byteLength).toLocaleString()} bytes, ${state.rows.toLocaleString()} rows).`
+                        : 'Save cancelled.',
                 );
             } catch (failure) {
                 if (isCurrent(run)) {

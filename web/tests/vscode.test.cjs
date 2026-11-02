@@ -45,12 +45,17 @@ async function openWebview(file) {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     const sent = [];
+    const saves = [];
+    const saveWaiters = [];
+    const takeSave = () =>
+        saves.length ? Promise.resolve(saves.shift()) : new Promise((resolve) => saveWaiters.push(resolve));
     const engine = new Worker(path.join(buildDir, 'tableskim-wasm-node.js'));
     // Bytes cross page.evaluate() as arrays.
     const toPage = (message) =>
         page
             .evaluate((data) => {
-                if (data.message.type === 'file') data.message.data = new Uint8Array(data.message.data).buffer;
+                if (data.type === 'engine' && data.message.type === 'file')
+                    data.message.data = new Uint8Array(data.message.data).buffer;
                 window.postMessage(data, '*');
             }, message)
             .catch(() => {});
@@ -60,6 +65,11 @@ async function openWebview(file) {
     });
     await page.exposeFunction('toExtension', (message) => {
         sent.push(message);
+        if (message.type === 'save') {
+            const waiter = saveWaiters.shift();
+            if (waiter) waiter(message);
+            else saves.push(message);
+        }
         if (message.type !== 'engine') return;
         const request = message.message;
         if (request.method === 'open') request.params = { ...request.params, path: file };
@@ -87,7 +97,8 @@ async function openWebview(file) {
         await engine.terminate();
         assert.deepEqual(errors, []);
     };
-    return { page, sent, close };
+    const completeSave = (id, result) => toPage({ type: 'saveResult', id, ...result });
+    return { page, sent, takeSave, completeSave, close };
 }
 
 const cell = (page, row, column) => page.locator(`.cell[data-row="${row}"][data-column="${column}"]`);
@@ -115,20 +126,93 @@ test('the webview opens a file whose name is not ASCII', async () => {
 });
 
 test('the webview hands exports to the extension and has no Open…', async () => {
-    const { page, sent, close } = await openWebview(demo('normal.csv'));
+    const { page, takeSave, completeSave, close } = await openWebview(demo('normal.csv'));
     try {
         await page.waitForSelector('.cell:not(.k-l)');
         await page.locator('#export-button').click();
         await page.locator('#export-start').click();
-        await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
-        const save = sent.find((message) => message.type === 'save');
+        const save = await takeSave();
+        assert.doesNotMatch(await page.locator('#export-status').innerText(), /Saved/);
+        assert.equal(await page.locator('#export-start').count(), 0);
         assert.equal(save.name, 'normal-export.csv');
         const text = Buffer.from(save.data).toString('utf8');
         const source = fs.readFileSync(demo('normal.csv'), 'utf8');
         assert.equal(text.split(/\r?\n/)[0], source.split(/\r?\n/)[0]);
         assert.equal(text.trim().split(/\r?\n/).length, source.trim().split(/\r?\n/).length);
 
+        await completeSave(save.id, { saved: true });
+        await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
+
         assert.equal(await page.locator('#open-button').count(), 0);
+    } finally {
+        await close();
+    }
+});
+
+test('cancelled and failed saves never show Saved and can be retried', async () => {
+    const { page, takeSave, completeSave, close } = await openWebview(demo('normal.csv'));
+    try {
+        await page.waitForSelector('.cell:not(.k-l)');
+        await page.locator('#export-button').click();
+        await page.locator('#export-start').click();
+        let save = await takeSave();
+        await completeSave(save.id, { saved: false });
+        await page.locator('#export-status').filter({ hasText: 'Save cancelled.' }).waitFor();
+
+        await page.locator('#export-start').click();
+        save = await takeSave();
+        await completeSave(save.id, { saved: false, error: 'Cannot save: disk full' });
+        await page.locator('#export-dialog .text-danger').filter({ hasText: 'disk full' }).waitFor();
+        assert.doesNotMatch(await page.locator('#export-status').innerText(), /Saved/);
+
+        await page.locator('#export-start').click();
+        save = await takeSave();
+        await completeSave(save.id, { saved: true });
+        await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
+    } finally {
+        await close();
+    }
+});
+
+test('a late save result does not finish the export of a reopened dialog', async () => {
+    const { page, takeSave, completeSave, close } = await openWebview(demo('normal.csv'));
+    try {
+        await page.waitForSelector('.cell:not(.k-l)');
+        await page.locator('#export-button').click();
+        await page.locator('#export-start').click();
+        const previous = await takeSave();
+        await page
+            .locator('#export-dialog button')
+            .filter({ hasText: /^Close$/ })
+            .click();
+        await page.locator('#export-button').click();
+        await page.locator('#export-start').click();
+        const current = await takeSave();
+        assert.notEqual(previous.id, current.id);
+        await completeSave(previous.id, { saved: true });
+        assert.doesNotMatch(await page.locator('#export-status').innerText(), /Saved/);
+        assert.equal(await page.locator('#export-start').count(), 0);
+        await completeSave(current.id, { saved: true });
+        await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
+    } finally {
+        await close();
+    }
+});
+
+test('chart image saves wait for the extension and show write failures', async () => {
+    const { page, takeSave, completeSave, close } = await openWebview(demo('normal.csv'));
+    try {
+        await page.waitForSelector('.cell:not(.k-l)');
+        await page.locator('#histogram-button').click();
+        await page.locator('#histogram-chart .bar').first().waitFor();
+        await page.locator('#save-svg').click();
+        const save = await takeSave();
+        assert.match(save.name, /\.svg$/);
+        assert.match(Buffer.from(save.data).toString('utf8'), /^<svg/);
+        assert.equal(await page.locator('#save-svg').isDisabled(), true);
+        await completeSave(save.id, { saved: false, error: 'Cannot save: disk full' });
+        await page.locator('#histogram-dialog .text-danger').filter({ hasText: 'disk full' }).waitFor();
+        assert.equal(await page.locator('#save-svg').isEnabled(), true);
     } finally {
         await close();
     }

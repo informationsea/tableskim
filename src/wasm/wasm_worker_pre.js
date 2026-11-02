@@ -34,6 +34,8 @@ if ((ENVIRONMENT_IS_WORKER || ENVIRONMENT_IS_NODE) && !ENVIRONMENT_IS_PTHREAD)
     // The directory to mount for a path on the host, and the file's name in it.
     var tskHostPath = function (path)
     {
+        // A symlink can point outside the directory mounted for the document.
+        path = require('node:fs').realpathSync(path);
         var nodePath = require('node:path');
         return { dir: nodePath.dirname(path), name: nodePath.basename(path) };
     };
@@ -56,6 +58,19 @@ if ((ENVIRONMENT_IS_WORKER || ENVIRONMENT_IS_NODE) && !ENVIRONMENT_IS_PTHREAD)
         }
         if (message.method === 'open' && (params.file || (ENVIRONMENT_IS_NODE && params.path)))
         {
+            var host;
+            if (!params.file)
+            {
+                try
+                {
+                    host = tskHostPath(params.path);
+                }
+                catch (e)
+                {
+                    tskPostToPage({ type: 'reply', json: JSON.stringify({ id: message.id, error: String(e.message || e) }) });
+                    return;
+                }
+            }
             var dir = '/input/' + (++tskMounts);
             FS.mkdirTree(dir);
             var name;
@@ -66,7 +81,6 @@ if ((ENVIRONMENT_IS_WORKER || ENVIRONMENT_IS_NODE) && !ENVIRONMENT_IS_PTHREAD)
             }
             else
             {
-                var host = tskHostPath(params.path);
                 FS.mount(NODEFS, { root: host.dir }, dir);
                 name = host.name;
             }

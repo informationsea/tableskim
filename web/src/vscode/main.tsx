@@ -7,17 +7,17 @@ import { App } from '../App';
 import { TableSkimClient } from '../client';
 import '../index.css';
 import { setPlatform } from '../platform';
-import { ExtensionPort, postToExtension } from './port';
+import { ExtensionPort } from './port';
 import './theme.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('no #root element');
 
+const port = new ExtensionPort();
 setPlatform({
     // Node.js has SharedArrayBuffer without cross-origin isolation.
     engineAvailable: true,
-    saveFile: (blob, name) =>
-        void blob.arrayBuffer().then((data) => postToExtension({ type: 'save', name, data: new Uint8Array(data) })),
+    saveFile: (blob, name) => port.saveFile(blob, name),
     // The editor shows its document only: VS Code opens the others, and a
     // File has no path the engine could open.
     opensFiles: false,
@@ -26,7 +26,7 @@ setPlatform({
 // The extension names its document; only that name crosses, as the
 // extension opens the file itself.
 const fileName = document.querySelector<HTMLMetaElement>('meta[name="tableskim-file"]')?.content ?? 'file';
-const client = new TableSkimClient(new ExtensionPort());
+const client = new TableSkimClient(port);
 createRoot(root).render(
     <StrictMode>
         <App client={client} initialFile={new File([], fileName)} />
