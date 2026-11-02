@@ -248,7 +248,8 @@ read their header comments before changing anything in `src/common/`.
   (`TableSkimClient.readFile()`) and removed. Hidden and frozen columns are
   the page's (`GridController.setLayout()`), sent with `copy`, exports and
   Group By. Not there yet: editing and Follow.
-- The VS Code extension (`vscode/`, published as a preview; see `vscode/README.md`)
+- The VS Code extension (`vscode/`, published as a preview; see `vscode/DEVELOPMENT.md`,
+  as `README.md` and `CHANGELOG.md` there are for its users)
   is a read-only custom editor showing the web app's frontend in a webview
   (`web/vscode.html`, `web/src/vscode/`, built by `npm run build:vscode` in
   `web/` into `vscode/media/`). A webview is not cross-origin isolated, so
@@ -270,7 +271,10 @@ read their header comments before changing anything in `src/common/`.
   `vscode` job, which runs the Node.js and VS Code tests on Windows and
   macOS; it also uploads the package
   (`npm run package`: `tableskim-<version>-vscode.vsix`, the project's
-  version), which the release attaches.
+  version), which the release attaches. Its icon is the GUI's
+  (`src/images/icon.png`, copied at build time); add user-visible changes
+  to `vscode/CHANGELOG.md` under `## Unreleased`, renamed to the version
+  before a release.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops
   back with `ftxui::App::Post` plus `PostEvent(Event::Custom)`, since a
@@ -532,7 +536,9 @@ Match the existing code:
   them, with the lint and format checks, in the `wasm` job of
   `.github/workflows/ci.yml`. Wait for what the page shows, never for
   fixed periods. `web/screenshots.cjs` takes the manual's screenshots of
-  the web app (`docs/images/web-*.png`) the same way; run it after
+  the web app (`docs/images/web-*.png`) the same way, and
+  `vscode/scripts/screenshots.cjs` the VS Code extension's README's
+  (`vscode/images/vscode-*.png`, in VS Code itself); run them after
   changing what they show.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest

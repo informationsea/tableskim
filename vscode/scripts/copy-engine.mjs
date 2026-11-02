@@ -1,6 +1,7 @@
 // Copies the engine (tableskim-wasm-node.js and .wasm, built by CMake:
 // cmake --build --preset wasm-release --target tableskim-wasm-node) into
-// engine/, and the licenses next to package.json, for the package.
+// engine/, and the licenses and the icon (the GUI's) next to package.json,
+// for the package.
 // TABLESKIM_WASM_BUILD names another build directory.
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -24,6 +25,7 @@ for (const name of ['tableskim-wasm-node.js', 'tableskim-wasm-node.wasm']) {
 }
 
 copyFileSync(path.join(sourceDir, 'LICENSE'), path.join(extensionDir, 'LICENSE'));
+copyFileSync(path.join(sourceDir, 'src', 'images', 'icon.png'), path.join(extensionDir, 'icon.png'));
 // The web app's list (cmake/WebZip.cmake) covers the same code: the core,
 // Emscripten's runtime and React.
 const zips = path.join(build, 'web-zip');
