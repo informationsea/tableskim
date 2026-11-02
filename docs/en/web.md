@@ -193,6 +193,8 @@ The operators and how values compare are explained in
 The **Search** button (`Ctrl+F`) opens the Search pane of the sidebar,
 laid out like the GUI's. Type the text and press `Enter` or **Search**.
 
+![The Search pane: the hits of "watanabe"](../images/web-search-pane.png)
+
 - Matching cells are highlighted in the grid, and the list shows the row,
   column and value of every hit. Click a hit to jump to it; the arrow keys
   in the list go on to the next and previous hits.
