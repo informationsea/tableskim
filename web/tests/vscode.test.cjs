@@ -49,7 +49,8 @@ async function openWebview(file) {
     const saveWaiters = [];
     const takeSave = () =>
         saves.length ? Promise.resolve(saves.shift()) : new Promise((resolve) => saveWaiters.push(resolve));
-    const engine = new Worker(path.join(buildDir, 'tableskim-wasm-node.js'));
+    let engine = null;
+    let engines = 0;
     // Bytes cross page.evaluate() as arrays.
     const toPage = (message) =>
         page
@@ -59,10 +60,18 @@ async function openWebview(file) {
                 window.postMessage(data, '*');
             }, message)
             .catch(() => {});
-    engine.on('message', (message) => {
-        if (message.type === 'file') message = { ...message, data: [...new Uint8Array(message.data)] };
-        void toPage({ type: 'engine', message });
-    });
+    // As the extension: an engine for each load of the page, the old one's messages dropped.
+    const startEngine = () => {
+        void engine?.terminate();
+        const current = new Worker(path.join(buildDir, 'tableskim-wasm-node.js'));
+        engine = current;
+        engines++;
+        current.on('message', (message) => {
+            if (engine !== current) return;
+            if (message.type === 'file') message = { ...message, data: [...new Uint8Array(message.data)] };
+            void toPage({ type: 'engine', message });
+        });
+    };
     await page.exposeFunction('toExtension', (message) => {
         sent.push(message);
         if (message.type === 'save') {
@@ -70,6 +79,7 @@ async function openWebview(file) {
             if (waiter) waiter(message);
             else saves.push(message);
         }
+        if (message.type === 'hello') startEngine();
         if (message.type !== 'engine') return;
         const request = message.message;
         if (request.method === 'open') request.params = { ...request.params, path: file };
@@ -94,11 +104,11 @@ async function openWebview(file) {
     await page.goto(`${ORIGIN}/`);
     const close = async () => {
         await context.close();
-        await engine.terminate();
+        await engine?.terminate();
         assert.deepEqual(errors, []);
     };
     const completeSave = (id, result) => toPage({ type: 'saveResult', id, ...result });
-    return { page, sent, takeSave, completeSave, close };
+    return { page, sent, takeSave, completeSave, close, engines: () => engines };
 }
 
 const cell = (page, row, column) => page.locator(`.cell[data-row="${row}"][data-column="${column}"]`);
@@ -110,6 +120,21 @@ test('the webview opens its document through the extension', async () => {
         await page.waitForSelector('.cell:not(.k-l)');
         await page.locator('#status-rows').filter({ hasText: '54 rows' }).waitFor();
         assert.notEqual(await cell(page, 0, 0).innerText(), '');
+    } finally {
+        await close();
+    }
+});
+
+test('a reloaded webview gets a new engine and shows its document again', async () => {
+    const { page, close, engines } = await openWebview(demo('normal.csv'));
+    try {
+        await page.waitForSelector('.cell:not(.k-l)');
+        assert.equal(engines(), 1);
+        // As Developer: Reload Webviews: the page starts over, the extension does not.
+        await page.reload();
+        await page.waitForSelector('.cell:not(.k-l)');
+        await page.locator('#status-rows').filter({ hasText: '54 rows' }).waitFor();
+        assert.equal(engines(), 2);
     } finally {
         await close();
     }

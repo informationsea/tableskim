@@ -3,6 +3,8 @@
 // and got them, which needs the page loaded under its CSP, the engine
 // started in the extension host and the document opened by its path.
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const vscode = require('vscode');
 
@@ -84,6 +86,109 @@ async function run() {
     await vscode.commands.executeCommand('vscode.open', parquet);
     await rows;
     console.log('ok dates.parquet opened by default');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
+    await reloads(api);
+    await saves(api);
+    await changes(api);
+}
+
+// A file changed on disk is read again once the user says so; here one
+// outside the workspace, which VS Code watches only on request.
+async function changes(api) {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tableskim-change-'));
+    const file = path.join(directory, 'changing.csv');
+    fs.writeFileSync(file, 'name,value\nfirst,1\n');
+    const uri = vscode.Uri.file(file);
+    const asked = [];
+    try {
+        api.testing.setReloadAnswer((document) => (asked.push(document.fsPath), true));
+        let rows = waitForRows(api, uri);
+        await vscode.commands.executeCommand('vscode.openWith', uri, 'tableskim.text');
+        await rows;
+        await until(
+            () => api.testing.text(uri, '#status-rows'),
+            (text) => /\b1 row\b/.test(text),
+            'one row',
+        );
+        // VS Code may start watching a little after the editor opens.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        rows = waitForRows(api, uri);
+        fs.appendFileSync(file, 'second,2\n');
+        await rows;
+        await until(
+            () => api.testing.text(uri, '#status-rows'),
+            (text) => /\b2 rows\b/.test(text),
+            'two rows',
+        );
+        assert.deepEqual(asked, [file]);
+        console.log('ok a file changed on disk is read again');
+    } finally {
+        api.testing.setReloadAnswer(undefined);
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+}
+
+// Asks until the answer passes, as a user looks again.
+async function until(ask, passes, what) {
+    const end = Date.now() + TIMEOUT;
+    for (;;) {
+        const answer = await ask();
+        if (passes(answer)) return answer;
+        if (Date.now() > end) throw new Error(`timed out waiting for ${what}: last ${JSON.stringify(answer)}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+}
+
+// A page loaded again, by VS Code or the Reload command, reads its document
+// again with an engine of its own.
+async function reloads(api) {
+    const uri = vscode.Uri.file(path.join(demo, 'normal.parquet'));
+    let rows = waitForRows(api, uri);
+    await vscode.commands.executeCommand('vscode.openWith', uri, 'tableskim.table');
+    await rows;
+    rows = waitForRows(api, uri);
+    await vscode.commands.executeCommand('workbench.action.webview.reloadWebviewAction');
+    await rows;
+    console.log('ok the page reloaded by Developer: Reload Webviews shows rows again');
+    rows = waitForRows(api, uri);
+    await vscode.commands.executeCommand('tableskim.reload');
+    await rows;
+    console.log('ok the Reload command shows rows again');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+}
+
+// An export crosses VS Code twice: the engine's file to the webview, and
+// the bytes to save back to the extension, which writes them.
+async function saves(api) {
+    const source = path.join(demo, 'normal.csv');
+    const uri = vscode.Uri.file(source);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tableskim-save-'));
+    const target = path.join(directory, 'export.csv');
+    try {
+        const rows = waitForRows(api, uri);
+        await vscode.commands.executeCommand('vscode.openWith', uri, 'tableskim.text');
+        await rows;
+        api.testing.setSaveTarget(vscode.Uri.file(target));
+        await api.testing.click(uri, '#export-button');
+        await api.testing.click(uri, '#export-start');
+        const status = await until(
+            () => api.testing.text(uri, '#export-status'),
+            (text) => /Saved|Cannot/.test(text),
+            'the export',
+        );
+        assert.match(status, /^Saved normal-export\.csv/);
+        // The whole view, as the source has it.
+        const lines = (text) => text.trimEnd().split(/\r?\n/);
+        assert.equal(lines(fs.readFileSync(target, 'utf8')).length, lines(fs.readFileSync(source, 'utf8')).length);
+        assert.equal(lines(fs.readFileSync(target, 'utf8'))[0], lines(fs.readFileSync(source, 'utf8'))[0]);
+        console.log('ok an export is saved through the extension');
+    } finally {
+        api.testing.setSaveTarget(undefined);
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
 }
 
 module.exports = { run };

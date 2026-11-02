@@ -2,11 +2,13 @@
 // the WebAssembly core running in the extension host (editor.ts).
 
 import * as vscode from 'vscode';
-import { type Relayed, TABLE_VIEW_TYPE, TableSkimEditorProvider, TEXT_VIEW_TYPE } from './editor';
+import { type Relayed, TABLE_VIEW_TYPE, TableSkimEditorProvider, type Testing, TEXT_VIEW_TYPE } from './editor';
 
 /** What activate() returns: the integration tests (tests/integration/) watch the relayed messages. */
 export interface TableSkimApi {
     onDidRelay: vscode.Event<Relayed>;
+    /** In extension test mode only. */
+    testing?: Testing;
 }
 
 export function activate(context: vscode.ExtensionContext): TableSkimApi {
@@ -21,8 +23,11 @@ export function activate(context: vscode.ExtensionContext): TableSkimApi {
             const target = uri ?? vscode.window.activeTextEditor?.document.uri;
             if (target) await vscode.commands.executeCommand('vscode.openWith', target, TABLE_VIEW_TYPE);
         }),
+        vscode.commands.registerCommand('tableskim.reload', () => provider.reloadActive()),
     );
-    return { onDidRelay: provider.onDidRelay };
+    const api: TableSkimApi = { onDidRelay: provider.onDidRelay };
+    if (context.extensionMode === vscode.ExtensionMode.Test) api.testing = provider.testing;
+    return api;
 }
 
 export function deactivate() {}
