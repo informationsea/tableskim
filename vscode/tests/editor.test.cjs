@@ -9,7 +9,9 @@ const { pathToFileURL } = require('node:url');
 
 class Uri {
     constructor(file) {
-        this.fsPath = this.path = file;
+        this.fsPath = file;
+        // As VS Code's: slashes, and a drive letter after one on Windows.
+        this.path = path.sep === '\\' ? `/${file.replace(/\\/g, '/')}` : file;
         this.scheme = 'file';
     }
     static joinPath(base, ...parts) {
@@ -208,13 +210,20 @@ test('save replies report the result and protect the source', async (t) => {
 });
 
 // A provider with an editor on a document, as VS Code resolves it.
-async function resolveEditor(t) {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tableskim-editor-'));
+// With linked, the document is a symbolic link to a file in another directory.
+async function resolveEditor(t, { linked = false } = {}) {
+    // Without links (macOS's temporary directory is under /var -> /private/var),
+    // so that the document's directory is the only one watched.
+    const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'tableskim-editor-')));
     t.after(() => fs.rm(directory, { recursive: true, force: true }));
     await fs.mkdir(path.join(directory, 'media'));
     await fs.writeFile(path.join(directory, 'media', 'vscode.html'), '<html><head></head></html>');
     const document = new Uri(path.join(directory, 'data.csv'));
-    await fs.writeFile(document.fsPath, 'a,b\n1,2\n');
+    if (linked) {
+        await fs.mkdir(path.join(directory, 'target'));
+        await fs.writeFile(path.join(directory, 'target', 'real.csv'), 'a,b\n1,2\n');
+        await fs.symlink(path.join(directory, 'target', 'real.csv'), document.fsPath);
+    } else await fs.writeFile(document.fsPath, 'a,b\n1,2\n');
     engines.length = watchers.length = shownInformation.length = shownErrors.length = 0;
     const posted = [];
     const loads = [];
@@ -330,4 +339,23 @@ test('a change on disk asks whether to reload, once per burst', async (t) => {
     editor.dispose();
     await new Promise((resolve) => setTimeout(resolve, 500));
     assert.equal(shownInformation.length, 2);
+});
+
+test('a linked document is watched where it points too', async (t) => {
+    let editor;
+    try {
+        editor = await resolveEditor(t, { linked: true });
+    } catch (error) {
+        if (error.code === 'EPERM') return t.skip('Link creation requires permission on this system');
+        throw error;
+    }
+    const directory = path.dirname(editor.document.fsPath);
+    assert.deepEqual(
+        watchers.map((watcher) => watcher.pattern.baseUri.fsPath),
+        [directory, path.join(directory, 'target')],
+    );
+    answerInformation = async () => 'Reload';
+    watchers[1].fire('change', new Uri(path.join(directory, 'target', 'real.csv')));
+    await until(() => editor.loads.length === 2);
+    editor.dispose();
 });
