@@ -434,7 +434,7 @@ jobs:
         id: vscode-cache
         uses: actions/cache/restore@v4
         with:
-          path: vscode/.vscode-test/vscode-linux-x64-*
+          path: vscode/.vscode-test/vscode-linux-x64-${{ steps.vscode.outputs.version }}
           key: vscode-${{ runner.os }}-${{ steps.vscode.outputs.version }}
       - name: Test the VS Code extension in VS Code
         working-directory: vscode
@@ -444,11 +444,37 @@ jobs:
       - name: Save VS Code
         if: >-
           !cancelled() && github.event_name != 'pull_request' &&
-          steps.vscode-cache.outputs.cache-hit != 'true' && hashFiles('vscode/.vscode-test/vscode-linux-x64-*/code') != ''
+          steps.vscode-cache.outputs.cache-hit != 'true' &&
+          hashFiles(format('vscode/.vscode-test/vscode-linux-x64-{0}/code', steps.vscode.outputs.version)) != ''
         uses: actions/cache/save@v4
         with:
-          path: vscode/.vscode-test/vscode-linux-x64-*
+          path: vscode/.vscode-test/vscode-linux-x64-${{ steps.vscode.outputs.version }}
           key: ${{ steps.vscode-cache.outputs.cache-primary-key }}
+      # Again in the oldest VS Code the extension claims to work with
+      # (engines.vscode in its package.json), cached the same way.
+      - name: Find the oldest VS Code supported
+        id: vscode-oldest
+        run: echo "version=$(node -p "require('./vscode/package.json').engines.vscode.replace(/^\\^/, '')")" >> "$GITHUB_OUTPUT"
+      - name: Restore the oldest VS Code
+        id: vscode-oldest-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vscode/.vscode-test/vscode-linux-x64-${{ steps.vscode-oldest.outputs.version }}
+          key: vscode-${{ runner.os }}-${{ steps.vscode-oldest.outputs.version }}
+      - name: Test the VS Code extension in the oldest VS Code
+        working-directory: vscode
+        env:
+          TABLESKIM_VSCODE_VERSION: ${{ steps.vscode-oldest.outputs.version }}
+        run: xvfb-run -a npm run test:vscode
+      - name: Save the oldest VS Code
+        if: >-
+          !cancelled() && github.event_name != 'pull_request' &&
+          steps.vscode-oldest-cache.outputs.cache-hit != 'true' &&
+          hashFiles(format('vscode/.vscode-test/vscode-linux-x64-{0}/code', steps.vscode-oldest.outputs.version)) != ''
+        uses: actions/cache/save@v4
+        with:
+          path: vscode/.vscode-test/vscode-linux-x64-${{ steps.vscode-oldest.outputs.version }}
+          key: ${{ steps.vscode-oldest-cache.outputs.cache-primary-key }}
       - name: Pack the VS Code extension
         working-directory: vscode
         run: npm run package

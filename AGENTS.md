@@ -267,11 +267,14 @@ read their header comments before changing anything in `src/common/`.
   `activate()` returns `testing`, and the page clicks for it,
   `web/src/vscode/testHook.ts`), and
   `web/tests/vscode.test.cjs` the webview, with the test as the extension.
-  CI's `wasm` job runs the three and uploads what it built for the
+  CI's `wasm` job runs the three (the VS Code test in the oldest
+  supported VS Code too, `engines.vscode`) and uploads what it built for the
   `vscode` job, which runs the Node.js and VS Code tests on Windows and
   macOS; it also uploads the package
   (`npm run package`: `tableskim-<version>-vscode.vsix`, the project's
-  version), which the release attaches. Its icon is the GUI's
+  version), which the release attaches and its `publish-vscode` job
+  publishes to the Marketplace and Open VSX when their tokens are set
+  (`VSCE_PAT`, `OVSX_PAT`). Its icon is the GUI's
   (`src/images/icon.png`, copied at build time); add user-visible changes
   to `vscode/CHANGELOG.md` under `## Unreleased`, renamed to the version
   before a release.

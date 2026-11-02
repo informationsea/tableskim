@@ -61,6 +61,14 @@ see its manual for each feature.
 - Not in VS Code for the Web (vscode.dev, github.dev) or virtual
   workspaces: files are read by their paths on disk.
 
+## Privacy
+
+TableSkim collects no telemetry or usage data and connects to no server:
+your files are read on the machine where they are (yours, or the remote
+one with Remote Development) and go nowhere else. The page in the editor
+may not load anything from the network, and the engine has no network
+access (no DuckDB extension that reads URLs is included).
+
 ## Good to know
 
 - This is a preview: its features may still change.

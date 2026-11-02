@@ -87,9 +87,12 @@ in `package.json`. CI (the `wasm` job of `.github/workflows/ci.yml`)
 builds the extension, runs all three tests, the one in VS Code under
 `xvfb-run` (VS Code cached by its version, which
 `TABLESKIM_VSCODE_VERSION` gives the test), and uploads the package as the `tableskim-vscode` artifact;
-its `vscode` job runs `npm test` and `npm run test:vscode` on Windows and
-macOS with what the `wasm` job built;
-the release attaches `tableskim-<version>-vscode.vsix`.
+the `wasm` job runs the test in VS Code again in the oldest version the
+extension claims to support (`engines.vscode` in `package.json`), and its
+`vscode` job runs `npm test` and `npm run test:vscode` on Windows and
+macOS with what the `wasm` job built; the release attaches
+`tableskim-<version>-vscode.vsix`. Raise `engines.vscode` (and
+`@types/vscode` with it) rather than drop that test.
 
 To try the extension, open this directory in VS Code and run **Run >
 Start Debugging** (Extension Development Host), or install the VSIX with
@@ -109,6 +112,29 @@ in that release's README too.
 Add what a release changes for users to `CHANGELOG.md` under
 `## Unreleased`, and rename that heading to the version before tagging:
 `npm run package` warns when the version it packs has no heading.
+
+## Publishing
+
+The release workflow (`.github/workflows/release.yml`, job
+`publish-vscode`) publishes the package it attaches, after the GitHub
+release is made:
+
+- to the Visual Studio Marketplace when the repository has the secret
+  `VSCE_PAT`: an Azure DevOps personal access token with the Marketplace
+  scope "Manage", of an account that is a member of the publisher
+  `informationsea` (created at
+  <https://marketplace.visualstudio.com/manage>);
+- to [Open VSX](https://open-vsx.org/) (VSCodium and other editors) when it
+  has `OVSX_PAT`, a token of an Open VSX account that owns the namespace
+  `informationsea`.
+
+Without either secret it publishes nothing. It first checks that
+`CHANGELOG.md` has a heading of the tag's version, and fails otherwise
+(the GitHub release is already made then; publish by hand after fixing
+the changelog with `npx vsce publish --packagePath <vsix>`). The
+Marketplace takes each version once, and the extension's version is the
+project's: an extension-only fix needs a new release of the project.
+The package is marked `"preview": true`, which the Marketplace shows.
 
 ## Screenshots
 
