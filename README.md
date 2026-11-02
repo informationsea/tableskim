@@ -308,8 +308,17 @@ them to a GitHub release:
   distributions: the GUI with Wayland, the GUI for X11 only (`-x11`), and
   the terminal UI only (`tableskim-tui`)
 - macOS: `.dmg` and `.zip`
-- Windows: installer (`.exe`) and `.zip`; `package.bat msix` is not part of
-  the release
+- Windows: installer (`.exe`) and `.zip`
+
+`package.bat msix` makes the Microsoft Store package
+(`packaging/windows/make-msix.ps1`). It needs the identity Partner Center
+gives (Product management > Product identity) in `MSIX_IDENTITY_NAME`,
+`MSIX_PUBLISHER` and `MSIX_PUBLISHER_DISPLAY_NAME`. The package is unsigned,
+as the Store signs it on submission; `make-msix.ps1 -PfxPath` signs it for
+installing by hand. When the repository variables of the same names are
+set, the release workflow builds it too, as the run's `microsoft-store`
+artifact (not attached to the release), and CI checks the packaging with a
+stand-in identity.
 
 ## Development
 
