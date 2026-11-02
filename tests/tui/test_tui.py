@@ -62,15 +62,26 @@ class OpenAndQuitTest(TuiTestCase):
 class FirstRowTest(TuiTestCase):
     def test_h_switches_from_the_guess_and_back(self):
         tui = self.run_tui(self.demo("normal.csv"))
-        tui.wait_text("54 rows")
-        self.assertIn("│ header", status(tui))
+        # PTY reads can stop halfway through a frame, before the header marker.
+        tui.wait_for(
+            lambda _: "54 rows × 9 cols" in status(tui) and "│ header" in status(tui),
+            what="the guessed header and 54 rows in the status bar",
+        )
         tui.send("H")
-        tui.wait_text("55 rows")
-        tui.wait_text("First row is data (H: guess again)")
-        self.assertNotIn("│ header", status(tui))
+        tui.wait_for(
+            lambda _: "55 rows × 9 cols" in status(tui)
+            and "First row is data (H: guess again)" in status(tui)
+            and "│ header" not in status(tui)
+            and "│ ? help" in status(tui),
+            what="55 data rows without a header in the status bar",
+        )
         tui.send("H")
-        tui.wait_text("54 rows")
-        tui.wait_text("First row: header if it looks like one (H: switch)")
+        tui.wait_for(
+            lambda _: "54 rows × 9 cols" in status(tui)
+            and "First row: header if it looks like one (H: switch)" in status(tui)
+            and "│ header" in status(tui),
+            what="the restored automatic header and 54 rows in the status bar",
+        )
 
     def test_header_option(self):
         tui = self.run_tui(self.demo("normal.csv"), "--header", "no")
