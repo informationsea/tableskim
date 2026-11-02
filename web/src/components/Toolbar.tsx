@@ -1,6 +1,6 @@
 import { useRef } from 'react';
+import { platform } from '../platform';
 import { type BookInfo, type HeaderMode, type OpenOptions, TEXT_ENCODINGS } from '../protocol';
-import { SearchBox, type SearchBoxProps } from './SearchBox';
 
 export interface Tool {
     id: string;
@@ -18,18 +18,19 @@ interface ToolbarProps {
     options: OpenOptions;
     onOptions: (options: OpenOptions) => void;
     tools: Tool[];
-    search: SearchBoxProps;
 }
 
-export function Toolbar({ onOpen, book, options, onOptions, tools, search }: ToolbarProps) {
+export function Toolbar({ onOpen, book, options, onOptions, tools }: ToolbarProps) {
     const text = !!book?.isTextFormat;
     const input = useRef<HTMLInputElement>(null);
     return (
         <header className="flex flex-wrap items-center gap-2 border-b border-line bg-chrome px-2.5 py-1.5">
             <span className="mr-1 font-bold">TableSkim</span>
-            <button type="button" id="open-button" className="control" onClick={() => input.current?.click()}>
-                Open…
-            </button>
+            {platform().opensFiles && (
+                <button type="button" id="open-button" className="control" onClick={() => input.current?.click()}>
+                    Open…
+                </button>
+            )}
             <input
                 type="file"
                 id="file-input"
@@ -97,8 +98,6 @@ export function Toolbar({ onOpen, book, options, onOptions, tools, search }: Too
                     {tool.label}
                 </button>
             ))}
-            <span className="flex-1" />
-            <SearchBox {...search} />
         </header>
     );
 }

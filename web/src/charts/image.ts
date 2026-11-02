@@ -1,6 +1,8 @@
 // Saving a chart as an image, as the GUI's Save Image... does: SVG keeps
 // lines and text sharp, PNG is the SVG drawn at twice the size.
 
+import { platform } from '../platform';
+
 export type ImageFormat = 'png' | 'svg';
 
 /** What a chart component hands its dialog to save it. */
@@ -85,14 +87,7 @@ export async function pngOfSvg(svg: string, width: number, height: number): Prom
 
 /** Hands a file to the browser to save. */
 export function download(blob: Blob, name: string) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    platform().saveFile(blob, name);
 }
 
 /** Saves a chart given as SVG text in the format asked for. */

@@ -13,7 +13,7 @@ export default tseslint.config(
     { ignores: ['dist/', 'node_modules/'] },
     js.configs.recommended,
     {
-        files: ['src/**/*.{ts,tsx}', 'vite.config.ts'],
+        files: ['src/**/*.{ts,tsx}', 'vite.config.ts', 'vite.vscode.config.ts'],
         extends: [tseslint.configs.recommendedTypeChecked, reactHooks.configs.flat.recommended],
         languageOptions: {
             globals: globals.browser,

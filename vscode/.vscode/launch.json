@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run TableSkim",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/../demo/data"],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"]
+    }
+  ]
+}

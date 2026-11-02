@@ -248,6 +248,21 @@ read their header comments before changing anything in `src/common/`.
   (`TableSkimClient.readFile()`) and removed. Hidden and frozen columns are
   the page's (`GridController.setLayout()`), sent with `copy`, exports and
   Group By. Not there yet: editing and Follow.
+- The VS Code extension (`vscode/`, a prototype; see `vscode/README.md`)
+  is a read-only custom editor showing the web app's frontend in a webview
+  (`web/vscode.html`, `web/src/vscode/`, built by `npm run build:vscode` in
+  `web/` into `vscode/media/`). A webview is not cross-origin isolated, so
+  the engine runs in the extension host instead: `tableskim-wasm-node`
+  (the same module for Node.js, not built by default) in a worker_threads
+  Worker, opening the document by its path with NODEFS
+  (`wasm_worker_pre.js` serves both builds). `ExtensionPort` relays the
+  protocol through the extension, and `web/src/platform.ts` hands saving
+  to it and hides Open…. `vscode/tests/` tests the engine in Node.js and in VS Code itself
+  (`npm run test:vscode`, `@vscode/test-electron`), and
+  `web/tests/vscode.test.cjs` the webview, with the test as the extension.
+  CI's `wasm` job runs the three and uploads the package
+  (`npm run package`: `tableskim-<version>-vscode.vsix`, the project's
+  version), which the release attaches.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops
   back with `ftxui::App::Post` plus `PostEvent(Event::Custom)`, since a
@@ -508,7 +523,9 @@ Match the existing code:
   first, and `npx playwright install chromium` for the browser). CI runs
   them, with the lint and format checks, in the `wasm` job of
   `.github/workflows/ci.yml`. Wait for what the page shows, never for
-  fixed periods.
+  fixed periods. `web/screenshots.cjs` takes the manual's screenshots of
+  the web app (`docs/images/web-*.png`) the same way; run it after
+  changing what they show.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest
   starts it with `xvfb-run -a` (`TABLESKIM_GUI_TESTS`: `AUTO` when
@@ -541,5 +558,6 @@ Match the existing code:
 - If an agent wrote the commit, end the message with the trailers the tool
   provides for attribution (e.g. `Co-Authored-By:`), after a blank line.
 - Never commit `build/`, `.cache/`, `CMakeUserPresets.json`,
-  `demo/.venv/`, `web/node_modules/` or `web/dist/`. Commit
+  `demo/.venv/`, `web/node_modules/`, `web/dist/` or what `vscode/` builds
+  (`node_modules/`, `out/`, `media/`, `engine/`, `*.vsix`). Commit
   `web/package-lock.json` with any change to `web/package.json`.

@@ -15,6 +15,10 @@ as the GUI and the TUI share the core. The file never leaves the browser.
   font and, for text files, the character encoding, skipping `##` lines
   and converting to Parquet or DuckDB. What the native UIs have and it
   lacks: editing and Follow.
+- `tableskim-wasm-node` is the same module for Node.js, which the VS Code
+  extension (`vscode/`) runs in a worker_threads Worker: an "open" there
+  names a path on the host (`path`, not `file`), whose directory is mounted
+  with NODEFS. Not built by default.
 - `tableskim-wasm-probe` (`wasm_probe.cxx`, `web/probe/`) was the
   feasibility probe: it opens one file, reads it to the end, sorts it and
   runs an SQL query, timing each step, in Node.js, a browser or natively.
@@ -124,6 +128,16 @@ build's list plus Emscripten's runtime and the bundled npm packages) and a
 (the `web` job of `.github/workflows/release.yml`), the download pages list
 it, and CI uploads its folder as the `tableskim-web` artifact.
 
+The manual's screenshots of the web app (`docs/images/web-*.png`) are
+taken from the built app by `web/screenshots.cjs` (Playwright, as the
+end-to-end tests), the same views at the same size each time; take them
+again after changing what they show, and look at each before committing:
+
+```sh
+LANG=C.UTF-8 node web/screenshots.cjs                  # all, into docs/images
+TABLESKIM_SCREENSHOTS=web-sql.png node web/screenshots.cjs build/wasm-release /tmp/shots
+```
+
 `node web/serve.mjs build/wasm-release` serves the app CMake built (or
 `web/dist/`) at http://127.0.0.1:8765/ and the probe page at `/probe/`.
 
@@ -203,6 +217,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `sortCycle` | `sheet`, `column` | `view` (by the column ascending, descending, then none) |
 | `search` / `cancelSearch` / `searchState` | `sheet`, `text`, `caseSensitive`, `regex`, `column` | `active`, `done`, `truncated`, `error`, `scannedRows`, `hits`, `generation` |
 | `findHit` | `sheet`, `row`, `column`, `forward`, `includeFrom` | `index` (null if none), `row`, `column`, `hits`, `wrapped`, `pending` |
+| `searchHits` | `sheet`, `first`, `last` (hit indexes, at most 1000) | `generation`, `hits`, `first`, `items` (`row`, `column`, `value`: null while loading) |
 | `continueReading` / `stopReading` | `sheet` | |
 | `copy` | `sheet`, `top`, `left`, `bottom`, `right`, `hidden` (columns left out) | `text` (TSV), `copiedRows`, `skippedRows` |
 | `goTo` | `sheet`, `text` (`120`, `C`, a header name, `C120`) | `row`, `column` (null where not given) or `error` |

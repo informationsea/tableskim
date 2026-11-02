@@ -3,7 +3,7 @@
 
 import type { Method, Methods } from './protocol';
 
-type WorkerMessage =
+export type WorkerMessage =
     | { type: 'ready' }
     | { type: 'reply'; json: string }
     | { type: 'events'; json: string }
@@ -14,22 +14,32 @@ interface Pending {
     reject: (error: Error) => void;
 }
 
+/**
+ * Where the engine runs: a Worker, or what relays to one elsewhere (the VS
+ * Code extension's webview posts to the extension, src/vscode/port.ts).
+ */
+export interface EnginePort {
+    postMessage(message: unknown): void;
+    onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null;
+    onerror: ((event: ErrorEvent) => void) | null;
+}
+
 export type EventListener = (events: Map<number, number>) => void;
 
 export class TableSkimClient {
     readonly ready: Promise<void>;
 
-    private readonly worker: Worker;
+    private readonly worker: EnginePort;
     private nextId = 1;
     private readonly pending = new Map<number, Pending>();
     private readonly listeners = new Set<EventListener>();
     private readonly errorListeners = new Set<(message: string) => void>();
     private markReady: () => void = () => {};
 
-    /** @param moduleUrl the module's script, which becomes the worker */
-    constructor(moduleUrl: string | URL) {
+    /** @param engine the module's script, which becomes the worker, or a port to an engine */
+    constructor(engine: string | URL | EnginePort) {
         // A classic worker: the module is an Emscripten script, not an ES module.
-        this.worker = new Worker(moduleUrl);
+        this.worker = typeof engine === 'string' || engine instanceof URL ? new Worker(engine) : engine;
         this.ready = new Promise((resolve) => {
             this.markReady = resolve;
         });
