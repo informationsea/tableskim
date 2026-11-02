@@ -16,6 +16,11 @@ TableSkim is a lightweight, fast viewer for tabular files. Open a large CSV,
 an Excel workbook, a Parquet or JSON file or a DuckDB / SQLite database and start scrolling immediately: rows are loaded in the
 background while the window stays responsive.
 
+Besides the desktop app (a GUI and a terminal UI), TableSkim runs in a
+browser as a [web app](https://informationsea.github.io/tableskim/app/)
+that reads files without uploading them, and in Visual Studio Code as an
+[extension](vscode/README.md) (preview) that opens tables in the editor.
+
 ## Features
 
 - **CSV / TSV** and **Excel (`.xlsx`, `.xlsm`)** files, including workbooks
@@ -261,6 +266,15 @@ reads the file in the browser without uploading it. With the
 
 See [src/wasm/README.md](src/wasm/README.md) for the details and its tests.
 
+### VS Code extension
+
+The Visual Studio Code extension (`vscode/`, a preview) shows the web app's
+frontend in a read-only custom editor, with the same WebAssembly core
+running in VS Code's extension host. [vscode/README.md](vscode/README.md)
+describes it for its users; [vscode/DEVELOPMENT.md](vscode/DEVELOPMENT.md)
+explains how it works and how to build, test and package it
+(`tableskim-<version>-vscode.vsix`, attached to each release).
+
 ### Windows
 
 Use the Visual Studio 2026 presets:
@@ -303,6 +317,10 @@ them to a GitHub release:
 - `src/gui/` — FLTK GUI (layout in `gui.fl`)
 - `src/tui/` — FTXUI terminal UI
 - `src/main.cxx` — the `tableskim` entry point, which picks the GUI or TUI
+- `src/wasm/` — the core's WebAssembly module for the web app and the VS Code
+  extension ([README](src/wasm/README.md))
+- `web/` — the web app (React, TypeScript)
+- `vscode/` — the VS Code extension ([DEVELOPMENT.md](vscode/DEVELOPMENT.md))
 - `tests/` — Catch2 unit tests
 - `demo/` — script that generates the sample files in `demo/data/`
 
