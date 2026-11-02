@@ -257,8 +257,12 @@ read their header comments before changing anything in `src/common/`.
   Worker, opening the document by its path with NODEFS
   (`wasm_worker_pre.js` serves both builds). `ExtensionPort` relays the
   protocol through the extension, and `web/src/platform.ts` hands saving
-  to it and hides Open…. `vscode/tests/` tests the engine in Node.js and
+  to it and hides Open…. `vscode/tests/` tests the engine in Node.js and in VS Code itself
+  (`npm run test:vscode`, `@vscode/test-electron`), and
   `web/tests/vscode.test.cjs` the webview, with the test as the extension.
+  CI's `wasm` job runs the three and uploads the package
+  (`npm run package`: `tableskim-<version>-vscode.vsix`, the project's
+  version), which the release attaches.
 - The TUI (`TuiApp` in `tui_app.cxx`, one `TuiTableView` per sheet) shows
   the single file given on the command line; it has no open command. It hops
   back with `ftxui::App::Post` plus `PostEvent(Event::Custom)`, since a

@@ -120,7 +120,7 @@
     "build": "npm run build:engine && npm run build:webview && npm run compile",
     "test": "node --test tests/engine.test.cjs",
     "test:vscode": "node tests/integration/run.cjs",
-    "package": "vsce package"
+    "package": "node scripts/package.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

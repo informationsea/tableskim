@@ -54,7 +54,7 @@ cd vscode
 npm ci
 npm run build          # engine/, media/ and out/
 npm test               # the engine in Node.js
-npm run package        # tableskim-<version>.vsix
+npm run package        # tableskim-<version>-vscode.vsix
 ```
 
 `tableskim-web-zip` is only needed for `THIRD_PARTY_LICENSES.txt` in the
@@ -79,6 +79,12 @@ watching the messages the extension relays (`activate()` returns
 ```sh
 xvfb-run -a npm run test:vscode
 ```
+
+The package takes the project's version (`CMakeLists.txt`), not the one
+in `package.json`. CI (the `wasm` job of `.github/workflows/ci.yml`)
+builds the extension, runs all three tests, the one in VS Code under
+`xvfb-run`, and uploads the package as the `tableskim-vscode` artifact;
+the release attaches `tableskim-<version>-vscode.vsix`.
 
 To try the extension, open this directory in VS Code and run **Run >
 Start Debugging** (Extension Development Host), or install the VSIX with

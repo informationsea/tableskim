@@ -292,12 +292,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build ccache
+          sudo apt-get install -y ninja-build ccache xvfb
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            vscode/package-lock.json
       # emsdk is installed at a fixed path: ccache hashes the paths of the
       # system headers (the sysroot is inside emsdk), and setup-emsdk put
       # them in a new temporary directory each time, so nothing compiled in
@@ -395,4 +397,30 @@ jobs:
         with:
           name: tableskim-web
           path: build/wasm-release/web-zip
+          if-no-files-found: error
+      # The VS Code extension (vscode/): its engine is the web app's module
+      # built for Node.js, its webview the web app built for VS Code, and
+      # its package takes THIRD_PARTY_LICENSES.txt from the web app's.
+      - name: Build the VS Code extension
+        run: |
+          cmake --build --preset wasm-release --target tableskim-wasm-node
+          cd vscode
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Test the VS Code extension
+        run: |
+          (cd vscode && npm test)
+          LANG=C.UTF-8 node --test web/tests/vscode.test.cjs
+      # In VS Code itself, downloaded by @vscode/test-electron (stable).
+      - name: Test the VS Code extension in VS Code
+        working-directory: vscode
+        run: xvfb-run -a npm run test:vscode
+      - name: Pack the VS Code extension
+        working-directory: vscode
+        run: npm run package
+      - name: Upload the VS Code extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: tableskim-vscode
+          path: vscode/tableskim-*-vscode.vsix
           if-no-files-found: error
