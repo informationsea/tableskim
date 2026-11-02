@@ -250,6 +250,21 @@ TEST_CASE("WebSession opens a CSV file and pages through its rows")
         CHECK(*back["wrapped"].boolean());
         CHECK(back["index"].number() == 6);
 
+        // The Search pane's list: the hits with their values, a slice at a time.
+        const JsonValue list = client.result("searchHits", "{\"sheet\":" + std::to_string(id) + ",\"first\":5,\"last\":20}");
+        CHECK(*list["hits"].number() == 7);
+        CHECK(*list["first"].number() == 5);
+        CHECK(*list["generation"].number() == *state["generation"].number());
+        const auto &items = *list["items"].array();
+        REQUIRE(items.size() == 2);
+        for (const JsonValue &item : items)
+        {
+            REQUIRE(item["value"].string());
+            CHECK(*item["value"].string() == "Tokyo");
+            CHECK(*item["column"].number() == 4);
+        }
+        CHECK(*items[0]["row"].number() < *items[1]["row"].number());
+
         // The rows mark the hits among their cells, until the search is cancelled.
         const JsonValue all = client.rows(id, 0, 53);
         const auto &hit_rows = *all["hits"].array();

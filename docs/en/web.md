@@ -74,9 +74,9 @@ It, too, reads the files in your browser only.
 
 - **Toolbar** at the top: **Open...**, the reading options of the file
   (**First row**, **Encoding**, **Skip ## lines**; shown only when they
-  apply), the buttons of the features (**Filter**, **Statistics**,
-  **Histogram**, **Scatter**, **Group By**, **SQL**, **Export**,
-  **Convert**, **Sidebar**, **Monospace**) and the search box. Buttons
+  apply) and the buttons of the features (**Search**, **Filter**,
+  **Statistics**, **Histogram**, **Scatter**, **Group By**, **SQL**,
+  **Export**, **Convert**, **Sidebar**, **Monospace**). Buttons
   that do not apply to the file are dimmed; a pressed button shows that
   its panel is open.
 - **Sheet tabs** below the toolbar, for files with several sheets.
@@ -84,8 +84,8 @@ It, too, reads the files in your browser only.
   hold (`#` numbers, `@` dates, `?` booleans) and the sort arrow. A
   filtered column's name is underlined in the accent colour.
 - **Row numbers**: the position of the row in the current view.
-- **Sidebar** on the right (hidden at first): the Content, Filter and
-  Statistics panes.
+- **Sidebar** on the right (hidden at first): the Content, Search, Filter
+  and Statistics panes.
 - **Status bar** at the bottom: the file and its text encoding, the row
   count (`4 rows of 54` when filtered), the filter, and the cursor's row
   and column.
@@ -190,12 +190,17 @@ The operators and how values compare are explained in
 
 ## Searching
 
-Type into the search box at the top right (`Ctrl+F` goes there) and press
-`Enter`. The cursor moves to the first hit after it, and every hit in view
-is marked. `Enter` and `Shift+Enter`, or the **↑** / **↓** buttons, move to
-the next and previous hit; `Escape` returns to the grid. **Aa** matches
-upper and lower case exactly and **.\*** reads the text as a regular
-expression. The box shows how many hits there are so far.
+The **Search** button (`Ctrl+F`) opens the Search pane of the sidebar,
+laid out like the GUI's. Type the text and press `Enter` or **Search**.
+
+- Matching cells are highlighted in the grid, and the list shows the row,
+  column and value of every hit. Click a hit to jump to it; the arrow keys
+  in the list go on to the next and previous hits.
+- The search ignores upper and lower case and finds the text anywhere in a
+  cell. Check **Regex** to search with a regular expression (RE2 syntax).
+- The search runs in the background; the status line shows the progress
+  and the number of hits.
+- Another sheet shown is searched for the same text.
 
 ## Column statistics
 
@@ -315,7 +320,6 @@ The web app has the GUI's features except these:
   command-line options, no **Show File in File Browser**.
 - The SQL history, the monospace choice and the sidebar's width are kept
   in the browser, apart from the GUI's.
-- Searching is in the toolbar, not in the sidebar.
 
 ## Keyboard shortcuts
 
@@ -329,11 +333,11 @@ The web app has the GUI's features except these:
 | `Ctrl+C`                    | Copy the selection as tab-separated text                  |
 | `Enter`, double click       | Show the whole cell in the sidebar                        |
 | `Ctrl+G`                    | Go To                                                     |
-| `Ctrl+F`                    | Go to the search box                                      |
-| `Enter` / `Shift+Enter`     | In the search box: next / previous hit                    |
+| `Ctrl+F`                    | The Search pane                                           |
+| `↑` / `↓`                   | In the list of hits: previous / next hit                  |
 | `Ctrl+Shift+F`              | The Filter pane                                           |
 | `Enter`                     | In a filter value: apply the filter                       |
 | `Ctrl+Enter`                | In the SQL panel: run the query                           |
 | `Tab`                       | In the SQL panel: complete a name                         |
 | `Ctrl+↑` / `Ctrl+↓`         | In the SQL panel: earlier / later queries                 |
-| `Escape`                    | Close a dialog or a menu; leave the search box            |
+| `Escape`                    | Close a dialog or a menu                                  |

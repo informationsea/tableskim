@@ -173,7 +173,7 @@ async function regressionPage() {
                 if (method === 'search') {
                     this.searchActive = true;
                     if (this.holdSearch) {
-                        this.pendingSearch = request;
+                        (this.pendingSearches ??= []).push(request);
                         return;
                     }
                     return this.reply(request, {});
@@ -182,16 +182,20 @@ async function regressionPage() {
                     this.searchActive = false;
                     return this.reply(request, {});
                 }
-                if (method === 'findHit') {
-                    const result = { index: null, pending: false };
-                    if (this.holdFindHit) {
-                        this.pendingFindHit = request;
-                        return;
-                    }
-                    return this.reply(request, result);
-                }
                 if (method === 'searchState')
-                    return this.reply(request, { done: true, hits: this.searchActive ? 1 : 0, error: '' });
+                    return this.reply(request, {
+                        active: this.searchActive,
+                        done: true,
+                        hits: this.searchActive ? 1 : 0,
+                        error: '',
+                    });
+                if (method === 'searchHits')
+                    return this.reply(request, {
+                        generation: 1,
+                        hits: this.searchActive ? 1 : 0,
+                        first: params.first,
+                        items: this.searchActive && params.first === 0 ? [{ row: 0, column: 1, value: 'value-1' }] : [],
+                    });
                 if (method === 'cellFilter')
                     return this.reply(request, {
                         conditions: [{ column: params.column, op: 'equals', value: `value-${params.column}` }],
@@ -382,9 +386,15 @@ describe('frontend regressions', () => {
         await page.context().close();
     });
 
+    const searchRequests = (page) =>
+        page.evaluate(() =>
+            window.regressionWorker.requests.filter((r) => ['search', 'searchState', 'searchHits'].includes(r.method)),
+        );
+
     for (const outcome of ['success', 'failure']) {
         test(`suspends searching until a pending sheet change finishes with ${outcome}`, async () => {
             const page = await regressionPage();
+            await page.locator('#search-toggle').click();
             await page.fill('#search-text', 'query');
             await page.evaluate(() => {
                 window.regressionWorker.holdSheets = true;
@@ -392,14 +402,11 @@ describe('frontend regressions', () => {
             await page.getByRole('tab', { name: 'narrow', exact: true }).click();
             await page.waitForFunction(() => window.regressionWorker.pendingSheets.length === 1);
             assert.equal(await page.locator('#search-text').isDisabled(), true);
-            assert.equal(await page.locator('#search-prev').isDisabled(), true);
-            assert.equal(await page.locator('#search-next').isDisabled(), true);
-            // Even a queued key event must not search the sheet being left.
-            await page.dispatchEvent('#search-text', 'keydown', { key: 'Enter' });
-            assert.equal(
-                await page.evaluate(() => window.regressionWorker.requests.some((r) => r.method === 'search')),
-                false,
-            );
+            assert.equal(await page.locator('#search-regex').isDisabled(), true);
+            assert.equal(await page.locator('#search-button').isDisabled(), true);
+            // Even a queued submit must not search the sheet being left.
+            await page.evaluate(() => document.getElementById('search-form').requestSubmit());
+            assert.equal((await searchRequests(page)).length, 0);
             await page.evaluate((outcome) => {
                 const worker = window.regressionWorker;
                 const { request, info } = worker.pendingSheets.shift();
@@ -417,11 +424,9 @@ describe('frontend regressions', () => {
             }, outcome);
             await page.waitForFunction(() => !document.getElementById('search-text').disabled);
             await page.press('#search-text', 'Enter');
-            await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'findHit'));
-            const requests = await page.evaluate(() =>
-                window.regressionWorker.requests.filter((r) => ['search', 'findHit', 'searchState'].includes(r.method)),
-            );
-            assert.ok(requests.length >= 2);
+            await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'searchHits'));
+            const requests = await searchRequests(page);
+            assert.ok(requests.length >= 3);
             assert.ok(requests.every((r) => r.params.sheet === (outcome === 'success' ? 3 : 2)));
             await page.context().close();
         });
@@ -429,6 +434,7 @@ describe('frontend regressions', () => {
 
     test('keeps searching disabled until the latest sheet change finishes', async () => {
         const page = await regressionPage();
+        await page.locator('#search-toggle').click();
         await page.fill('#search-text', 'query');
         await page.evaluate(() => {
             window.regressionWorker.holdSheets = true;
@@ -450,7 +456,7 @@ describe('frontend regressions', () => {
         });
         await page.waitForFunction(() => !document.getElementById('search-text').disabled);
         await page.press('#search-text', 'Enter');
-        await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'findHit'));
+        await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'search'));
         assert.equal(
             await page.evaluate(() => window.regressionWorker.requests.find((r) => r.method === 'search').params.sheet),
             2,
@@ -458,17 +464,23 @@ describe('frontend regressions', () => {
         await page.context().close();
     });
 
+    // As the GUI, a new query (Enter), the Regex option, another sheet and
+    // another file each start the search over; the old one's late reply is
+    // dropped.
     for (const change of ['query', 'option', 'sheet', 'file']) {
-        test(`cancels a pending search when changing the ${change}`, async () => {
+        test(`starts the search over when changing the ${change}`, async () => {
             const page = await regressionPage();
+            await page.locator('#search-toggle').click();
             await page.evaluate(() => {
                 window.regressionWorker.holdSearch = true;
             });
             await page.fill('#search-text', 'old');
             await page.press('#search-text', 'Enter');
-            await page.waitForFunction(() => !!window.regressionWorker.pendingSearch);
-            if (change === 'query') await page.fill('#search-text', 'new');
-            else if (change === 'option') await page.locator('#search-case').check();
+            await page.waitForFunction(() => window.regressionWorker.pendingSearches?.length === 1);
+            if (change === 'query') {
+                await page.fill('#search-text', 'new');
+                await page.press('#search-text', 'Enter');
+            } else if (change === 'option') await page.locator('#search-regex').check();
             else if (change === 'sheet') await page.getByRole('tab', { name: 'narrow', exact: true }).click();
             else
                 await page.setInputFiles('#file-input', {
@@ -476,48 +488,39 @@ describe('frontend regressions', () => {
                     mimeType: 'text/csv',
                     buffer: Buffer.from('test'),
                 });
-            await page.waitForFunction(() => window.regressionWorker.requests.some((r) => r.method === 'cancelSearch'));
+            await page.waitForFunction(() => window.regressionWorker.pendingSearches.length === 2);
+            const requests = await page.evaluate(() => window.regressionWorker.requests);
+            const cancel = requests.find((r) => r.method === 'cancelSearch');
+            assert.equal(cancel.params.sheet, 2);
+            const [first, second] = requests.filter((r) => r.method === 'search');
+            assert.ok(requests.indexOf(cancel) < requests.indexOf(second));
+            assert.equal(second.params.text, change === 'query' ? 'new' : 'old');
+            assert.equal(second.params.regex, change === 'option');
+            assert.equal(second.params.sheet, change === 'sheet' || change === 'file' ? 3 : 2);
+            assert.equal(first.params.sheet, 2);
+
+            // The old search's late reply shows nothing; the new one's does.
+            await page.evaluate(async () => {
+                const worker = window.regressionWorker;
+                worker.reply(worker.pendingSearches[0], {});
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            });
+            assert.equal(
+                await page.evaluate(() => window.regressionWorker.requests.some((r) => r.method === 'searchHits')),
+                false,
+            );
             await page.evaluate(() => {
                 const worker = window.regressionWorker;
-                worker.reply(worker.pendingSearch, {});
-                worker.holdSearch = false;
+                worker.reply(worker.pendingSearches[1], {});
             });
-            // A new query also proves the late reply has not reactivated the
-            // old search: Enter must start one, rather than move to its hit.
-            await page.press('#search-text', 'Enter');
-            await page.waitForFunction(
-                () => window.regressionWorker.requests.filter((r) => r.method === 'search').length === 2,
+            await page.locator('.search-hit').filter({ hasText: 'value-1' }).waitFor();
+            const polled = await page.evaluate(() =>
+                window.regressionWorker.requests.filter((r) => r.method === 'searchHits').map((r) => r.params.sheet),
             );
-            const requests = await page.evaluate(() => window.regressionWorker.requests);
-            const firstFind = requests.findIndex((r) => r.method === 'findHit');
-            const secondSearch = requests.findIndex(
-                (r, i) => r.method === 'search' && i > requests.findIndex((r) => r.method === 'search'),
-            );
-            assert.ok(firstFind > secondSearch, 'the old search reply must not request a hit');
-            assert.equal(requests.find((r) => r.method === 'cancelSearch').params.sheet, 2);
+            assert.ok(polled.every((sheet) => sheet === second.params.sheet));
             await page.context().close();
         });
     }
-
-    test('ignores a pending hit after the query changes', async () => {
-        const page = await regressionPage();
-        await page.evaluate(() => {
-            window.regressionWorker.holdFindHit = true;
-        });
-        await page.fill('#search-text', 'old');
-        await page.press('#search-text', 'Enter');
-        await page.waitForFunction(() => !!window.regressionWorker.pendingFindHit);
-        await page.fill('#search-text', 'new');
-        await page.evaluate(async () => {
-            const worker = window.regressionWorker;
-            worker.reply(worker.pendingFindHit, { index: 0, row: 0, column: 1, pending: false });
-            // Pass through the worker after the delayed reply was delivered.
-            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        });
-        assert.equal(await page.locator('.cell.cursor').getAttribute('data-column'), '0');
-        assert.equal(await page.locator('#search-status').textContent(), '');
-        await page.context().close();
-    });
 
     test('restores hidden and frozen columns per sheet and resets them for a new file', async () => {
         const page = await regressionPage();
@@ -913,27 +916,59 @@ describe('the web app', () => {
         await page.context().close();
     });
 
-    test('searches and moves between hits', async () => {
+    test('searches in the Search pane and moves between hits', async () => {
         const page = await newPage();
         await open(page, demo('normal.csv'));
-        await page.fill('#search-text', 'tokyo');
-        await page.press('#search-text', 'Enter');
+        // Ctrl+F opens the pane, as Edit > Find... does in the GUI.
+        await page.keyboard.press('Control+f');
+        await page.locator('#search-pane').waitFor();
+        await page.waitForFunction(() => document.activeElement?.id === 'search-text');
+        await page.keyboard.type('tokyo');
+        await page.keyboard.press('Enter');
         await waitForText(page.locator('#search-status'), '7 hits');
+        const hits = page.locator('.search-hit');
+        await page.waitForFunction(() => document.querySelectorAll('.search-hit').length === 7);
+        await hits.nth(6).filter({ hasText: 'Tokyo' }).waitFor();
+        for (let i = 0; i < 7; ++i) {
+            assert.match(await hits.nth(i).innerText(), /City\s+Tokyo/);
+        }
+        // Selecting a hit moves the cursor to it; the arrow keys go on.
+        await hits.nth(2).click();
+        const third = (await hits.nth(2).innerText()).split(/\s+/)[0];
+        await page.waitForFunction(
+            (row) => document.querySelector('.cell.cursor')?.dataset.row === String(Number(row) - 1),
+            third,
+        );
         await waitForText(page.locator('.cell.cursor'), 'Tokyo');
-        const first = await page.locator('.cell.cursor').getAttribute('data-row');
-        await page.press('#search-text', 'Enter');
-        await page.waitForFunction((row) => document.querySelector('.cell.cursor')?.dataset.row !== row, first);
-        await waitForText(page.locator('.cell.cursor'), 'Tokyo');
-        await page.press('#search-text', 'Shift+Enter');
-        await page.waitForFunction((row) => document.querySelector('.cell.cursor')?.dataset.row === row, first);
+        await page.keyboard.press('ArrowDown');
+        const fourth = (await hits.nth(3).innerText()).split(/\s+/)[0];
+        await page.waitForFunction(
+            (row) => document.querySelector('.cell.cursor')?.dataset.row === String(Number(row) - 1),
+            fourth,
+        );
+        assert.equal(await hits.nth(3).getAttribute('aria-selected'), 'true');
 
-        // The hits in view are marked (the selected one shows the selection),
-        // and no longer once the query changes.
+        // The hits in view are marked in the grid.
         await page.locator('.cell.hit').first().waitFor();
         const marked = await page.locator('.cell.hit').allTextContents();
         assert.ok(marked.length > 0 && marked.every((text) => text === 'Tokyo'), marked.join());
-        await page.fill('#search-text', 'tokyo2');
-        await page.waitForFunction(() => document.querySelectorAll('.cell.hit').length === 0);
+
+        // A new text searches only on Enter or Search, as in the GUI.
+        await page.fill('#search-text', 'tok.o');
+        assert.equal(await page.locator('#search-status').textContent(), '7 hits');
+        await page.locator('#search-button').click();
+        await waitForText(page.locator('#search-status'), '0 hits');
+        // Regex starts it again.
+        await page.locator('#search-regex').check();
+        await waitForText(page.locator('#search-status'), '7 hits');
+        await page.fill('#search-text', '(');
+        await page.press('#search-text', 'Enter');
+        await waitForText(page.locator('#search-status'), 'Invalid regular expression');
+        // No text: no search.
+        await page.fill('#search-text', '');
+        await page.press('#search-text', 'Enter');
+        await page.waitForFunction(() => document.getElementById('search-status').textContent === '');
+        await page.waitForFunction(() => document.querySelectorAll('.cell.hit, .search-hit').length === 0);
         await page.context().close();
     });
 
@@ -948,20 +983,21 @@ describe('the web app', () => {
         await page.context().close();
     });
 
-    test('cancels the search of a sheet left', async () => {
+    test('searches each sheet shown, as the GUI does', async () => {
         const page = await newPage();
         await open(page, demo('demo.sqlite3'));
+        await page.locator('#search-toggle').click();
         await page.fill('#search-text', '1');
         await page.press('#search-text', 'Enter');
         await page.locator('.cell.hit').first().waitFor();
         const tabs = page.locator('#tabs button');
         await tabs.nth(1).click();
         await page.waitForSelector('#tabs button:nth-child(2)[aria-selected=true]');
-        await tabs.nth(0).click();
-        await page.waitForSelector('#tabs button:nth-child(1)[aria-selected=true]');
-        // The rows come with their hits: none, as the search was cancelled.
+        // The sheet shown is searched for the same text, with its own hits.
         await cell(page, 0, 0).and(page.locator(':not(.k-l)')).waitFor();
-        assert.equal(await page.locator('.cell.hit').count(), 0);
+        await page.locator('.cell.hit').first().waitFor();
+        await waitForText(page.locator('#search-status'), 'hits');
+        await page.locator('.search-hit').first().waitFor();
         await page.context().close();
     });
 

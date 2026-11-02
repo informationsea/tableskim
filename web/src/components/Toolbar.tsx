@@ -1,7 +1,6 @@
 import { useRef } from 'react';
 import { platform } from '../platform';
 import { type BookInfo, type HeaderMode, type OpenOptions, TEXT_ENCODINGS } from '../protocol';
-import { SearchBox, type SearchBoxProps } from './SearchBox';
 
 export interface Tool {
     id: string;
@@ -19,10 +18,9 @@ interface ToolbarProps {
     options: OpenOptions;
     onOptions: (options: OpenOptions) => void;
     tools: Tool[];
-    search: SearchBoxProps;
 }
 
-export function Toolbar({ onOpen, book, options, onOptions, tools, search }: ToolbarProps) {
+export function Toolbar({ onOpen, book, options, onOptions, tools }: ToolbarProps) {
     const text = !!book?.isTextFormat;
     const input = useRef<HTMLInputElement>(null);
     return (
@@ -100,8 +98,6 @@ export function Toolbar({ onOpen, book, options, onOptions, tools, search }: Too
                     {tool.label}
                 </button>
             ))}
-            <span className="flex-1" />
-            <SearchBox {...search} />
         </header>
     );
 }

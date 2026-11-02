@@ -207,6 +207,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `sortCycle` | `sheet`, `column` | `view` (by the column ascending, descending, then none) |
 | `search` / `cancelSearch` / `searchState` | `sheet`, `text`, `caseSensitive`, `regex`, `column` | `active`, `done`, `truncated`, `error`, `scannedRows`, `hits`, `generation` |
 | `findHit` | `sheet`, `row`, `column`, `forward`, `includeFrom` | `index` (null if none), `row`, `column`, `hits`, `wrapped`, `pending` |
+| `searchHits` | `sheet`, `first`, `last` (hit indexes, at most 1000) | `generation`, `hits`, `first`, `items` (`row`, `column`, `value`: null while loading) |
 | `continueReading` / `stopReading` | `sheet` | |
 | `copy` | `sheet`, `top`, `left`, `bottom`, `right`, `hidden` (columns left out) | `text` (TSV), `copiedRows`, `skippedRows` |
 | `goTo` | `sheet`, `text` (`120`, `C`, a header name, `C120`) | `row`, `column` (null where not given) or `error` |

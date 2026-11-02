@@ -137,6 +137,14 @@ export interface HitReply {
     pending: boolean; // none found yet, but the search goes on
 }
 
+// A slice of the search's hits, for the Search pane's list.
+export interface SearchHits {
+    generation: number;
+    hits: number;
+    first: number;
+    items: { row: number; column: number; value: string | null }[]; // value: null while loading
+}
+
 export interface CopyReply {
     text: string;
     copiedRows: number;
@@ -308,6 +316,7 @@ export interface Methods {
         params: SheetParams & { row: number; column: number; forward: boolean; includeFrom?: boolean };
         result: HitReply;
     };
+    searchHits: { params: SheetParams & { first: number; last: number }; result: SearchHits };
     continueReading: { params: SheetParams; result: Empty };
     stopReading: { params: SheetParams; result: Empty };
     copy: {

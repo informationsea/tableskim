@@ -743,6 +743,7 @@ const std::map<std::string_view, WebSession::Method> &WebSession::methods()
         {"cancelSearch", &WebSession::cancelSearch},
         {"searchState", &WebSession::searchState},
         {"findHit", &WebSession::findHit},
+        {"searchHits", &WebSession::searchHits},
         {"continueReading", &WebSession::continueReading},
         {"stopReading", &WebSession::stopReading},
         {"copy", &WebSession::copy},
@@ -1093,6 +1094,40 @@ void WebSession::findHit(const Params &params, JsonWriter &result)
     else
         result.null();
     result.key("hits").value(state.hits.size()).key("wrapped").value(lookup.wrapped).key("pending").value(lookup.pending).endObject();
+}
+
+// A slice of the search's hits with their values, for the Search pane's
+// list as the GUI shows it (GuiSearchResults).
+void WebSession::searchHits(const Params &params, JsonWriter &result)
+{
+    Sheet &sheet = this->sheet(params);
+    TableModel &model = *sheet.model;
+    const SearchState state = model.searchState();
+    const size_t first = params.index("first");
+    const size_t last = std::max(first, std::min(params.index("last"), first + MAX_ROWS - 1));
+    result.beginObject()
+        .key("generation")
+        .value(static_cast<double>(state.generation))
+        .key("hits")
+        .value(state.hits.size())
+        .key("first")
+        .value(first)
+        .key("items")
+        .beginArray();
+    for (size_t index = first; index <= last && index < state.hits.size(); ++index)
+    {
+        const CellPosition hit = state.hits[index];
+        // Hits far from the rows in view may have been evicted; peek() loads
+        // them again, and the page asks again on the model's events.
+        const CellRef cell = model.peek(hit.row, hit.col);
+        result.beginObject().key("row").value(hit.row).key("column").value(hit.col).key("value");
+        if (cell.state == CellState::Ready)
+            result.value(cellDisplayText(*cell.value, MAX_CELL_BYTES, sheet.formats.find(hit.col)));
+        else
+            result.null();
+        result.endObject();
+    }
+    result.endArray().endObject();
 }
 
 void WebSession::continueReading(const Params &params, JsonWriter &result)

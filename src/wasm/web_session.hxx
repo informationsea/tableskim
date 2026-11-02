@@ -128,6 +128,7 @@ private:
     void cancelSearch(const Params &params, JsonWriter &result);
     void searchState(const Params &params, JsonWriter &result);
     void findHit(const Params &params, JsonWriter &result);
+    void searchHits(const Params &params, JsonWriter &result);
     void continueReading(const Params &params, JsonWriter &result);
     void stopReading(const Params &params, JsonWriter &result);
     void copy(const Params &params, JsonWriter &result);
