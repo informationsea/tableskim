@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:e2e": "node --test tests/app.test.cjs"
+    "test:e2e": "node --test tests/app.test.cjs",
+    "screenshots": "node screenshots.cjs"
   },
   "dependencies": {
     "react": "^19.3.1",

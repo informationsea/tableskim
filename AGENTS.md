@@ -519,7 +519,9 @@ Match the existing code:
   first, and `npx playwright install chromium` for the browser). CI runs
   them, with the lint and format checks, in the `wasm` job of
   `.github/workflows/ci.yml`. Wait for what the page shows, never for
-  fixed periods.
+  fixed periods. `web/screenshots.cjs` takes the manual's screenshots of
+  the web app (`docs/images/web-*.png`) the same way; run it after
+  changing what they show.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest
   starts it with `xvfb-run -a` (`TABLESKIM_GUI_TESTS`: `AUTO` when

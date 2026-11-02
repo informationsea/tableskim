@@ -128,6 +128,16 @@ build's list plus Emscripten's runtime and the bundled npm packages) and a
 (the `web` job of `.github/workflows/release.yml`), the download pages list
 it, and CI uploads its folder as the `tableskim-web` artifact.
 
+The manual's screenshots of the web app (`docs/images/web-*.png`) are
+taken from the built app by `web/screenshots.cjs` (Playwright, as the
+end-to-end tests), the same views at the same size each time; take them
+again after changing what they show, and look at each before committing:
+
+```sh
+LANG=C.UTF-8 node web/screenshots.cjs                  # all, into docs/images
+TABLESKIM_SCREENSHOTS=web-sql.png node web/screenshots.cjs build/wasm-release /tmp/shots
+```
+
 `node web/serve.mjs build/wasm-release` serves the app CMake built (or
 `web/dist/`) at http://127.0.0.1:8765/ and the probe page at `/probe/`.
 
