@@ -83,7 +83,8 @@ xvfb-run -a npm run test:vscode
 The package takes the project's version (`CMakeLists.txt`), not the one
 in `package.json`. CI (the `wasm` job of `.github/workflows/ci.yml`)
 builds the extension, runs all three tests, the one in VS Code under
-`xvfb-run`, and uploads the package as the `tableskim-vscode` artifact;
+`xvfb-run` (VS Code cached by its version, which
+`TABLESKIM_VSCODE_VERSION` gives the test), and uploads the package as the `tableskim-vscode` artifact;
 the release attaches `tableskim-<version>-vscode.vsix`.
 
 To try the extension, open this directory in VS Code and run **Run >

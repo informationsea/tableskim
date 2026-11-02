@@ -411,10 +411,32 @@ jobs:
         run: |
           (cd vscode && npm test)
           LANG=C.UTF-8 node --test web/tests/vscode.test.cjs
-      # In VS Code itself, downloaded by @vscode/test-electron (stable).
+      # In VS Code itself, the latest stable version, which
+      # @vscode/test-electron downloads into .vscode-test. It is cached by
+      # its version, asked for first, so that each release of VS Code is
+      # downloaded once; saved even if the test fails, only on main.
+      - name: Find the VS Code version
+        id: vscode
+        run: echo "version=$(curl -fsS https://update.code.visualstudio.com/api/releases/stable | jq -r '.[0]')" >> "$GITHUB_OUTPUT"
+      - name: Restore VS Code
+        id: vscode-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vscode/.vscode-test/vscode-linux-x64-*
+          key: vscode-${{ runner.os }}-${{ steps.vscode.outputs.version }}
       - name: Test the VS Code extension in VS Code
         working-directory: vscode
+        env:
+          TABLESKIM_VSCODE_VERSION: ${{ steps.vscode.outputs.version }}
         run: xvfb-run -a npm run test:vscode
+      - name: Save VS Code
+        if: >-
+          !cancelled() && github.event_name != 'pull_request' &&
+          steps.vscode-cache.outputs.cache-hit != 'true' && hashFiles('vscode/.vscode-test/vscode-linux-x64-*/code') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: vscode/.vscode-test/vscode-linux-x64-*
+          key: ${{ steps.vscode-cache.outputs.cache-primary-key }}
       - name: Pack the VS Code extension
         working-directory: vscode
         run: npm run package
