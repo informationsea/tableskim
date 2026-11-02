@@ -121,12 +121,24 @@ async function changes(api) {
             (text) => /\b2 rows\b/.test(text),
             'two rows',
         );
-        assert.deepEqual(asked, [file]);
+        // As VS Code names it (on Windows, with a lower-case drive letter).
+        assert.deepEqual(asked, [uri.fsPath]);
         console.log('ok a file changed on disk is read again');
     } finally {
         api.testing.setReloadAnswer(undefined);
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-        fs.rmSync(directory, { recursive: true, force: true });
+        removeLater(directory);
+    }
+}
+
+// Removes a temporary directory, with retries: on Windows a file stays
+// busy until the closed editor's engine has stopped. A failure to clean up
+// is only reported, so that it never hides the test's own error.
+function removeLater(directory) {
+    try {
+        fs.rmSync(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    } catch (error) {
+        console.warn(`cannot remove ${directory}: ${error.message}`);
     }
 }
 
@@ -187,7 +199,7 @@ async function saves(api) {
     } finally {
         api.testing.setSaveTarget(undefined);
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-        fs.rmSync(directory, { recursive: true, force: true });
+        removeLater(directory);
     }
 }
 
