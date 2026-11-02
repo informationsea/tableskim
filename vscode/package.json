@@ -118,7 +118,7 @@
     "build:webview": "npm --prefix ../web run build:vscode",
     "compile": "tsc -p .",
     "build": "npm run build:engine && npm run build:webview && npm run compile",
-    "test": "node --test tests/engine.test.cjs",
+    "test": "node --test tests/engine.test.cjs tests/editor.test.cjs",
     "test:vscode": "node tests/integration/run.cjs",
     "package": "node scripts/package.mjs"
   },

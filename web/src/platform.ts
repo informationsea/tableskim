@@ -4,8 +4,8 @@
 export interface Platform {
     /** Whether the engine can start (in a browser: the page is cross-origin isolated). */
     engineAvailable: boolean;
-    /** Hands a file the app made (an export, a chart) to the user to save. */
-    saveFile: (blob: Blob, name: string) => void;
+    /** Saves an export or chart; false on cancellation, rejects on failure. */
+    saveFile: (blob: Blob, name: string) => Promise<boolean>;
     /** Whether the page opens files of its own (Open…, Ctrl+O, dropped files). */
     opensFiles: boolean;
 }
@@ -19,6 +19,7 @@ function downloadBlob(blob: Blob, name: string) {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return Promise.resolve(true);
 }
 
 let current: Platform = {

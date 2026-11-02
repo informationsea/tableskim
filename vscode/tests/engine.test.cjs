@@ -1,6 +1,8 @@
 // The engine in Node.js, as the extension runs it: opens demo files by
 // their paths and reads rows. Needs `npm run build:engine` and `npm run compile`.
 const assert = require('node:assert');
+const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const { Engine } = require('../out/engine.js');
@@ -94,6 +96,34 @@ test('the engine opens files by their paths', async (t) => {
     await t.test('a file name that is not ASCII', async () => {
         const { book } = await firstRows(client, '多言語サンプル.csv');
         assert.ok(book.sheets.length > 0);
+    });
+
+    await t.test('symlinks to a file outside the mounted directory', async (t) => {
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tableskim-links-'));
+        t.after(async () => {
+            await client.call('close');
+            await fs.rm(directory, { recursive: true, force: true });
+        });
+        const target = path.join(directory, '多言語.csv');
+        const links = path.join(directory, 'links');
+        await fs.copyFile(path.join(demo, 'normal.csv'), target);
+        await fs.mkdir(links);
+        for (const [name, destination] of [['relative.csv', '../多言語.csv'], ['absolute.csv', target]]) {
+            const link = path.join(links, name);
+            try {
+                await fs.symlink(destination, link);
+            } catch (error) {
+                if (error.code === 'EPERM') return t.skip('Creating symlinks requires permission on this system');
+                throw error;
+            }
+            const book = await client.call('open', { path: link });
+            const sheet = await client.call('sheet', { name: book.sheets[0] });
+            const info = await until(
+                () => client.call('info', { sheet: sheet.sheet }),
+                (info) => info.state === 'ready' && info.rowsExact,
+            );
+            assert.strictEqual(info.rows, 54);
+        }
     });
 
     await t.test('a missing file fails', async () => {
