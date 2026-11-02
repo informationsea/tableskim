@@ -102,8 +102,9 @@ permissions, and a symbolic link keeps pointing to it. After saving, the
 file is opened again (the position, sort and filter stay), and Undo starts
 over.
 
-If another program has changed the file since TableSkim opened it, saving
-fails; use Save As, or reload the file (which drops your changes).
+If another program has changed the file since TableSkim opened it, both
+Save and Save As fail. Use Export View to another file to keep the edited
+sheet before reloading. Reloading discards your unsaved changes.
 
 A bgzip file is written in bgzip blocks again, but an index made for it
 (`.tbi`, `.csi`) no longer matches and must be made again.
@@ -116,7 +117,8 @@ the header, `##` or encoding option, which read the file again.
 
 - GUI: **Save**, **Don't Save** or **Cancel**.
 - Terminal UI: `y` saves, `n` discards, `Esc` cancels. Pressing `Ctrl+C`
-  again quits without saving.
+  again quits without saving. For the reload prompt, `y` discards and
+  reloads; `n` or `Esc` cancels the reload and keeps your changes.
 
 While there are unsaved changes, Auto Revert does not reload the file. If
 the file changes on disk meanwhile, the title or status bar says

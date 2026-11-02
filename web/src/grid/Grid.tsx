@@ -7,6 +7,7 @@ import { type Cell, type GridCallbacks, GridController, HEADER_HEIGHT, type Rang
 
 export interface GridHandle {
     select: (cell: Cell) => void;
+    goTo: (cell: Cell) => void;
     cursor: () => Cell;
     selection: () => Range;
     focus: () => void;
@@ -52,6 +53,7 @@ export function Grid({
     const [, redrawNow] = useReducer((frame: number) => frame + 1, 0);
     const [controller] = useState(() => new GridController(redrawNow));
     const shownSheet = useRef<number | null>(null);
+    const shownView = useRef(viewVersion);
 
     // First, so that the effects below already call the latest callbacks.
     useLayoutEffect(() => controller.setCallbacks(callbacks));
@@ -60,6 +62,7 @@ export function Grid({
         ref,
         () => ({
             select: (cell) => controller.select(cell),
+            goTo: (cell) => controller.goTo(cell),
             cursor: () => controller.cursor,
             selection: () => controller.selection(),
             focus: () => scrollerRef.current?.focus(),
@@ -81,6 +84,10 @@ export function Grid({
     }, [controller]);
 
     useLayoutEffect(() => {
+        if (shownView.current !== viewVersion) {
+            controller.viewChanged();
+            shownView.current = viewVersion;
+        }
         if (!info) {
             controller.clear();
             shownSheet.current = null;
@@ -90,17 +97,13 @@ export function Grid({
         controller.setInfo(info, newSheet);
         controller.setLayout(hidden, frozen, newSheet);
         shownSheet.current = sheetKey;
-    }, [controller, info, sheetKey, hidden, frozen]);
+    }, [controller, info, sheetKey, viewVersion, hidden, frozen]);
 
     useLayoutEffect(() => controller.setMonospace(monospace), [controller, monospace]);
 
     useEffect(() => {
         if (dataVersion) controller.dataChanged();
     }, [controller, dataVersion]);
-
-    useEffect(() => {
-        if (viewVersion) controller.viewChanged();
-    }, [controller, viewVersion]);
 
     const view = controller.viewport();
     // After each render: the extent may have changed, and rows may be missing.

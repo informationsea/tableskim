@@ -7,6 +7,7 @@
 
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_File_Input.H>
 #include <FL/Fl_Group.H>
 
 #include "file_util.hxx"
@@ -100,6 +101,19 @@ namespace gui_test
                 return false;
             button->do_callback();
             return true; });
+    }
+
+    bool chooseFile(Fl_Window &window, const std::filesystem::path &path)
+    {
+        const bool filled = visitWidgets(window, [&](Fl_Widget &widget)
+                                         {
+            auto *input = dynamic_cast<Fl_File_Input *>(&widget);
+            if (!input)
+                return false;
+            input->value(utf8String(path).c_str());
+            input->do_callback();
+            return true; });
+        return filled && pressButton(window, "OK");
     }
 
     Window::Window()

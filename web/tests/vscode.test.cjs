@@ -107,7 +107,7 @@ async function openWebview(file) {
         await engine?.terminate();
         assert.deepEqual(errors, []);
     };
-    const completeSave = (id, result) => toPage({ type: 'saveResult', id, ...result });
+    const completeSave = (save, result) => toPage({ type: 'saveResult', page: save.page, id: save.id, ...result });
     return { page, sent, takeSave, completeSave, close, engines: () => engines };
 }
 
@@ -165,7 +165,7 @@ test('the webview hands exports to the extension and has no Open…', async () =
         assert.equal(text.split(/\r?\n/)[0], source.split(/\r?\n/)[0]);
         assert.equal(text.trim().split(/\r?\n/).length, source.trim().split(/\r?\n/).length);
 
-        await completeSave(save.id, { saved: true });
+        await completeSave(save, { saved: true });
         await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
 
         assert.equal(await page.locator('#open-button').count(), 0);
@@ -181,18 +181,18 @@ test('cancelled and failed saves never show Saved and can be retried', async () 
         await page.locator('#export-button').click();
         await page.locator('#export-start').click();
         let save = await takeSave();
-        await completeSave(save.id, { saved: false });
+        await completeSave(save, { saved: false });
         await page.locator('#export-status').filter({ hasText: 'Save cancelled.' }).waitFor();
 
         await page.locator('#export-start').click();
         save = await takeSave();
-        await completeSave(save.id, { saved: false, error: 'Cannot save: disk full' });
+        await completeSave(save, { saved: false, error: 'Cannot save: disk full' });
         await page.locator('#export-dialog .text-danger').filter({ hasText: 'disk full' }).waitFor();
         assert.doesNotMatch(await page.locator('#export-status').innerText(), /Saved/);
 
         await page.locator('#export-start').click();
         save = await takeSave();
-        await completeSave(save.id, { saved: true });
+        await completeSave(save, { saved: true });
         await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
     } finally {
         await close();
@@ -214,10 +214,37 @@ test('a late save result does not finish the export of a reopened dialog', async
         await page.locator('#export-start').click();
         const current = await takeSave();
         assert.notEqual(previous.id, current.id);
-        await completeSave(previous.id, { saved: true });
+        await completeSave(previous, { saved: true });
         assert.doesNotMatch(await page.locator('#export-status').innerText(), /Saved/);
         assert.equal(await page.locator('#export-start').count(), 0);
-        await completeSave(current.id, { saved: true });
+        await completeSave(current, { saved: true });
+        await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
+    } finally {
+        await close();
+    }
+});
+
+test('a save result from the previous page cannot finish a new save with the same id', async () => {
+    const { page, takeSave, completeSave, close } = await openWebview(demo('normal.csv'));
+    try {
+        await page.waitForSelector('.cell:not(.k-l)');
+        await page.locator('#export-button').click();
+        await page.locator('#export-start').click();
+        const previous = await takeSave();
+        await page.reload();
+        await page.waitForSelector('.cell:not(.k-l)');
+        await page.locator('#export-button').click();
+        await page.locator('#export-start').click();
+        const current = await takeSave();
+        assert.equal(previous.id, current.id);
+        assert.notEqual(previous.page, current.page);
+        await completeSave(previous, { saved: true });
+        await page.evaluate(
+            () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        );
+        assert.doesNotMatch(await page.locator('#export-status').innerText(), /Saved/);
+        assert.equal(await page.locator('#export-start').count(), 0);
+        await completeSave(current, { saved: true });
         await page.locator('#export-status').filter({ hasText: 'Saved normal-export.csv' }).waitFor();
     } finally {
         await close();
@@ -235,7 +262,7 @@ test('chart image saves wait for the extension and show write failures', async (
         assert.match(save.name, /\.svg$/);
         assert.match(Buffer.from(save.data).toString('utf8'), /^<svg/);
         assert.equal(await page.locator('#save-svg').isDisabled(), true);
-        await completeSave(save.id, { saved: false, error: 'Cannot save: disk full' });
+        await completeSave(save, { saved: false, error: 'Cannot save: disk full' });
         await page.locator('#histogram-dialog .text-danger').filter({ hasText: 'disk full' }).waitFor();
         assert.equal(await page.locator('#save-svg').isEnabled(), true);
     } finally {

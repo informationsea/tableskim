@@ -222,6 +222,35 @@ class EditingTest(TuiTestCase):
         self.assertIn(" EDIT  t.csv │", status(tui))
         self.assertIn("42", tui.text())
 
+    def test_declining_reload_preserves_unsaved_edits(self):
+        path = self.temp_file("t.csv", "a,b\n1,x\n2,y\n")
+        tui = self.run_tui(path, "--header", "no")
+        tui.wait_text("3 rows")
+        self.edit_first_value(tui, "42")
+        tui.send("r")
+        tui.wait_text("Discard the unsaved changes?")
+        tui.send("n")
+        tui.wait_text("Canceled")
+        self.assertIn("*t.csv", status(tui))
+        self.assertIn("42", tui.text())
+        tui.send("ctrl+s")
+        tui.wait_text("Saved t.csv")
+        with open(path, encoding="utf-8", newline="") as saved:
+            self.assertEqual(saved.read(), "a,b\n42,x\n2,y\n")
+
+    def test_confirming_reload_discards_unsaved_edits(self):
+        path = self.temp_file("t.csv", "a,b\n1,x\n2,y\n")
+        tui = self.run_tui(path, "--header", "no")
+        tui.wait_text("3 rows")
+        self.edit_first_value(tui, "42")
+        tui.send("r")
+        tui.wait_text("Discard the unsaved changes?")
+        tui.send("y")
+        tui.wait_for(lambda text: "*t.csv" not in status(tui) and "42" not in text)
+        self.assertIn("t.csv", status(tui))
+        with open(path, encoding="utf-8", newline="") as saved:
+            self.assertEqual(saved.read(), "a,b\n1,x\n2,y\n")
+
     def test_a_conversion_does_not_open_over_unsaved_edits(self):
         path = self.temp_file("t.csv", "a,b\n1,x\n2,y\n")
         tui = self.run_tui(path, "--header", "no")

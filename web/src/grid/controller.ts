@@ -99,6 +99,9 @@ export class GridController {
     // Set by Ctrl+End while the row count is not known yet: the cursor
     // follows the last row as more are read.
     private followEnd = false;
+    private pendingGoTo: Cell | null = null;
+    private loadedRows = 0;
+    private rowsExact = true;
     private readonly measureContext = document.createElement('canvas').getContext('2d');
     private monospace = false; // the cells' font, which the widths are measured in
 
@@ -147,6 +150,8 @@ export class GridController {
             info.columns.some((column, i) => column.name !== this.columns[i]?.name);
         this.columns = info.columns;
         this.rowCount = info.displayRows;
+        this.loadedRows = info.rows;
+        this.rowsExact = info.rowsExact;
         this.sort = info.view.sort;
         this.filteredColumns = new Set(
             [...(info.view.filter?.conditions ?? []), ...(info.view.filter?.narrowing ?? [])].map(
@@ -165,12 +170,34 @@ export class GridController {
         }
         this.rowNumberWidth = Math.max(56, this.fitWidth(String(this.rowCount), false));
         this.updateExtent();
-        if (newSheet) this.followEnd = false;
-        else if (this.followEnd) {
+        if (newSheet) {
+            this.followEnd = false;
+            this.pendingGoTo = null;
+        } else if (this.pendingGoTo) {
+            this.goTo(this.pendingGoTo);
+        } else if (this.followEnd) {
             const last = Math.max(0, info.rows - 1);
             if (this.cursor.row !== last)
                 this.select({ row: last, column: this.cursor.column }, this.cursor.row !== this.anchor.row);
             this.followEnd = !info.rowsExact;
+        } else {
+            const clamp = (cell: Cell): Cell => ({
+                row: Math.max(0, Math.min(cell.row, this.rowCount - 1)),
+                column: Math.max(0, Math.min(cell.column, this.columns.length - 1)),
+            });
+            const cursor = clamp(this.cursor);
+            const anchor = clamp(this.anchor);
+            if (
+                cursor.row !== this.cursor.row ||
+                cursor.column !== this.cursor.column ||
+                anchor.row !== this.anchor.row ||
+                anchor.column !== this.anchor.column
+            ) {
+                this.cursor = cursor;
+                this.anchor = anchor;
+                this.scrollToCell(cursor);
+                this.callbacks().onSelect(cursor, this.selection());
+            }
         }
         this.redraw();
     }
@@ -220,11 +247,15 @@ export class GridController {
 
     /** Forget the cached rows: the view changed what each row is. */
     viewChanged() {
+        this.pendingGoTo = null;
+        this.followEnd = false;
         this.cache.clear();
         this.dataChanged();
     }
 
     clear() {
+        this.pendingGoTo = null;
+        this.followEnd = false;
         this.columns = [];
         this.rowCount = 0;
         this.cache.clear();
@@ -242,6 +273,7 @@ export class GridController {
 
     /** Moves the cursor (and, unless extending, the anchor) and scrolls to it. */
     select(cell: Cell, extend = false) {
+        this.pendingGoTo = null;
         const row = Math.max(0, Math.min(cell.row, Math.max(0, this.rowCount - 1)));
         let column = Math.max(0, Math.min(cell.column, Math.max(0, this.columns.length - 1)));
         if (this.hidden.has(column))
@@ -257,8 +289,16 @@ export class GridController {
         this.redraw();
     }
 
+    /** Keeps reading toward a requested row until it is loaded or the file ends. */
+    goTo(cell: Cell) {
+        this.select(cell);
+        if (!this.rowsExact && cell.row >= this.loadedRows) this.pendingGoTo = cell;
+    }
+
     /** Moves the cursor without scrolling (dragging, row numbers). */
     private moveCursor(cursor: Cell, anchor?: Cell) {
+        this.pendingGoTo = null;
+        this.followEnd = false;
         this.cursor = cursor;
         if (anchor) this.anchor = anchor;
         this.callbacks().onSelect(this.cursor, this.selection());

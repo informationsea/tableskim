@@ -54,6 +54,9 @@ namespace gui_test
     // recursively). False if there is none.
     bool pressButton(Fl_Window &window, const std::string &label);
 
+    // Chooses a path in FLTK's file dialog.
+    bool chooseFile(Fl_Window &window, const std::filesystem::path &path);
+
     // A TableWindow, shown and registered as main() does, closed and
     // deleted (without asking about unsaved changes) when destroyed.
     class Window

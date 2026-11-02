@@ -1445,7 +1445,7 @@ void TableWindow::set_text_encoding(TextEncoding encoding)
     requestWindowMenuUpdate();
 }
 
-// Converts the shown text file and opens the result in this window. The
+// Converts the shown text file and opens the result if there are no edits. The
 // format follows the extension of the chosen name, else the chosen filter.
 void TableWindow::convert()
 {
@@ -1514,12 +1514,21 @@ void TableWindow::convert()
     options.skip_meta_lines = table_book->skipsMetaLines();
     options.encoding = table_book->textEncoding();
     if (runConversion(source, target, *format, options))
-        open(utf8String(target));
+    {
+        if (table_book->modified())
+        {
+            NestedLoopGuard guard;
+            fl_message("Converted to %s. The result was not opened because this file has unsaved changes.",
+                       escapeLabel(utf8String(target)).c_str());
+        }
+        else
+            open(utf8String(target));
+    }
 }
 
 void callback_convert(Fl_Menu_ *, void *)
 {
-    // It opens the result.
+    // It keeps unsaved changes open.
     if (auto *self = frontTableWindow())
         self->defer_command([](TableWindow &window)
                             { window.convert(); });

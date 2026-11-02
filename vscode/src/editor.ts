@@ -16,9 +16,9 @@ const CHANGE_SETTLE_MS = 300;
 
 // What the webview posts (web/src/vscode/port.ts).
 type FromWebview =
-    | { type: 'hello' }
+    | { type: 'hello'; page: string }
     | { type: 'engine'; message: { id: number; method: string; params?: Record<string, unknown> } }
-    | { type: 'save'; id: number; name: string; data: Uint8Array }
+    | { type: 'save'; page: string; id: number; name: string; data: Uint8Array }
     | { type: 'testResult'; id: number; text?: string; error?: string };
 
 interface SaveResult {
@@ -101,6 +101,8 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         let disposed = false;
         let loads = 0;
         let engine: Engine | null = null;
+        let page: string | null = null;
+        let refreshWatch = () => {};
         const disposables: vscode.Disposable[] = [];
         const post = (message: unknown) => {
             if (!disposed) void panel.webview.postMessage(message);
@@ -108,7 +110,11 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         // Loads the page afresh; it says hello once it listens, and gets a new
         // engine then, which opens the file as it is now.
         const reload = () => {
-            if (!disposed) panel.webview.html = this.html(panel.webview, media, document.uri, ++loads);
+            if (!disposed) {
+                page = null;
+                refreshWatch();
+                panel.webview.html = this.html(panel.webview, media, document.uri, ++loads);
+            }
         };
         const editor: Editor = { document: document.uri, panel, reload, post };
         this.editors.add(editor);
@@ -145,7 +151,8 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
             engine = current;
         };
 
-        if (document.uri.scheme === 'file') this.watch(document.uri, () => disposed, reload, disposables);
+        if (document.uri.scheme === 'file')
+            refreshWatch = this.watch(document.uri, () => disposed, reload, disposables);
 
         panel.onDidDispose(() => {
             disposed = true;
@@ -158,6 +165,8 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         panel.webview.onDidReceiveMessage((message: FromWebview) => {
             switch (message.type) {
                 case 'hello':
+                    page = message.page;
+                    refreshWatch();
                     startEngine();
                     break;
                 case 'engine': {
@@ -170,9 +179,11 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
                     break;
                 }
                 case 'save':
-                    void this.save(document.uri, message.name, message.data).then((result) =>
-                        post({ type: 'saveResult', id: message.id, ...result }),
-                    );
+                    if (message.page !== page) break;
+                    void this.save(document.uri, message.name, message.data).then((result) => {
+                        if (page === message.page)
+                            post({ type: 'saveResult', page: message.page, id: message.id, ...result });
+                    });
                     break;
                 case 'testResult':
                     this.testReplies.get(message.id)?.(message);
@@ -225,12 +236,8 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         reload: () => void,
         disposables: vscode.Disposable[],
     ) {
-        const files = new Set([document.fsPath]);
-        try {
-            files.add(realpathSync(document.fsPath));
-        } catch {
-            // Gone already: the engine will say so.
-        }
+        let files = new Set<string>();
+        const directories = new Map<string, vscode.Disposable[]>();
         let timer: ReturnType<typeof setTimeout> | undefined;
         let asking = false;
         const ask = async () => {
@@ -252,13 +259,38 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
             clearTimeout(timer);
             timer = setTimeout(() => void ask(), CHANGE_SETTLE_MS);
         };
-        for (const directory of new Set([...files].map((file) => path.dirname(file)))) {
-            const watcher = vscode.workspace.createFileSystemWatcher(
-                new vscode.RelativePattern(vscode.Uri.file(directory), '*'),
-            );
-            disposables.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed));
-        }
-        disposables.push({ dispose: () => clearTimeout(timer) });
+        const refresh = () => {
+            clearTimeout(timer);
+            files = new Set([document.fsPath]);
+            try {
+                files.add(realpathSync(document.fsPath));
+            } catch {
+                // Gone already: the engine will say so.
+            }
+            const needed = new Set([...files].map((file) => path.dirname(file)));
+            for (const [directory, watched] of directories) {
+                if (needed.has(directory)) continue;
+                for (const disposable of watched) disposable.dispose();
+                directories.delete(directory);
+            }
+            for (const directory of needed) {
+                if (directories.has(directory)) continue;
+                const watcher = vscode.workspace.createFileSystemWatcher(
+                    new vscode.RelativePattern(vscode.Uri.file(directory), '*'),
+                );
+                directories.set(directory, [watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed)]);
+            }
+        };
+        disposables.push({
+            dispose: () => {
+                clearTimeout(timer);
+                for (const watched of directories.values())
+                    for (const disposable of watched) disposable.dispose();
+                directories.clear();
+            },
+        });
+        refresh();
+        return refresh;
     }
 
     private html(webview: vscode.Webview, media: vscode.Uri, document: vscode.Uri, load: number) {
