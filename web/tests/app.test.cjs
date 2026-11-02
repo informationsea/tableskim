@@ -73,10 +73,15 @@ async function regressionPage() {
                 this.pendingSheets = [];
                 setTimeout(() => this.onmessage({ data: { type: 'ready' } }), 0);
             }
+            deliver(message) {
+                if (this.holdReplies) {
+                    (this.queuedReplies ??= []).push(message);
+                    return;
+                }
+                queueMicrotask(() => this.onmessage({ data: message }));
+            }
             reply(request, result) {
-                queueMicrotask(() =>
-                    this.onmessage({ data: { type: 'reply', json: JSON.stringify({ id: request.id, result }) } }),
-                );
+                this.deliver({ type: 'reply', json: JSON.stringify({ id: request.id, result }) });
             }
             info() {
                 return {
@@ -115,6 +120,26 @@ async function regressionPage() {
                     return this.reply(request, [{ op: 'equals', label: 'Equals', takesValue: true }]);
                 if (method === 'sql') {
                     this.sql = request;
+                    return;
+                }
+                if (method === 'completeSql') {
+                    (this.completions ??= []).push(request);
+                    return;
+                }
+                if (method === 'readFile') {
+                    if (this.holdReadFile) {
+                        this.pendingRead = request;
+                        // Keep all later replies behind the file, as the real
+                        // worker does, while subsequent jobs start and stop.
+                        this.holdReplies = true;
+                    }
+                    if (this.fileError)
+                        this.deliver({
+                            type: 'reply',
+                            json: JSON.stringify({ id: request.id, error: this.fileError }),
+                        });
+                    else
+                        this.deliver({ type: 'file', id: request.id, data: new TextEncoder().encode('a\n1\n').buffer });
                     return;
                 }
                 if (method === 'open') {
@@ -219,6 +244,18 @@ async function regressionPage() {
                         return;
                     }
                     this.job = { kind: method === 'startGroupBy' ? 'groupBy' : 'export', done: false, rows: 100 };
+                    if (method === 'startExport' && this.finishExport)
+                        Object.assign(this.job, {
+                            done: true,
+                            file: '/export.csv',
+                            fileName: 'export.csv',
+                            size: 4,
+                            error: '',
+                        });
+                    if (method === 'startExport' && this.holdFileStart) {
+                        this.pendingFileStart = request;
+                        return;
+                    }
                     if (method === 'startGroupBy' && this.holdGroupStart) {
                         this.pendingGroupStart = request;
                         return;
@@ -348,7 +385,202 @@ async function regressionPage() {
     return page;
 }
 
+async function flushWorkerReplies(page) {
+    await page.evaluate(async () => {
+        const worker = window.regressionWorker;
+        worker.holdReplies = false;
+        worker.queuedReplies.splice(0).forEach((message) => worker.deliver(message));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+}
+
+async function replyToCompletion(page, index, completion) {
+    await page.evaluate(
+        async ({ index, completion }) => {
+            const worker = window.regressionWorker;
+            worker.reply(worker.completions[index], completion);
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        },
+        { index, completion },
+    );
+}
+
 describe('frontend regressions', () => {
+    for (const outcome of ['data', 'error']) {
+        test(`ignores a closed export's delayed file ${outcome} without cancelling Group By`, async () => {
+            const page = await regressionPage();
+            const downloads = [];
+            page.on('download', (file) => downloads.push(file.suggestedFilename()));
+            await page.evaluate((outcome) => {
+                const worker = window.regressionWorker;
+                worker.finishExport = true;
+                worker.holdReadFile = true;
+                worker.fileError = outcome === 'error' ? 'cannot read the old export' : '';
+            }, outcome);
+            await page.locator('#export-button').click();
+            await page.locator('#export-start').click();
+            await page.waitForFunction(() => !!window.regressionWorker.pendingRead);
+            await page.keyboard.press('Escape');
+            await page.locator('#export-dialog').waitFor({ state: 'detached' });
+            await page.locator('#group-by-button').click();
+            await page.locator('#group-by-run').click();
+            await page.waitForFunction(() => window.regressionWorker.job?.kind === 'groupBy');
+            const afterStart = await page.evaluate(() => window.regressionWorker.requests.length);
+            await flushWorkerReplies(page);
+            await page.locator('#group-by-dialog').getByText('Grouping…', { exact: false }).waitFor();
+            assert.equal(await page.evaluate(() => window.regressionWorker.job?.kind), 'groupBy');
+            assert.equal(
+                await page.evaluate(
+                    (after) => window.regressionWorker.requests.slice(after).some((r) => r.method === 'cancelJob'),
+                    afterStart,
+                ),
+                false,
+            );
+            assert.deepEqual(downloads, []);
+            await page.context().close();
+        });
+    }
+
+    test('allows another export after stopping a pending file read', async () => {
+        const page = await regressionPage();
+        const downloads = [];
+        page.on('download', (file) => downloads.push(file.suggestedFilename()));
+        await page.evaluate(() => {
+            window.regressionWorker.finishExport = true;
+            window.regressionWorker.holdReadFile = true;
+        });
+        await page.locator('#export-button').click();
+        await page.locator('#export-start').click();
+        await page.waitForFunction(() => !!window.regressionWorker.pendingRead);
+        await page.locator('#export-dialog').getByRole('button', { name: 'Stop', exact: true }).click();
+        await page.evaluate(() => {
+            window.regressionWorker.finishExport = false;
+        });
+        await page.locator('#export-start').click();
+        await page.waitForFunction(
+            () => window.regressionWorker.requests.filter((r) => r.method === 'startExport').length === 2,
+        );
+        const afterStart = await page.evaluate(() => window.regressionWorker.requests.length);
+        await flushWorkerReplies(page);
+        await waitForText(page.locator('#export-status'), 'Writing…');
+        assert.equal(await page.evaluate(() => window.regressionWorker.job?.kind), 'export');
+        assert.equal(
+            await page.evaluate(
+                (after) => window.regressionWorker.requests.slice(after).some((r) => r.method === 'cancelJob'),
+                afterStart,
+            ),
+            false,
+        );
+        assert.deepEqual(downloads, []);
+        await page.context().close();
+    });
+
+    test('does not revive a stopped export when its start reply arrives', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            window.regressionWorker.holdFileStart = true;
+        });
+        await page.locator('#export-button').click();
+        await page.locator('#export-start').click();
+        await page.waitForFunction(() => !!window.regressionWorker.pendingFileStart);
+        await page.locator('#export-dialog').getByRole('button', { name: 'Stop', exact: true }).click();
+        await page.evaluate(async () => {
+            const worker = window.regressionWorker;
+            worker.holdFileStart = false;
+            worker.reply(worker.pendingFileStart, {});
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        });
+        await page.locator('#export-start').waitFor();
+        assert.equal(await page.evaluate(() => window.regressionWorker.job), null);
+        await page.locator('#export-start').click();
+        await waitForText(page.locator('#export-status'), 'Writing…');
+        assert.equal(await page.evaluate(() => window.regressionWorker.job?.kind), 'export');
+        await page.context().close();
+    });
+
+    for (const action of ['edit', 'cursor', 'selection', 'escape', 'history', 'history shortcut']) {
+        test(`discards pending SQL completion after ${action}`, async () => {
+            const page = await regressionPage();
+            await page.evaluate(() => localStorage.setItem('tableskim.sqlHistory', JSON.stringify(['SELECT 99'])));
+            await page.locator('#sql-toggle').click();
+            await page.fill('#sql-editor', 'SEL');
+            await page.press('#sql-editor', 'Tab');
+            await page.waitForFunction(() => window.regressionWorker.completions?.length === 1);
+            if (action === 'edit') await page.fill('#sql-editor', 'SELECT 42 AS answer');
+            else if (action === 'cursor') await page.press('#sql-editor', 'ArrowLeft');
+            else if (action === 'selection') await page.press('#sql-editor', 'Control+a');
+            else if (action === 'escape') await page.press('#sql-editor', 'Escape');
+            else if (action === 'history') await page.selectOption('#sql-history', 'SELECT 99');
+            else await page.press('#sql-editor', 'Control+ArrowUp');
+            const before = await page
+                .locator('#sql-editor')
+                .evaluate((e) => ({ text: e.value, start: e.selectionStart, end: e.selectionEnd }));
+            await replyToCompletion(page, 0, { begin: 0, end: 3, common: 'SELECT', candidates: ['SELECT'] });
+            const after = await page
+                .locator('#sql-editor')
+                .evaluate((e) => ({ text: e.value, start: e.selectionStart, end: e.selectionEnd }));
+            assert.deepEqual(after, before);
+            assert.equal(await page.locator('#sql-candidates').count(), 0);
+            await page.context().close();
+        });
+    }
+
+    test('ignores a SQL completion error after editing the query', async () => {
+        const page = await regressionPage();
+        await page.locator('#sql-toggle').click();
+        await page.fill('#sql-editor', 'SEL');
+        await page.press('#sql-editor', 'Tab');
+        await page.waitForFunction(() => window.regressionWorker.completions?.length === 1);
+        await page.fill('#sql-editor', 'SELECT 42');
+        await page.evaluate(async () => {
+            const worker = window.regressionWorker;
+            worker.deliver({
+                type: 'reply',
+                json: JSON.stringify({ id: worker.completions[0].id, error: 'old completion failed' }),
+            });
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        });
+        assert.equal(await page.locator('#sql-editor').inputValue(), 'SELECT 42');
+        assert.equal(await page.locator('#sql-status').textContent(), '');
+        await page.context().close();
+    });
+
+    test('applies only the latest pending SQL completion', async () => {
+        const page = await regressionPage();
+        await page.locator('#sql-toggle').click();
+        await page.fill('#sql-editor', 'SEL');
+        await page.press('#sql-editor', 'Tab');
+        await page.press('#sql-editor', 'Tab');
+        await page.waitForFunction(() => window.regressionWorker.completions?.length === 2);
+        await replyToCompletion(page, 0, { begin: 0, end: 3, common: 'SELECT_old', candidates: ['SELECT_old'] });
+        assert.equal(await page.locator('#sql-editor').inputValue(), 'SEL');
+        await replyToCompletion(page, 1, { begin: 0, end: 3, common: 'SELECT', candidates: ['SELECT'] });
+        assert.equal(await page.locator('#sql-editor').inputValue(), 'SELECT');
+        await page.context().close();
+    });
+
+    for (const variant of ['Unicode', 'case']) {
+        test(`chooses a SQL candidate after a valid ${variant} completion`, async () => {
+            const page = await regressionPage();
+            await page.locator('#sql-toggle').click();
+            const text = variant === 'Unicode' ? 'SELECT "表" FROM n' : 'SELECT * FROM N';
+            await page.fill('#sql-editor', text);
+            await page.press('#sql-editor', 'Tab');
+            await page.waitForFunction(() => window.regressionWorker.completions?.length === 1);
+            const end = await page.evaluate(() => window.regressionWorker.completions[0].params.cursor);
+            const names = variant === 'Unicode' ? ['normal', 'north'] : ['normal', 'nested'];
+            await replyToCompletion(page, 0, {
+                begin: end - 1,
+                end,
+                common: variant === 'Unicode' ? 'nor' : 'n',
+                candidates: names,
+            });
+            await page.locator('#sql-candidates').getByRole('button', { name: names[1], exact: true }).click();
+            assert.equal(await page.locator('#sql-editor').inputValue(), text.slice(0, -1) + names[1]);
+            await page.context().close();
+        });
+    }
+
     test('keeps cursor, content and analysis aligned after restoring hidden columns', async () => {
         const page = await regressionPage();
         await page.locator('#sidebar-toggle').click();

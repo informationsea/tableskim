@@ -57,15 +57,31 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
     const [running, setRunning] = useState(false);
     const [status, setStatus] = useState('');
     const [failed, setFailed] = useState(false);
-    const [candidates, setCandidates] = useState<{ completion: SqlCompletion; text: string } | null>(null);
+    const [candidates, setCandidates] = useState<{
+        completion: SqlCompletion;
+        text: string;
+        begin: number;
+        end: number;
+    } | null>(null);
+    const completionGeneration = useRef(0);
     const [history, setHistory] = useState(loadHistory);
     const walk = useRef<{ index: number; draft: string } | null>(null);
+
+    const clearCompletion = () => {
+        completionGeneration.current++;
+        setCandidates(null);
+    };
+
+    const changeSql = (text: string) => {
+        clearCompletion();
+        setSql(text);
+    };
 
     const run = async () => {
         const text = sql.trim();
         if (!text || running) return;
         setRunning(true);
-        setCandidates(null);
+        clearCompletion();
         setStatus('Running…');
         setFailed(false);
         setHistory(addToHistory(text));
@@ -84,8 +100,10 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
 
     const replace = (text: string, begin: number, end: number, insert: string) => {
         const next = text.slice(0, begin) + insert + text.slice(end);
-        setSql(next);
+        changeSql(next);
+        const generation = completionGeneration.current;
         requestAnimationFrame(() => {
+            if (completionGeneration.current !== generation || editor.current?.value !== next) return;
             editor.current?.focus();
             editor.current?.setSelectionRange(begin + insert.length, begin + insert.length);
         });
@@ -96,8 +114,19 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
         if (!element) return;
         const text = element.value;
         const cursor = element.selectionStart;
+        const selectionEnd = element.selectionEnd;
+        clearCompletion();
+        const generation = completionGeneration.current;
+        const isCurrent = () =>
+            completionGeneration.current === generation &&
+            editor.current === element &&
+            document.activeElement === element &&
+            element.value === text &&
+            element.selectionStart === cursor &&
+            element.selectionEnd === selectionEnd;
         try {
             const completion = await client.call('completeSql', { sql: text, cursor: byteOffset(text, cursor) });
+            if (!isCurrent()) return;
             if (completion.candidates.length === 0) {
                 setCandidates(null);
                 return;
@@ -109,20 +138,25 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
                 replace(text, begin, end, completion.candidates[0]);
                 return;
             }
-            if (completion.common.length > end - begin) replace(text, begin, end, completion.common);
-            setCandidates({ completion, text: text.slice(0, begin) + completion.common + text.slice(end) });
+            const extend = completion.common.length > end - begin;
+            if (extend) replace(text, begin, end, completion.common);
+            setCandidates({
+                completion,
+                text: extend ? text.slice(0, begin) + completion.common + text.slice(end) : text,
+                begin,
+                end: extend ? begin + completion.common.length : end,
+            });
         } catch (failure) {
+            if (!isCurrent()) return;
             setStatus(errorText(failure));
             setFailed(true);
         }
     };
 
     const choose = (candidate: string) => {
-        if (!candidates) return;
-        const { completion, text } = candidates;
-        const begin = indexOfByte(text, completion.begin);
-        replace(text, begin, begin + completion.common.length, candidate);
-        setCandidates(null);
+        if (!candidates || editor.current?.value !== candidates.text) return;
+        const { text, begin, end } = candidates;
+        replace(text, begin, end, candidate);
     };
 
     // Ctrl+Up / Down (or Alt) walk the history, from the newest.
@@ -132,7 +166,7 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
         const state = walk.current ?? { index: entries.length, draft: sql };
         const index = Math.max(0, Math.min(entries.length, state.index + step));
         walk.current = { ...state, index };
-        setSql(index === entries.length ? state.draft : entries[index]);
+        changeSql(index === entries.length ? state.draft : entries[index]);
     };
 
     const keyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -149,7 +183,7 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
         } else if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && (modifier || event.altKey)) {
             event.preventDefault();
             recall(event.key === 'ArrowUp' ? -1 : 1);
-        } else if (event.key === 'Escape') setCandidates(null);
+        } else if (event.key === 'Escape') clearCompletion();
     };
 
     return (
@@ -171,7 +205,7 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
                     value=""
                     aria-label="History"
                     onChange={(event) => {
-                        if (event.target.value) setSql(event.target.value);
+                        if (event.target.value) changeSql(event.target.value);
                         walk.current = null;
                         editor.current?.focus();
                     }}
@@ -203,8 +237,7 @@ export function SqlPanel({ client, onResult, onClose }: SqlPanelProps) {
                     placeholder="SELECT * FROM ..."
                     value={sql}
                     onChange={(event) => {
-                        setSql(event.target.value);
-                        setCandidates(null);
+                        changeSql(event.target.value);
                         walk.current = null;
                     }}
                     onKeyDown={keyDown}
