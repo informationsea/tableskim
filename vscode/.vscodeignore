@@ -7,3 +7,5 @@ tsconfig.json
 .gitignore
 .vscode/
 .vscode-test/
+images/
+DEVELOPMENT.md

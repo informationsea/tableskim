@@ -7,6 +7,11 @@
   "license": "AGPL-3.0-only",
   "private": true,
   "preview": true,
+  "icon": "icon.png",
+  "homepage": "https://informationsea.github.io/tableskim/",
+  "bugs": {
+    "url": "https://github.com/informationsea/tableskim/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/informationsea/tableskim"
@@ -14,6 +19,16 @@
   "engines": {
     "vscode": "^1.90.0"
   },
+  "keywords": [
+    "csv",
+    "tsv",
+    "parquet",
+    "excel",
+    "duckdb",
+    "sqlite",
+    "json",
+    "table"
+  ],
   "categories": [
     "Data Science",
     "Visualization"

@@ -1,115 +1,87 @@
 # TableSkim for Visual Studio Code (preview)
 
-TableSkim as a custom editor in VS Code: CSV/TSV/VCF (optionally
-compressed), Excel, Parquet, DuckDB, SQLite and JSON / NDJSON files,
-with sorting, filters, search, statistics, histograms, scatter plots,
-Group By, SQL and exports, as in the [web app](../src/wasm/README.md).
+View tables in VS Code: CSV, TSV and VCF files (also compressed),
+Excel workbooks, Parquet and JSON files, and DuckDB and SQLite databases.
+Sort, filter and search them, look at statistics and charts, and run SQL,
+without leaving the editor. Large files open at once: rows are read in the
+background as you scroll.
 
-- Parquet, Excel, DuckDB and SQLite files open in TableSkim by default.
-- CSV, TSV, VCF, JSON and compressed files open as text. To open them in
-  TableSkim, choose **Open With… > TableSkim** or **Open in TableSkim** from
-  the Explorer's context menu.
-- Exports and chart images are saved where you choose in a save dialog.
-- When the file changes on disk, TableSkim asks whether to read it again.
-  **TableSkim: Reload File** (the refresh button in the editor's title bar)
-  reads it again at any time, and so does **Reload** in the message shown
-  if the engine stops.
+This is [TableSkim](https://informationsea.github.io/tableskim/), also
+available as a desktop app and a web app, as an editor in VS Code.
 
-It works with local files and, with Remote Development (SSH, WSL, Dev
-Containers), with files on the remote machine, where the extension runs.
-VS Code for the Web (vscode.dev) and virtual workspaces are not supported.
-It works in Restricted Mode too: it only reads the file shown, and its SQL
-cannot write files.
+![A Parquet file in TableSkim, with the selected cell in the sidebar](images/vscode-main.png)
 
-This is a preview (`"preview": true` in `package.json`): its features may
-still change.
+## Features
 
-## How it works
+- **Many formats**: CSV, TSV and VCF, compressed with gzip, bzip2, xz or
+  zstd too; Excel (`.xlsx`, `.xlsm`); Parquet; JSON and NDJSON; DuckDB and
+  SQLite databases, a sheet per table. The text encoding of CSV and TSV
+  files (UTF-8, UTF-16 or Shift_JIS / CP932) is detected.
+- **Sort and filter**: sort by columns, and filter rows by conditions on
+  numbers, dates, text and regular expressions.
+- **Search** the whole table, with a list of every hit.
+- **Statistics** of a column, **histograms** and **scatter plots**: click a
+  bar or a cell of a plot to filter to its rows. Charts are saved as PNG or
+  SVG.
+- **Group By** columns with counts, sums, means and more.
+- **SQL** on DuckDB, SQLite, Parquet and JSON files, with completion and
+  history; the result is shown as a sheet of its own.
+- **Export** the table as shown (sorted, filtered, columns hidden) to CSV,
+  TSV, Excel or Parquet, and convert CSV and TSV files to Parquet or DuckDB.
+- **Follows your theme**, light, dark or high contrast.
 
-```
-[webview: the web app's frontend]  ⇄ postMessage ⇄  [extension host (Node.js)]
-  web/src/vscode/                                     src/editor.ts
-                                                       └ worker_threads Worker:
-                                                         tableskim-wasm-node.js
-                                                         (the core, WebAssembly;
-                                                          files read in place by NODEFS)
-```
+![A histogram of a column, in a dark theme](images/vscode-histogram.png)
 
-- The frontend is the web app's (`web/src/`), built for the webview from
-  `web/vscode.html` and `web/src/vscode/` (`npm run build:vscode` in `web/`)
-  into `media/`. `web/src/vscode/port.ts` relays the engine's protocol
-  (`web/src/protocol.ts`) through the extension; `web/src/platform.ts`
-  hands exports to it and hides Open… (the editor shows its document
-  only).
-- The engine is the web app's module built for Node.js (the CMake target
-  `tableskim-wasm-node`; `src/wasm/wasm_worker_pre.js`). Its threads need
-  `SharedArrayBuffer`, which a webview, not being cross-origin isolated,
-  does not have, but Node.js has. It runs in a worker of its own, one per
-  editor, so that the extension host is not kept busy.
-- An "open" names the document's path: the extension sets it, whatever the
-  page asks for, and the engine mounts its directory with NODEFS.
-- Each load of the page gets an engine of its own: the page says
-  `{type: 'hello'}` once it listens, and the extension then starts a new
-  engine, stopping the last one and dropping what it still posts. So a page
-  that VS Code loads again (Developer: Reload Webviews, a crashed webview)
-  starts over, and reloading a file is loading the page again.
-- The extension watches the document's directory (not a glob of the file's
-  name, which may hold glob characters) and, after a burst of changes to the
-  file, asks once whether to reload it, as the engine reads it in place.
-- Not there yet, as in the web app: editing and Follow.
+## Usage
 
-## Building
+- **Parquet, Excel, DuckDB and SQLite files** open in TableSkim.
+- **CSV, TSV, VCF, JSON and compressed files** open as text, as before. To
+  view one as a table, right-click it in the Explorer and choose **Open in
+  TableSkim**, or choose **Reopen Editor With… > TableSkim** from the
+  editor's title bar menu. To always open a kind of file in TableSkim,
+  choose **Configure default editor for '\*.csv'…** in the same list.
+- **Saving**: exports and chart images go where you choose in a save
+  dialog. The file you are viewing is never changed: TableSkim only reads
+  it, and its SQL cannot write files.
+- **Changes on disk**: when the file changes, TableSkim asks whether to read
+  it again. **TableSkim: Reload File** (the refresh button in the editor's
+  title bar) reads it again at any time.
 
-Build the engine with Emscripten first (see `src/wasm/README.md`), then:
+The toolbar and the sidebar work as in TableSkim's
+[web app](https://informationsea.github.io/tableskim/manual/en/web.html);
+see its manual for each feature.
 
-```sh
-source <emsdk>/emsdk_env.sh
-cmake --preset wasm-release
-cmake --build --preset wasm-release --target tableskim-wasm-node tableskim-web-zip
-(cd web && npm ci)
-cd vscode
-npm ci
-npm run build          # engine/, media/ and out/
-npm test               # the engine and the editor provider in Node.js
-npm run package        # tableskim-<version>-vscode.vsix
-```
+![SQL on a DuckDB database, its result as a sheet](images/vscode-sql.png)
 
-`tableskim-web-zip` is only needed for `THIRD_PARTY_LICENSES.txt` in the
-package. `TABLESKIM_WASM_BUILD` names another build directory.
+## Where it works
 
-The webview's end-to-end test (`web/tests/vscode.test.cjs`) runs the built
-page in headless Chromium with the engine in Node.js, relaying messages as
-the extension does:
+- Files on your computer and, with Remote Development (SSH, WSL, Dev
+  Containers), files on the remote machine.
+- Restricted Mode (untrusted folders) too, as TableSkim only reads files.
+- Not in VS Code for the Web (vscode.dev, github.dev) or virtual
+  workspaces: files are read by their paths on disk.
 
-```sh
-LANG=C.UTF-8 node --test web/tests/vscode.test.cjs
-```
+## Privacy
 
-`npm run test:vscode` runs the extension in VS Code itself (downloaded by
-`@vscode/test-electron` into `.vscode-test/`, which needs
-`update.code.visualstudio.com` and `vscode.download.prss.microsoft.com`):
-`tests/integration/suite.cjs` opens demo files in the custom editor and
-waits until the webview has asked the engine for rows and got them,
-watching the messages the extension relays (`activate()` returns
-`onDidRelay` for this). It also reloads pages, saves an export and changes a
-file on disk: in VS Code's extension test mode only, `activate()` returns
-`testing` too, which answers the save dialog and the reload question, and
-the page gets `<meta name="tableskim-test">`, on which it clicks elements
-and reads their text when the extension asks (`web/src/vscode/testHook.ts`). On Linux without a display:
+TableSkim collects no telemetry or usage data and connects to no server:
+your files are read on the machine where they are (yours, or the remote
+one with Remote Development) and go nowhere else. The page in the editor
+may not load anything from the network, and the engine has no network
+access (no DuckDB extension that reads URLs is included).
 
-```sh
-xvfb-run -a npm run test:vscode
-```
+## Good to know
 
-The package takes the project's version (`CMakeLists.txt`), not the one
-in `package.json`. CI (the `wasm` job of `.github/workflows/ci.yml`)
-builds the extension, runs all three tests, the one in VS Code under
-`xvfb-run` (VS Code cached by its version, which
-`TABLESKIM_VSCODE_VERSION` gives the test), and uploads the package as the `tableskim-vscode` artifact;
-its `vscode` job runs `npm test` and `npm run test:vscode` on Windows and
-macOS with what the `wasm` job built;
-the release attaches `tableskim-<version>-vscode.vsix`.
+- This is a preview: its features may still change.
+- Tables are read-only here; the desktop app can edit CSV, TSV and Excel
+  files, and follow a file as it grows.
+- Each TableSkim editor reads its file with an engine of its own, which
+  takes memory as it reads; close the editors of large files you no longer
+  need.
 
-To try the extension, open this directory in VS Code and run **Run >
-Start Debugging** (Extension Development Host), or install the VSIX with
-**Extensions: Install from VSIX…**.
+## Feedback and license
+
+Report problems and ideas at
+[GitHub Issues](https://github.com/informationsea/tableskim/issues).
+TableSkim is free software under the
+[GNU Affero General Public License v3.0](https://github.com/informationsea/tableskim/blob/HEAD/LICENSE);
+the licenses of the code it includes are in `THIRD_PARTY_LICENSES.txt`.

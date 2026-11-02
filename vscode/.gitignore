@@ -6,3 +6,4 @@ LICENSE
 THIRD_PARTY_LICENSES.txt
 *.vsix
 .vscode-test/
+icon.png
