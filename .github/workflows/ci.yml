@@ -69,12 +69,16 @@ jobs:
       # sub-builds, so that configure does not fetch them again (DuckDB alone
       # takes 30 s). The sub-builds record the CMake that made them, hence
       # its version in the key; only an exact match is restored, so a changed
-      # dependency or patch is fetched afresh.
+      # dependency or patch is fetched afresh. Windows only: they take about
+      # 580 MB of the repository's cache for each system, and cloning is
+      # slowest there.
       - name: Find the CMake version
+        if: runner.os == 'Windows'
         id: cmake
         shell: bash
         run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
       - name: Restore dependency sources
+        if: runner.os == 'Windows'
         id: deps
         uses: actions/cache/restore@v4
         with:
@@ -87,7 +91,7 @@ jobs:
         # Xvfb) tests run on Linux only.
         run: cmake --preset ${{ env.PRESET }} ${{ runner.os == 'Linux' && '-DTABLESKIM_TUI_TESTS=ON -DTABLESKIM_GUI_TESTS=ON' || '' }}
       - name: Save dependency sources
-        if: github.event_name != 'pull_request' && steps.deps.outputs.cache-hit != 'true'
+        if: runner.os == 'Windows' && github.event_name != 'pull_request' && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -155,7 +159,6 @@ jobs:
             cache: rocky10
             restore: rocky10
             save_cache: true
-            save_deps: true
             zip: false
           - name: rockylinux-8
             version: "8"
@@ -167,7 +170,6 @@ jobs:
             cache: rocky8-wayland
             restore: rocky8
             save_cache: true
-            save_deps: true
             zip: true
           - name: rockylinux-8-x11
             version: "8"
@@ -176,9 +178,8 @@ jobs:
             x11_only: "ON"
             cache: rocky8-x11
             restore: rocky8
-            save_cache: true
-            # Same sources as rockylinux-8, which saves them.
-            save_deps: false
+            # rockylinux-8's cache serves it (see below).
+            save_cache: false
             zip: true
           # The build without the GUI, so that GUI code that leaks into
           # src/main.cxx, src/tui/ or src/common/ fails here, not only when
@@ -194,12 +195,11 @@ jobs:
             cache: rocky8-tui
             restore: rocky8
             save_cache: false
-            save_deps: false
             zip: true
     # The two Rocky Linux 8 GUI builds differ in FLTK alone (same compiler
-    # and flags), so each starts from whichever of their caches is newer
-    # (restore: the shared key prefix), and so does the build without the
-    # GUI.
+    # and flags), so all three start from the cache of the build with
+    # Wayland (restore: the shared key prefix), the only one saved: the
+    # others would take room for objects of FLTK alone.
     # CCACHE_DIR is set below: in a container job, ${{ github.workspace }} is
     # the path on the host, not the one mounted in the container.
     env:
@@ -224,18 +224,6 @@ jobs:
           # The release workflow reads this cache, so the key must match its own.
           key: ccache-${{ matrix.cache }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: ccache-${{ matrix.restore }}-
-      # As in the build job above.
-      - name: Find the CMake version
-        id: cmake
-        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
-      - name: Restore dependency sources
-        id: deps
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            build/release/_deps/*-src
-            build/release/_deps/*-subbuild
-          key: deps-${{ matrix.restore }}-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Configure
         shell: bash
         run: |
@@ -252,14 +240,6 @@ jobs:
           fi
           cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui || 'ON' }} \
             -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }} $tui_tests
-      - name: Save dependency sources
-        if: github.event_name != 'pull_request' && matrix.save_deps && steps.deps.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            build/release/_deps/*-src
-            build/release/_deps/*-subbuild
-          key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Build and test
         shell: bash
         run: |
@@ -352,17 +332,6 @@ jobs:
           restore-keys: ccache-wasm-${{ env.EMSDK_VERSION }}-
       - name: Reset ccache statistics
         run: ccache --zero-stats
-      - name: Find the CMake version
-        id: cmake
-        run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
-      - name: Restore dependency sources
-        id: deps
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            build/wasm-release/_deps/*-src
-            build/wasm-release/_deps/*-subbuild
-          key: deps-wasm-cmake${{ steps.cmake.outputs.version }}-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/patches/**') }}
       - name: Install the web app's packages and Chromium
         # Before configuring, so that CMake finds Playwright.
         working-directory: web
@@ -376,14 +345,6 @@ jobs:
           export EMSDK="${EMSDK:-$(dirname "$(dirname "$(dirname "$(command -v emcc)")")")}"
           echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
           cmake --preset wasm-release -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
-      - name: Save dependency sources
-        if: github.event_name != 'pull_request' && steps.deps.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            build/wasm-release/_deps/*-src
-            build/wasm-release/_deps/*-subbuild
-          key: ${{ steps.deps.outputs.cache-primary-key }}
       - name: Build
         run: cmake --build --preset wasm-release
       - name: Show ccache statistics
@@ -549,3 +510,32 @@ jobs:
         with:
           path: vscode/.vscode-test/vscode-*
           key: ${{ steps.vscode-cache.outputs.cache-primary-key }}
+
+  # Each run on main saves a ccache for each system under a key of its own
+  # (the release workflow reads the newest by prefix), and the old ones
+  # would otherwise stay until a week unread, crowding out the caches still
+  # in use from the repository's 10 GB. This keeps the newest of each
+  # prefix (the key without its commit and run) for this ref, also when a
+  # build failed: then the previous one is still the newest.
+  prune-caches:
+    name: Prune old ccaches
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    needs: [build, rocky, wasm]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete all but the newest ccache of each prefix
+        run: |
+          gh cache list --key ccache- --ref "$GITHUB_REF" --limit 1000 \
+            --json id,key,createdAt \
+            --jq 'group_by(.key | sub("-[0-9a-f]{40}-[0-9]+$"; ""))
+                  | map(sort_by(.createdAt) | reverse | .[1:][])
+                  | .[] | "\(.id) \(.key)"' |
+          while read -r id key; do
+            echo "Deleting $key"
+            gh cache delete "$id"
+          done
