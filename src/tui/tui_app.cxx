@@ -3820,6 +3820,11 @@ bool TuiApp::handleUnsavedPromptEvent(Event event)
         return true; // the question stays otherwise
     }
     std::function<void()> action = std::exchange(unsaved_action_, nullptr);
+    if (no && unsaved_reload_)
+    {
+        setStatus("Canceled");
+        return true;
+    }
     if (yes && !unsaved_reload_)
     {
         save(std::move(action));

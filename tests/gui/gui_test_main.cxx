@@ -73,6 +73,10 @@ int main(int argc, char *argv[])
     unsetenv("WAYLAND_DISPLAY");
 
     Fl::lock(); // Fl::awake() from TableBook worker threads
+    // File dialogs must run in the FLTK loop that the tests drive.
+    Fl::option(Fl::OPTION_FNFC_USES_GTK, false);
+    Fl::option(Fl::OPTION_FNFC_USES_ZENITY, false);
+    Fl::option(Fl::OPTION_FNFC_USES_KDIALOG, false);
     fl_open_display();
     register_fonts();
     Fl_Window::default_xclass("TableSkim");

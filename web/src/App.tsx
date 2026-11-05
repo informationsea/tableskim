@@ -402,12 +402,15 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
 
     const cellFilter = async (cell: Cell, equal: boolean) => {
         const current = flow.current.info;
-        if (!current) return;
+        if (!current || flow.current.selectingSheet) return;
+        const epoch = flow.current.epoch;
+        const isCurrent = () =>
+            epoch === flow.current.epoch && !flow.current.selectingSheet && current.sheet === flow.current.info?.sheet;
         try {
             const reply = await client.call('cellFilter', { sheet: current.sheet, ...cell, equal });
-            await addConditions(reply.conditions);
+            if (isCurrent()) await addConditions(reply.conditions);
         } catch (error) {
-            setMessage(errorText(error));
+            if (isCurrent()) setMessage(errorText(error));
         }
     };
 
@@ -755,7 +758,7 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
     };
     const goToRow = (row: number) => {
         setDialog(null);
-        grid.current?.select({ row, column: grid.current.cursor().column });
+        grid.current?.goTo({ row, column: grid.current.cursor().column });
         grid.current?.focus();
     };
 
@@ -936,7 +939,7 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
                             info={info}
                             onGo={(row, column) => {
                                 const cursor = grid.current?.cursor() ?? { row: 0, column: 0 };
-                                grid.current?.select({ row: row ?? cursor.row, column: column ?? cursor.column });
+                                grid.current?.goTo({ row: row ?? cursor.row, column: column ?? cursor.column });
                             }}
                             onClose={closeDialog}
                         />

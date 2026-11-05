@@ -763,7 +763,7 @@ void registerSqliteBackend(BackendRegistry &registry)
                 if (head[i] != static_cast<std::byte>(magic[i]))
                     return 0;
             }
-            return 100;
+            return 200;
         },
         .open = [](const std::filesystem::path &path, const OpenOptions &options)
         { return openSqliteDataSource(path, options); },

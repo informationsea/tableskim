@@ -60,6 +60,9 @@ namespace gui_test
     // The choice (Fl_Choice) labelled `label` in the window, if any.
     Fl_Choice *findChoice(Fl_Window &window, const std::string &label);
 
+    // Chooses a path in FLTK's file dialog.
+    bool chooseFile(Fl_Window &window, const std::filesystem::path &path);
+
     // A TableWindow, shown and registered as main() does, closed and
     // deleted (without asking about unsaved changes) when destroyed.
     class Window

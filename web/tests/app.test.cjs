@@ -221,10 +221,15 @@ async function regressionPage() {
                         first: params.first,
                         items: this.searchActive && params.first === 0 ? [{ row: 0, column: 1, value: 'value-1' }] : [],
                     });
-                if (method === 'cellFilter')
+                if (method === 'cellFilter') {
+                    if (this.holdCellFilters) {
+                        (this.pendingCellFilters ??= []).push(request);
+                        return;
+                    }
                     return this.reply(request, {
                         conditions: [{ column: params.column, op: 'equals', value: `value-${params.column}` }],
                     });
+                }
                 if (method === 'aggregates') return this.reply(request, ['count', 'mean']);
                 if (method === 'exportFormats')
                     return this.reply(request, [{ format: 'csv', label: 'CSV', extension: '.csv' }]);
@@ -635,6 +640,68 @@ describe('frontend regressions', () => {
         );
         await page.context().close();
     });
+
+    test('does not start a quick filter during a sheet change', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            window.regressionWorker.holdSheets = true;
+        });
+        await page.getByRole('tab', { name: 'narrow', exact: true }).click();
+        await page.waitForFunction(() => window.regressionWorker.pendingSheets.length === 1);
+        await cell(page, 0, 1).click({ button: 'right' });
+        await page.locator('#context-menu').getByText('Filter: Equal to This Value', { exact: true }).click();
+        assert.equal(
+            await page.evaluate(
+                () => window.regressionWorker.requests.filter((request) => request.method === 'cellFilter').length,
+            ),
+            0,
+        );
+        await page.context().close();
+    });
+
+    for (const returnToSource of [false, true]) {
+        for (const failure of [false, true]) {
+            test(`drops a late quick filter ${failure ? 'error' : 'result'} after switching ${returnToSource ? 'away and back' : 'sheets'}`, async () => {
+                const page = await regressionPage();
+                await page.evaluate(() => {
+                    window.regressionWorker.holdCellFilters = true;
+                });
+                await cell(page, 0, 1).click({ button: 'right' });
+                await page.locator('#context-menu').getByText('Filter: Equal to This Value', { exact: true }).click();
+                await page.waitForFunction(() => window.regressionWorker.pendingCellFilters?.length === 1);
+                await page.getByRole('tab', { name: 'narrow', exact: true }).click();
+                await page.waitForSelector('#tabs button[aria-selected=true]:nth-child(2)');
+                if (returnToSource) {
+                    await page.getByRole('tab', { name: 'wide', exact: true }).click();
+                    await page.waitForSelector('#tabs button[aria-selected=true]:nth-child(1)');
+                }
+                await page.evaluate(async (failure) => {
+                    const worker = window.regressionWorker;
+                    const request = worker.pendingCellFilters.shift();
+                    worker.deliver({
+                        type: 'reply',
+                        json: JSON.stringify({
+                            id: request.id,
+                            ...(failure
+                                ? { error: 'obsolete filter error' }
+                                : {
+                                      result: { conditions: [{ column: 1, op: 'equals', value: 'old sheet' }] },
+                                  }),
+                        }),
+                    });
+                    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                }, failure);
+                assert.equal(
+                    await page.evaluate(
+                        () => window.regressionWorker.requests.filter((request) => request.method === 'setView').length,
+                    ),
+                    0,
+                );
+                assert.doesNotMatch(await page.locator('body').innerText(), /obsolete filter error/);
+                await page.context().close();
+            });
+        }
+    }
 
     const searchRequests = (page) =>
         page.evaluate(() =>
@@ -1606,6 +1673,47 @@ describe('the web app', () => {
         await page.fill('#go-to-text', 'E30');
         await page.keyboard.press('Enter');
         await page.waitForSelector('.cell.cursor[data-row="29"][data-column="4"]');
+        await page.context().close();
+    });
+
+    for (const requested of [9000, 25000]) {
+        test(`Go To ${requested} reads beyond the rows loaded so far`, async () => {
+            const page = await newPage();
+            await open(page, {
+                name: 'large.csv',
+                mimeType: 'text/csv',
+                buffer: Buffer.from('ID\n' + Array.from({ length: 20000 }, (_, i) => i + 1).join('\n') + '\n'),
+            });
+            await page.keyboard.press('Control+g');
+            await page.fill('#go-to-text', String(requested));
+            await page.keyboard.press('Enter');
+            const row = Math.min(requested, 20000) - 1;
+            await page.waitForSelector(`.cell.cursor[data-row="${row}"]:not(.k-l)`);
+            assert.equal(await cell(page, row, 0).innerText(), String(row + 1));
+            if (requested > 20000) await waitForText(page.locator('#status-rows'), '20000 rows');
+            await page.context().close();
+        });
+    }
+
+    test('clamps the cursor and selection when filtering reduces the row count', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await waitForText(page.locator('#status-rows'), '54 rows');
+        await cell(page, 5, 0).click();
+        await cell(page, 10, 0).click({ modifiers: ['Shift'] });
+        await page.locator('#filter-toggle').click();
+        await page.locator('#filter-add').click();
+        await page.selectOption('.filter-column', '0');
+        await page.selectOption('.filter-op', 'equals');
+        await page.fill('.filter-value', '1');
+        await page.locator('#filter-apply').click();
+        await page.waitForSelector('.cell.cursor[data-row="0"][data-column="0"]:not(.k-l)');
+        await waitForText(page.locator('#status-rows'), '1 row of 54');
+        await waitForText(page.locator('#status-cell'), 'Row 1,');
+        await cell(page, 0, 0).evaluate((element) => element.closest('[tabindex]').focus());
+        await page.keyboard.press('Control+c');
+        await waitForText(page.locator('#status-cell'), 'Copied 1 rows');
+        assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '1');
         await page.context().close();
     });
 

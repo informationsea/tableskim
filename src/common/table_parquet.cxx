@@ -38,7 +38,7 @@ void registerParquetBackend(BackendRegistry &registry)
         {
             const bool magic = head.size() >= 4 && head[0] == std::byte{'P'} && head[1] == std::byte{'A'} &&
                                head[2] == std::byte{'R'} && head[3] == std::byte{'1'};
-            return magic ? 100 : 0;
+            return magic ? 200 : 0; // File signatures take priority over text extensions.
         },
         .open = [](const std::filesystem::path &path, const OpenOptions &options)
         { return openParquetDataSource(path, options); },
