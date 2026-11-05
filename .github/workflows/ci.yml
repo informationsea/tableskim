@@ -128,7 +128,7 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.os }}-${{ github.sha }}-${{ github.run_id }}
       - name: Test
-        run: ctest --preset ${{ env.PRESET }}
+        run: ctest --preset ${{ env.PRESET }} --parallel 4
       - name: Package (ZIP)
         if: runner.os != 'Linux'
         shell: bash
@@ -265,7 +265,7 @@ jobs:
           ccache --zero-stats
           cmake --build --preset release
           ccache --show-stats
-          ctest --preset release
+          ctest --preset release --parallel 4
       - name: Save ccache
         if: github.event_name != 'pull_request' && matrix.save_cache
         uses: actions/cache/save@v4
