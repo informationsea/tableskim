@@ -11,6 +11,12 @@ function(tableskim_check_release_ipo)
     # Release flags instead: MSVC's Debug /RTC1 is incompatible with /GL.
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_RELEASE}")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_RELEASE}")
+    if(MSVC)
+        # CMake 4 adds /RTC1 via a target property as well as flag strings.
+        # Forward an empty value into the probe without changing real targets.
+        set(CMAKE_MSVC_RUNTIME_CHECKS "")
+        list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_MSVC_RUNTIME_CHECKS)
+    endif()
     check_ipo_supported(RESULT supported OUTPUT error LANGUAGES C CXX)
     if(NOT supported)
         message(FATAL_ERROR "Release builds require link-time optimization: ${error}")
