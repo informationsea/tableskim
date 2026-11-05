@@ -80,6 +80,28 @@ const SHOTS = {
         await page.locator('#histogram-bins').blur();
         return page;
     },
+    // A histogram of Age stacked by City.
+    'web-histogram-stacked.png': async (open) => {
+        const page = await open('normal.csv');
+        await cell(page, 0, 3).click();
+        await page.locator('#histogram-button').click();
+        await page.locator('#histogram-summary').filter({ hasText: '53 numbers' }).waitFor();
+        await page.selectOption('#histogram-group', '4');
+        await page.locator('#histogram-legend').filter({ hasText: '(other)' }).waitFor();
+        return page;
+    },
+    // Age against Salary, the points coloured by City.
+    'web-scatter-colored.png': async (open) => {
+        const page = await open('normal.csv');
+        await cell(page, 0, 6).click();
+        await page.locator('#scatter-button').click();
+        await page.locator('#scatter-summary').filter({ hasText: '53 rows plotted' }).waitFor();
+        await page.selectOption('#scatter-x', '3');
+        await page.selectOption('#scatter-y', '6');
+        await page.selectOption('#scatter-color', '4');
+        await page.locator('#scatter-summary').filter({ hasText: 'click a colour' }).waitFor();
+        return page;
+    },
     // SQL on a DuckDB file, its result shown as a sheet.
     'web-sql.png': async (open) => {
         const page = await open('demo.duckdb');

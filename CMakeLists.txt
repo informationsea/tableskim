@@ -735,6 +735,7 @@ if(TABLESKIM_BUILD_GUI AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT TABLESKIM_
             tests/gui/gui_test_helpers.hxx
             tests/gui/gui_test_helpers.cxx
             tests/gui/gui_window_tests.cxx
+            tests/gui/gui_screenshots.cxx
         )
         target_link_libraries(tableskim-gui-tests PRIVATE tableskim-gui Catch2::Catch2 tableskim-warnings)
         target_compile_definitions(tableskim-gui-tests PRIVATE

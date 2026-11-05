@@ -258,6 +258,8 @@ count as well, and double-clicking it filters the sheet to the rows of
 that bar *and* that group. Choose **(none)** to go back to plain bars; the
 choice is kept when you choose another column.
 
+![Age stacked by City, the Sendai part of a bar pointed at](../images/gui-histogram-stacked.png)
+
 How bins are chosen is described in [Sorting, Filtering, Searching and
 Statistics](filtering.md#histograms).
 
@@ -316,6 +318,8 @@ microseconds.
   **clicking an entry of the legend** filters the sheet to the rows of
   that value. The choice is kept when you choose other columns; the
   density and the box plots are not coloured.
+
+![Age against Salary, coloured by City](../images/gui-scatter-colored.png)
 
 ![2D density of the same columns](../images/gui-density.png)
 

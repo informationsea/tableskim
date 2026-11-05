@@ -556,7 +556,12 @@ Match the existing code:
   the web app (`docs/images/web-*.png`) the same way, and
   `vscode/scripts/screenshots.cjs` the VS Code extension's README's
   (`vscode/images/vscode-*.png`, in VS Code itself); run them after
-  changing what they show.
+  changing what they show. The GUI's chart windows have theirs in the
+  hidden `[.screenshots]` cases of `tableskim-gui-tests`
+  (`tests/gui/gui_screenshots.cxx`, written to `TABLESKIM_SCREENSHOT_DIR`),
+  and some of the TUI's views in `tests/tui/screenshots.py` (pyte's
+  screen drawn with Pillow); the other `gui-*` and `tui-*` images were
+  taken by hand. Look at each image before committing it.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest
   starts it with `xvfb-run -a` (`TABLESKIM_GUI_TESTS`: `AUTO` when

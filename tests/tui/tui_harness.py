@@ -45,7 +45,7 @@ class Tui:
         "delete": "\x1b[3~",
     }
 
-    def __init__(self, executable, path, args=(), home=None, columns=COLUMNS, lines=LINES):
+    def __init__(self, executable, path, args=(), home=None, columns=COLUMNS, lines=LINES, env=None, screen=None):
         self.executable = executable
         self.path = str(path)
         self.args = list(args)
@@ -53,7 +53,9 @@ class Tui:
         self.lines = lines
         self._own_home = home is None
         self.home = home or tempfile.mkdtemp(prefix="tableskim-tui-home-")
-        self.screen = pyte.Screen(columns, lines)
+        self.extra_env = dict(env or {})
+        # `screen`: a pyte.Screen class of the caller's (screenshots.py keeps dim text).
+        self.screen = (screen or pyte.Screen)(columns, lines)
         self.stream = pyte.ByteStream(self.screen)
         self.pid = None
         self.fd = None
@@ -75,6 +77,7 @@ class Tui:
         env["XDG_DATA_HOME"] = os.path.join(self.home, ".local", "share")
         env["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
         env["TERM"] = "xterm-256color"
+        env.update(self.extra_env)
         env.pop("DISPLAY", None)
         env.pop("WAYLAND_DISPLAY", None)
         pid, fd = pty.fork()

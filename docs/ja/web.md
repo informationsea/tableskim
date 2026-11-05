@@ -141,7 +141,11 @@ Web アプリは静的なファイルだけのフォルダで、`tableskim-<vers
 
   ![ヒストグラム](../images/web-histogram.png)
 
+  ![City で積み上げたヒストグラム](../images/web-histogram-stacked.png)
+
 - **Scatter** は 2 つの列の関係を表示します。**Points**（点）、**Density**（密度）、X が文字列のときはカテゴリごとの **Box plots**（箱ひげ図）から選べ、最小二乗法の **Regression line**（回帰直線）も表示できます。点をクリックするとその行へ移動し、密度のセルや箱をクリックするか、矩形をドラッグすると、その範囲の行に絞り込みます。**Color by** で別の列の値ごと（最も多い 8 個、続いて「(other)」と「(empty)」）に点を色分けし、凡例の色をクリックするとその値の行に絞り込みます。
+
+  ![City で色分けした Age と Salary の散布図](../images/web-scatter-colored.png)
 
 **Save PNG** と **Save SVG** は、表示しているグラフをそのまま保存します。ファイルはブラウザのダウンロード先に保存されます。PNG はページ上の 2 倍の大きさで描かれ、SVG はどの大きさでも線や文字がくっきり表示されます。
 

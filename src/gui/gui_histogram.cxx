@@ -20,7 +20,7 @@ namespace
     const int WINDOW_HEIGHT = 450;
     const int MARGIN = 8;
     const int LINE_HEIGHT = 25;
-    const int CHOICE_LABEL_WIDTH = 60;
+    const int CHOICE_LABEL_WIDTH = 72;
     const int CHOICE_WIDTH = 240;
     const int SAVE_WIDTH = 100;
     const int FONT_SIZE = 12;

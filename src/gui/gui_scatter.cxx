@@ -28,7 +28,7 @@ namespace
     const int LOG_WIDTH = 140;
     const int FIT_WIDTH = 150;
     const int SAVE_WIDTH = 100;
-    const int COLOR_LABEL_WIDTH = 64;
+    const int COLOR_LABEL_WIDTH = 72;
     // A category's column: the box takes this part of it, the points are
     // spread over it.
     const double BOX_WIDTH = 0.6;

@@ -225,6 +225,8 @@ follows the cursor from column to column. See
 
   ![A histogram](../images/web-histogram.png)
 
+  ![A histogram stacked by City](../images/web-histogram-stacked.png)
+
 - **Scatter** plots two columns against each other: **Points**,
   **Density** or, when X holds text, **Box plots** of each category, with
   the least-squares **Regression line**. Click a point to go to its row,
@@ -232,6 +234,8 @@ follows the cursor from column to column. See
   rectangle to narrow them to it. **Color by** colours the points by the
   values of another column (the 8 most frequent, then "(other)" and
   "(empty)"); click a colour of the legend to narrow the rows to it.
+
+  ![Age against Salary, coloured by City](../images/web-scatter-colored.png)
 
 **Save PNG** and **Save SVG** save the chart as shown; the browser saves
 the file into its downloads. PNG is drawn at twice the size of the page,

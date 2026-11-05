@@ -125,6 +125,8 @@ group's count in the selected bar. `Tab` picks one of those groups, whose
 count is shown at the bottom; `Enter` then filters to the rows of that
 part of the bar.
 
+![Age stacked by City, the Sendai part of a bar selected](../images/tui-histogram-stacked.png)
+
 ![Histogram of a date column](../images/tui-histogram-dates.png)
 
 ## 2D density
@@ -163,6 +165,8 @@ the colour of the value most of its rows have, darker for fewer rows, and
 the line at the bottom says how many of the cell's rows have it. `Tab`
 selects a colour: cells without its rows turn gray, the bottom line counts
 it instead, and `Enter` filters to the rows of the cell with that value.
+
+![Age against Salary, coloured by City](../images/tui-density-colored.png)
 
 Y must hold numbers or dates, as for the GUI's [scatter
 plot](gui.md#scatter-plots-and-2d-density). The colours need a terminal
