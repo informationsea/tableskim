@@ -14,6 +14,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Set the Release policy before adding dependencies so their static libraries
+# participate in the same link-time optimization as the application.
+include(cmake/ReleaseOptimizations.cmake)
+
 # MSVC reports __cplusplus as 199711L unless /Zc:__cplusplus is given,
 # which makes dependencies (e.g. DuckDB) take pre-C++17 code paths.
 # /MP3 compiles up to 3 files of a project in parallel; combined with
