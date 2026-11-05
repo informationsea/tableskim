@@ -77,6 +77,9 @@ elseif(APPLE)
     # unsigned code, and a download without one is reported as "damaged". It
     # does not satisfy Gatekeeper, which still asks the user to allow the app
     # once; that needs a Developer ID signature and notarization.
+    # CMake's install strips a plain executable (CPACK_STRIP_FILES) but skips
+    # the one in an app bundle, which kept about 8 MB of symbols; strip it
+    # here, before signing, as stripping invalidates a signature.
     install(CODE "
         set(_dest \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}\")
         file(GLOB _apps \"\${_dest}/*.app\")
@@ -84,6 +87,16 @@ elseif(APPLE)
             set(_apps \"\${_dest}/tableskim\")
         endif()
         foreach(_app IN LISTS _apps)
+            if(CMAKE_INSTALL_DO_STRIP AND IS_DIRECTORY \"\${_app}\")
+                file(GLOB _executables \"\${_app}/Contents/MacOS/*\")
+                foreach(_executable IN LISTS _executables)
+                    execute_process(COMMAND \"${CMAKE_STRIP}\" \"\${_executable}\"
+                        RESULT_VARIABLE _result)
+                    if(NOT _result EQUAL 0)
+                        message(FATAL_ERROR \"strip failed for \${_executable}\")
+                    endif()
+                endforeach()
+            endif()
             execute_process(COMMAND codesign --force --deep --sign - \"\${_app}\"
                 RESULT_VARIABLE _result)
             if(NOT _result EQUAL 0)
