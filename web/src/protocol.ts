@@ -258,6 +258,14 @@ export interface ScatterState {
     boxes: BoxStats[];
     boxTexts: string[];
     points: number[]; // x, y, view row, ... (when asked for)
+    // Coloured by a column: its groups (as a stacked histogram's), the rows
+    // plotted in each, and each point's group (with the points).
+    colorColumn: number | null;
+    colors: string[];
+    otherColor: boolean;
+    emptyColor: boolean;
+    colorPairs: number[];
+    pointColors: number[];
 }
 
 export type ExportFormat = 'csv' | 'tsv' | 'excel' | 'parquet';
@@ -351,13 +359,17 @@ export interface Methods {
         params: SheetParams & { column: number; firstRow?: number; lastRow?: number; hidden?: number[] };
         result: { x: number; y: number };
     };
-    startScatter: { params: SheetParams & { x: number; y: number; points?: boolean }; result: Empty };
+    startScatter: {
+        params: SheetParams & { x: number; y: number; points?: boolean; colorColumn?: number | null };
+        result: Empty;
+    };
     scatterState: { params: SheetParams & { points?: boolean }; result: ScatterState };
     scatterFilter: {
         params: SheetParams &
             (
                 | { xBin: number; yBin: number }
                 | { category: number }
+                | { color: number } // a colour of the legend
                 | { xLow: number; xHigh: number; yLow: number; yHigh: number }
             );
         result: Conditions;

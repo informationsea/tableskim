@@ -109,6 +109,29 @@ namespace
     }
 } // namespace
 
+ValueGroups ValueGroups::fromStats(const ColumnStats &stats, size_t max)
+{
+    ValueGroups groups;
+    for (size_t i = 0; i < stats.top.size() && i < max; ++i)
+        groups.values.push_back(stats.top[i].value);
+    groups.other = stats.distinct > groups.values.size();
+    groups.empty = stats.empty > 0;
+    return groups;
+}
+
+std::optional<size_t> ValueGroups::groupOf(const CellValue &value) const
+{
+    if (isEmptyCell(value))
+        return empty ? std::optional<size_t>(count() - 1) : std::nullopt;
+    // Few groups: a linear search is quick enough.
+    const auto it = std::find(values.begin(), values.end(), value);
+    if (it != values.end())
+        return static_cast<size_t>(it - values.begin());
+    if (other)
+        return values.size();
+    return std::nullopt;
+}
+
 std::vector<double> numberHistogramEdges(double min, double max, bool integers, size_t target, int *decimals)
 {
     if (max < min)
@@ -327,10 +350,7 @@ Histogram HistogramRange::layout(size_t target, size_t max_groups) const
     {
         const ColumnStats groups = groups_.result();
         histogram.grouped = true;
-        for (size_t i = 0; i < groups.top.size() && i < max_groups; ++i)
-            histogram.groups.push_back(groups.top[i].value);
-        histogram.other_group = groups.distinct > histogram.groups.size();
-        histogram.empty_group = groups.empty > 0;
+        histogram.groups = ValueGroups::fromStats(groups, max_groups);
         histogram.group_counts.assign(histogram.binCount() * histogram.groupCount(), 0);
     }
     return histogram;
@@ -396,17 +416,7 @@ void HistogramCounter::addGrouped(const CellValue &value, const CellValue &group
 
 std::optional<size_t> HistogramCounter::groupOf(const CellValue &group) const
 {
-    if (!histogram_.grouped)
-        return std::nullopt;
-    if (isEmptyCell(group))
-        return histogram_.empty_group ? std::optional<size_t>(histogram_.groupCount() - 1) : std::nullopt;
-    // Few groups: a linear search is quick enough.
-    const auto it = std::find(histogram_.groups.begin(), histogram_.groups.end(), group);
-    if (it != histogram_.groups.end())
-        return static_cast<size_t>(it - histogram_.groups.begin());
-    if (histogram_.other_group)
-        return histogram_.groups.size();
-    return std::nullopt;
+    return histogram_.grouped ? histogram_.groups.groupOf(group) : std::nullopt;
 }
 
 std::optional<size_t> HistogramCounter::binOf(const CellValue &value) const

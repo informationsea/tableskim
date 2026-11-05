@@ -137,6 +137,8 @@ struct ScatterState
     bool done = false;
     size_t x_column = 0;
     size_t y_column = 0;
+    // The column the points are coloured by, if any (ScatterPlot::colors).
+    std::optional<size_t> color_column;
     ScatterOptions options;
     // The first pass finds the ranges; the second counts the rows into the
     // grid and samples the points, which `plot` then has (growing until done).
@@ -337,8 +339,10 @@ public:
     // Two columns plotted against each other over the rows of the view
     // (points and a 2D density), computed in the background in two passes
     // like a histogram; ScatterProgress is emitted as rows are counted. A
-    // view change starts it over.
-    void startScatter(size_t x_column, size_t y_column, ScatterOptions options = {});
+    // view change starts it over. With `color_column`, the points and cells
+    // are counted by that column's most frequent values too.
+    void startScatter(size_t x_column, size_t y_column, ScatterOptions options = {},
+                      std::optional<size_t> color_column = std::nullopt);
     void cancelScatter();
     ScatterState scatterState() const;
 

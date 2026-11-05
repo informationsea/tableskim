@@ -229,7 +229,9 @@ follows the cursor from column to column. See
   **Density** or, when X holds text, **Box plots** of each category, with
   the least-squares **Regression line**. Click a point to go to its row,
   click a density cell or a box to narrow the rows to it, or drag a
-  rectangle to narrow them to it.
+  rectangle to narrow them to it. **Color by** colours the points by the
+  values of another column (the 8 most frequent, then "(other)" and
+  "(empty)"); click a colour of the legend to narrow the rows to it.
 
 **Save PNG** and **Save SVG** save the chart as shown; the browser saves
 the file into its downloads. PNG is drawn at twice the size of the page,

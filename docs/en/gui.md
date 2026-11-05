@@ -308,6 +308,14 @@ microseconds.
   **double-click it** to filter the sheet to the rows of that cell.
 - **Drag a rectangle** (in either view) to filter the sheet to the rows
   whose X and Y values lie inside it.
+- **Color by** colours the points by the values of a third column, as
+  **Stack by** does the bars of a [histogram](#histograms): its 8 most
+  frequent values get a colour each, the others are **(other)** (gray) and
+  empty cells **(empty)** (light gray). The legend above the plot shows
+  each colour's rows; pointing at a point shows its value too, and
+  **clicking an entry of the legend** filters the sheet to the rows of
+  that value. The choice is kept when you choose other columns; the
+  density and the box plots are not coloured.
 
 ![2D density of the same columns](../images/gui-density.png)
 

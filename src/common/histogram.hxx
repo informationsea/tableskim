@@ -32,6 +32,28 @@ enum class TimeUnit
     Year,
 };
 
+// The groups a column's values are told apart by colour in: its most
+// frequent non-empty values, then "(other)" for its other values and
+// "(empty)" for empty cells, when there are any.
+struct ValueGroups
+{
+    std::vector<CellValue> values;
+    bool other = false;
+    bool empty = false;
+
+    // At most `max` of the most frequent values of the column's statistics.
+    static ValueGroups fromStats(const ColumnStats &stats, size_t max);
+    size_t count() const { return values.size() + (other ? 1 : 0) + (empty ? 1 : 0); }
+    bool isOther(size_t group) const { return other && group == values.size(); }
+    bool isEmpty(size_t group) const { return empty && group + 1 == count(); }
+    // The group of a value of the column; nullopt for one it has no group for.
+    std::optional<size_t> groupOf(const CellValue &value) const;
+    bool operator==(const ValueGroups &) const = default;
+};
+
+// Groups told apart by colour, at most (the categorical palette's slots).
+constexpr size_t MAX_VALUE_GROUPS = 8;
+
 struct Histogram
 {
     HistogramKind kind = HistogramKind::None;
@@ -51,28 +73,21 @@ struct Histogram
     size_t rows = 0;
     // The most frequent non-empty values, for columns of kind None.
     std::vector<ValueCount> top;
-    // Stacked by a second column (bins only): its most frequent non-empty
-    // values are the groups, then "(other)" for its other values and
-    // "(empty)" for empty cells, when there are any. group_counts has the
-    // rows of each bin and group, at groupIndex(); a bin's add up to its
-    // count.
+    // Stacked by a second column (bins only), by the groups of its values.
+    // group_counts has the rows of each bin and group, at groupIndex(); a
+    // bin's add up to its count.
     bool grouped = false;
-    std::vector<CellValue> groups;
-    bool other_group = false;
-    bool empty_group = false;
+    ValueGroups groups;
     std::vector<size_t> group_counts;
 
     size_t binCount() const { return counts.size(); }
-    size_t groupCount() const { return grouped ? groups.size() + (other_group ? 1 : 0) + (empty_group ? 1 : 0) : 0; }
+    size_t groupCount() const { return grouped ? groups.count() : 0; }
     size_t groupIndex(size_t bin, size_t group) const { return bin * groupCount() + group; }
     size_t groupCount(size_t bin, size_t group) const { return group_counts[groupIndex(bin, group)]; }
     // Which group an index stands for.
-    bool isOtherGroup(size_t group) const { return other_group && group == groups.size(); }
-    bool isEmptyGroup(size_t group) const { return empty_group && group + 1 == groupCount(); }
+    bool isOtherGroup(size_t group) const { return groups.isOther(group); }
+    bool isEmptyGroup(size_t group) const { return groups.isEmpty(group); }
 };
-
-// Groups a stacked histogram tells apart by color, at most.
-constexpr size_t HISTOGRAM_MAX_GROUPS = 8;
 
 // The first pass: finds the kind of the column, its range, and the most
 // frequent values. Not thread-safe.
@@ -91,7 +106,7 @@ public:
     // Bins (about `target` of them) with zero counts, the totals, and the
     // most frequent values; `values` and `others` are those of the kind.
     // Grouped bins get up to `max_groups` groups.
-    Histogram layout(size_t target, size_t max_groups = HISTOGRAM_MAX_GROUPS) const;
+    Histogram layout(size_t target, size_t max_groups = MAX_VALUE_GROUPS) const;
 
 private:
     ColumnStatsAccumulator stats_;

@@ -79,6 +79,9 @@ How to read it:
   average, a year of age goes with 2641 more salary.
 - **Point at a point** to see its values and row; **click it** to jump to
   that row in the sheet.
+- **Color by** a third column (City, say) gives each of its values a
+  colour, with a legend above the plot, so that you can see whether the
+  groups lie apart. Click an entry of the legend to filter to its rows.
 
 With many rows, points pile up on each other. **Show → Density** counts
 the rows in a grid instead, and colours each cell from dark (few rows) to

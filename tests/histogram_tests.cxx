@@ -596,9 +596,9 @@ TEST_CASE("a grouped histogram splits each bin by the other column's values")
     const Histogram layout = range.layout(30, 2);
     REQUIRE(layout.binCount() == 3);
     REQUIRE(layout.grouped);
-    CHECK(layout.groups == std::vector<CellValue>{std::string("a"), std::string("b")});
-    CHECK(layout.other_group);
-    CHECK(layout.empty_group);
+    CHECK(layout.groups.values == std::vector<CellValue>{std::string("a"), std::string("b")});
+    CHECK(layout.groups.other);
+    CHECK(layout.groups.empty);
     REQUIRE(layout.groupCount() == 4);
     CHECK(layout.isOtherGroup(2));
     CHECK(layout.isEmptyGroup(3));
@@ -647,9 +647,9 @@ TEST_CASE("TableModel::startHistogram: grouped by a column, scans and GROUP BY a
     const Histogram &b = grouped.histogram;
     CHECK(scanned.group_column == std::optional<size_t>(4));
     REQUIRE(a.grouped);
-    CHECK(a.groups.size() == HISTOGRAM_MAX_GROUPS);
-    CHECK(a.other_group);
-    CHECK(a.empty_group);
+    CHECK(a.groups.values.size() == MAX_VALUE_GROUPS);
+    CHECK(a.groups.other);
+    CHECK(a.groups.empty);
     CHECK(a.groups == b.groups);
     CHECK(a.counts == b.counts);
     CHECK(a.group_counts == b.group_counts);

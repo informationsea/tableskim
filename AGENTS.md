@@ -342,11 +342,11 @@ read their header comments before changing anything in `src/common/`.
   must keep exactly the rows counted in it (tested). The GUI shows it in
   `HistogramWindow` (`gui_histogram.cxx`), the TUI instead of the sheet
   (`B`). Stacked by a second column (`group_column`), the first pass also
-  takes that column's most frequent values (`HISTOGRAM_MAX_GROUPS`, then
-  "(other)" and "(empty)") and the second counts each bin per group
-  (`HistogramCounter::addGrouped()`), always by a scan, as it needs pairs;
-  `histogramGroupConditions()` gives a group's filter. The three UIs share
-  the group colours' order.
+  takes that column's most frequent values (`ValueGroups`:
+  `MAX_VALUE_GROUPS`, then "(other)" and "(empty)") and the second counts
+  each bin per group (`HistogramCounter::addGrouped()`), always by a scan,
+  as it needs pairs; `valueGroupConditions()` gives a group's filter. The
+  three UIs share the group colours' order.
 - `TableModel::startScatter()` plots two columns against each other
   (`scatter.{hxx,cxx}`) the same way: `ScatterRange` takes each column's
   range (pushdown sources by `columnValueCounts()` per column), then
@@ -361,6 +361,10 @@ read their header comments before changing anything in `src/common/`.
   plot categorical: its most frequent values (`x_axis.top`) are the
   categories, plus "(other)"; the counter keeps each category's Y values
   for `boxStats()` (box plots, both UIs).
+  With a colour column (`ScatterState::color_column`) the points carry
+  their `ValueGroups` group, and each density cell its rows per group
+  (`ScatterPlot::mainColor()`, the TUI's colours), as for a stacked
+  histogram.
 - The GUI's histogram and scatter windows write their chart widget as PNG
   (`Fl_Image_Surface`, `fl_write_png()`) or SVG (`Fl_SVG_File_Surface`)
   with `writeWidgetImage()` (`gui_image_export.cxx`), so the image is what

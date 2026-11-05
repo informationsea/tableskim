@@ -237,6 +237,16 @@ counted in the cell. Dragging a rectangle in the GUI adds `is a number` (or
 `is a date`), `≥` and `≤` conditions on both columns, with the bounds
 rounded a little finer than the bins.
 
+### Colouring by a column
+
+The points can be coloured by a third column. Its values are grouped as
+for a [stacked histogram](#stacked-histograms): the 8 most frequent
+non-empty values (over the rows of the view), "(other)" and "(empty)".
+Choosing a colour adds the group's conditions on that column (`=` its
+value, `is empty`, or `is not empty` and `≠` each other group). For
+Parquet, JSON and DuckDB files the groups are found inside the database,
+as the ranges are.
+
 ## Group By
 
 **Edit → Group By...** in the GUI (see [Using the GUI](gui.md#group-by))

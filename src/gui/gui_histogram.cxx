@@ -44,20 +44,9 @@ namespace
         return 10 * magnitude;
     }
 
-    // A group of a stacked histogram: eight hues in a fixed order, then gray
-    // for "(other)" and a lighter gray for "(empty)" (the web app's too).
     Fl_Color groupColor(const Histogram &histogram, size_t group)
     {
-        static const Fl_Color colors[] = {
-            fl_rgb_color(0x2a, 0x78, 0xd6), fl_rgb_color(0xeb, 0x68, 0x34), fl_rgb_color(0x1b, 0xaf, 0x7a),
-            fl_rgb_color(0xed, 0xa1, 0x00), fl_rgb_color(0xe8, 0x7b, 0xa4), fl_rgb_color(0x00, 0x83, 0x00),
-            fl_rgb_color(0x62, 0x50, 0xd6), fl_rgb_color(0xe3, 0x49, 0x48),
-        };
-        if (histogram.isEmptyGroup(group))
-            return fl_rgb_color(0xc8, 0xc6, 0xbf);
-        if (histogram.isOtherGroup(group))
-            return fl_rgb_color(0x8f, 0x8d, 0x86);
-        return colors[group % std::size(colors)];
+        return valueGroupColor(histogram.groups, group);
     }
 
     void setActive(Fl_Widget *widget, bool active)
@@ -260,6 +249,12 @@ private:
         int yy = top_y;
         for (size_t group = 0; group < hg.groupCount(); ++group)
         {
+            // A group without a row in a bin needs no entry.
+            size_t rows = 0;
+            for (size_t bin = 0; bin < hg.binCount(); ++bin)
+                rows += hg.groupCount(bin, group);
+            if (rows == 0 && hg.binCount() > 0)
+                continue;
             const std::string label = cellDisplayText(histogramGroupText(hg, group), 24);
             const int entry = swatch + 4 + static_cast<int>(fl_width(label.c_str())) + 2 * TICK_GAP;
             if (xx > left && xx + entry > left + width)

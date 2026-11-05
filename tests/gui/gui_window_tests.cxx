@@ -278,6 +278,45 @@ TEST_CASE("GUI: a histogram stacked by a column")
     CHECK_FALSE(view->model()->histogramState().group_column);
 }
 
+TEST_CASE("GUI: a scatter plot coloured by a column")
+{
+    Window window(kDemoData / "normal.parquet");
+    GuiTableView *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 54));
+    view->set_selection(0, 3, 0, 6); // Age, ..., Salary
+    window->show_scatter_plot();
+    Fl_Window *scatter = shownWindow("Scatter Plot");
+    REQUIRE(scatter);
+    Fl_Choice *color_by = findChoice(*scatter, "Color by:");
+    REQUIRE(color_by);
+    REQUIRE(waitFor([&] { return view->model()->scatterState().done; }));
+    CHECK(color_by->value() == 0); // (none)
+
+    color_by->value(5); // City
+    color_by->do_callback();
+    ScatterState state;
+    REQUIRE(waitFor([&]
+                    { state = view->model()->scatterState(); return state.done; }));
+    CHECK(state.x_column == 3);
+    CHECK(state.y_column == 6);
+    CHECK(state.color_column == std::optional<size_t>(4));
+    CHECK(state.plot.colored);
+    CHECK(state.plot.colorCount() > 1);
+    CHECK(color_by->value() == 5);
+
+    // Other columns keep the colours.
+    Fl_Choice *y = findChoice(*scatter, "Y:");
+    REQUIRE(y);
+    y->value(7); // Birthday
+    y->do_callback();
+    CHECK(view->model()->scatterState().y_column == 7);
+    CHECK(view->model()->scatterState().color_column == std::optional<size_t>(4));
+
+    color_by->value(0);
+    color_by->do_callback();
+    CHECK_FALSE(view->model()->scatterState().color_column);
+}
+
 TEST_CASE("GUI: edits are saved and the file is read again")
 {
     TempDir dir;

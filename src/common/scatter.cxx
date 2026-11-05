@@ -118,6 +118,13 @@ ScatterPlot ScatterRange::layout(const ScatterOptions &options) const
         plot.x_bins = x_.layout(options.density_bins_x);
     plot.y_bins = y_.layout(options.density_bins_y);
     plot.counts.assign(plot.xBinCount() * plot.y_bins.binCount(), 0);
+    if (colored_)
+    {
+        plot.colored = true;
+        plot.colors = ValueGroups::fromStats(colors_.result(), options.max_colors);
+        plot.color_pairs.assign(plot.colorCount(), 0);
+        plot.color_counts.assign(plot.counts.size() * plot.colorCount(), 0);
+    }
     return plot;
 }
 
@@ -126,6 +133,8 @@ ScatterCounter::ScatterCounter(ScatterPlot layout, size_t max_points)
       point_random_(SAMPLE_SEED), category_random_(CATEGORY_SAMPLE_SEED)
 {
     std::fill(plot_.counts.begin(), plot_.counts.end(), 0);
+    std::fill(plot_.color_pairs.begin(), plot_.color_pairs.end(), 0);
+    std::fill(plot_.color_counts.begin(), plot_.color_counts.end(), 0);
     plot_.pairs = 0;
     plot_.others = 0;
     plot_.rows = 0;
@@ -149,19 +158,27 @@ std::optional<size_t> ScatterCounter::categoryOf(const CellValue &x) const
     return std::nullopt;
 }
 
-void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row)
+void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row, const CellValue &color)
 {
     ++plot_.rows;
     const bool categorical = plot_.categorical();
     const auto x_bin = !plot_.plottable() ? std::nullopt : categorical ? categoryOf(x) : x_.binOf(x);
     const auto y_bin = x_bin ? y_.binOf(y) : std::nullopt;
-    if (!y_bin)
+    // A row without a colour would break the sums per colour: left out,
+    // like a value of another kind (only rows appended later can be).
+    const auto color_index = y_bin && plot_.colored ? plot_.colors.groupOf(color) : std::nullopt;
+    if (!y_bin || (plot_.colored && !color_index))
     {
         ++plot_.others;
         return;
     }
     ++plot_.counts[plot_.densityIndex(*x_bin, *y_bin)];
     ++plot_.pairs;
+    if (color_index)
+    {
+        ++plot_.color_pairs[*color_index];
+        ++plot_.color_counts[plot_.colorIndex(*x_bin, *y_bin, *color_index)];
+    }
     const double y_coordinate = histogramCoordinate(plot_.y_bins.kind, y).value_or(0);
     double x_coordinate = 0;
     if (categorical)
@@ -193,20 +210,40 @@ void ScatterCounter::add(const CellValue &x, const CellValue &y, size_t view_row
         if (slot >= max_points_)
             return;
     }
-    const ScatterPoint point{x_coordinate, y_coordinate, view_row};
+    const ScatterPoint point{x_coordinate, y_coordinate, view_row, color_index.value_or(0)};
     if (slot == points_.size())
         points_.push_back(point);
     else
         points_[slot] = point;
 }
 
-bool ScatterCounter::fits(const CellValue &x, const CellValue &y) const
+bool ScatterCounter::fits(const CellValue &x, const CellValue &y, const CellValue &color) const
 {
     if (!plot_.plottable() || !y_.fits(y))
         return false;
-    if (!plot_.categorical())
-        return x_.fits(x);
-    return isEmptyCell(x) || categoryOf(x).has_value();
+    if (!plot_.categorical() ? !x_.fits(x) : !isEmptyCell(x) && !categoryOf(x))
+        return false;
+    if (!plot_.colored)
+        return true;
+    // Only a row plotted needs a colour.
+    const bool plotted = (plot_.categorical() ? categoryOf(x).has_value() : x_.binOf(x).has_value()) &&
+                         y_.binOf(y).has_value();
+    return !plotted || plot_.colors.groupOf(color).has_value();
+}
+
+std::optional<size_t> ScatterPlot::mainColor(size_t x_bin, size_t y_bin) const
+{
+    std::optional<size_t> main;
+    size_t most = 0;
+    for (size_t color = 0; color < colorCount(); ++color)
+    {
+        if (const size_t count = color_counts[colorIndex(x_bin, y_bin, color)]; count > most)
+        {
+            most = count;
+            main = color;
+        }
+    }
+    return main;
 }
 
 ScatterPlot ScatterCounter::result() const

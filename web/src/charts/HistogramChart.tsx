@@ -1,6 +1,6 @@
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Histogram } from '../protocol';
-import { groupColor } from './groups';
+import { groupColor, legendLayout, SWATCH } from './groups';
 import { type ChartImage, svgOfElement } from './image';
 import { barPath, columnPath, compactCount, niceTicks, observeWidth } from './scale';
 import { Tooltip } from './Tooltip';
@@ -18,27 +18,6 @@ const MARGIN = { top: 12, right: 12, bottom: 44, left: 52 };
 const BAR_THICKNESS = 20;
 const ROW_GAP = 8;
 const LABEL_WIDTH = 160;
-
-const LEGEND_LINE = 18;
-const SWATCH = 10;
-
-/** The legend's entries placed on lines of `width`, with the height they take. */
-function legendLayout(groups: string[], width: number) {
-    const entries: { x: number; y: number; label: string }[] = [];
-    let x = 0;
-    let y = 0;
-    for (const group of groups) {
-        const label = group.length > 24 ? `${group.slice(0, 23)}…` : group;
-        const entry = SWATCH + 6 + label.length * 7 + 14;
-        if (x > 0 && x + entry > width) {
-            x = 0;
-            y += LEGEND_LINE;
-        }
-        entries.push({ x, y, label });
-        x += entry;
-    }
-    return { entries, height: groups.length > 0 ? y + LEGEND_LINE + 6 : 0 };
-}
 
 function share(count: number, rows: number) {
     return rows > 0 ? ` (${((100 * count) / rows).toLocaleString(undefined, { maximumFractionDigits: 1 })}%)` : '';
@@ -162,7 +141,13 @@ export function HistogramChart({ histogram, rows, onPick, ref }: HistogramChartP
     }
 
     const plotWidth = Math.max(40, width - MARGIN.left - MARGIN.right);
-    const legend = legendLayout(histogram.groups, plotWidth);
+    // A group without a row in a bin needs no entry.
+    const legend = legendLayout(
+        histogram.groups
+            .map((label, group) => ({ group, label }))
+            .filter(({ group }) => bins.some((bin) => (bin.groups?.[group] ?? 0) > 0)),
+        plotWidth,
+    );
     const plotTop = MARGIN.top + legend.height;
     const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
     const ticks = niceTicks(0, most);
@@ -202,14 +187,17 @@ export function HistogramChart({ histogram, rows, onPick, ref }: HistogramChartP
             >
                 {legend.entries.length > 0 && (
                     <g id="histogram-legend" aria-label="Groups">
-                        {legend.entries.map((entry, group) => (
-                            <g key={group} transform={`translate(${MARGIN.left + entry.x},${MARGIN.top + entry.y})`}>
+                        {legend.entries.map((entry) => (
+                            <g
+                                key={entry.group}
+                                transform={`translate(${MARGIN.left + entry.x},${MARGIN.top + entry.y})`}
+                            >
                                 <rect
                                     y={2}
                                     width={SWATCH}
                                     height={SWATCH}
                                     rx={2}
-                                    style={{ fill: groupColor(histogram, group) }}
+                                    style={{ fill: groupColor(histogram, entry.group) }}
                                 />
                                 <text x={SWATCH + 6} y={SWATCH / 2 + 2} dy="0.35em" className="fill-fg text-xs">
                                     {entry.label}

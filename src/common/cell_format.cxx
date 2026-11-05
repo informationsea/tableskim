@@ -707,25 +707,35 @@ std::string histogramSummary(const Histogram &histogram)
     return text;
 }
 
+std::string valueGroupText(const ValueGroups &groups, size_t group)
+{
+    if (group < groups.values.size())
+        return formatCell(groups.values[group]);
+    return groups.isEmpty(group) ? "(empty)" : "(other)";
+}
+
 std::string histogramGroupText(const Histogram &histogram, size_t group)
 {
-    if (group < histogram.groups.size())
-        return formatCell(histogram.groups[group]);
-    return histogram.isEmptyGroup(group) ? "(empty)" : "(other)";
+    return valueGroupText(histogram.groups, group);
+}
+
+std::vector<FilterCondition> valueGroupConditions(const ValueGroups &groups, size_t column, size_t group)
+{
+    if (group < groups.values.size())
+        return {cellFilterCondition(column, groups.values[group], true)};
+    if (groups.isEmpty(group))
+        return {{column, FilterOp::IsEmpty, {}}};
+    if (!groups.isOther(group))
+        return {};
+    std::vector<FilterCondition> conditions{{column, FilterOp::IsNotEmpty, {}}};
+    for (const CellValue &value : groups.values)
+        conditions.push_back(cellFilterCondition(column, value, false));
+    return conditions;
 }
 
 std::vector<FilterCondition> histogramGroupConditions(const Histogram &histogram, size_t group_column, size_t group)
 {
-    if (group < histogram.groups.size())
-        return {cellFilterCondition(group_column, histogram.groups[group], true)};
-    if (histogram.isEmptyGroup(group))
-        return {{group_column, FilterOp::IsEmpty, {}}};
-    if (!histogram.isOtherGroup(group))
-        return {};
-    std::vector<FilterCondition> conditions{{group_column, FilterOp::IsNotEmpty, {}}};
-    for (const CellValue &value : histogram.groups)
-        conditions.push_back(cellFilterCondition(group_column, value, false));
-    return conditions;
+    return valueGroupConditions(histogram.groups, group_column, group);
 }
 
 std::string histogramSegmentText(const Histogram &histogram, size_t bin, size_t group)

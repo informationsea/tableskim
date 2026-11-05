@@ -146,6 +146,9 @@ private:
     std::shared_ptr<TableModel> density_model_;
     size_t density_x_ = 0; // the selected cell's bins
     size_t density_y_ = 0;
+    // Coloured by a column (c / C): the colour picked (Tab), which Enter
+    // filters to as well.
+    std::optional<size_t> density_color_;
     // Until the plot is done or a cell is chosen, the densest cell is selected.
     bool density_chosen_ = false;
     uint64_t density_generation_ = 0;
@@ -325,7 +328,7 @@ private:
     void closeHistogram();
     bool handleHistogramEvent(ftxui::Event event);
     ftxui::Element renderHistogram();
-    void showDensity(size_t x_column, size_t y_column);
+    void showDensity(size_t x_column, size_t y_column, std::optional<size_t> color_column = std::nullopt);
     void closeDensity();
     bool handleDensityEvent(ftxui::Event event);
     ftxui::Element renderDensity();

@@ -17,9 +17,10 @@ namespace
 {
     const std::filesystem::path kDemoData = TABLESKIM_DEMO_DATA_DIR;
 
-    ScatterState waitForScatter(TableModel &model, size_t x_column, size_t y_column, ScatterOptions options = {})
+    ScatterState waitForScatter(TableModel &model, size_t x_column, size_t y_column, ScatterOptions options = {},
+                                std::optional<size_t> color_column = std::nullopt)
     {
-        model.startScatter(x_column, y_column, options);
+        model.startScatter(x_column, y_column, options, color_column);
         ScatterState state;
         REQUIRE(waitFor([&]
                         { state = model.scatterState(); return state.done; }));
@@ -559,4 +560,101 @@ TEST_CASE("Categorical box counts and sampling do not depend on point sampling",
     CHECK(boxPlotText(result, 1).starts_with("(other): 2097152 rows; statistics estimated from a sample of 1048576 rows; min "));
     CHECK(scatterSummary(result, false).find("box statistics estimated from samples") != std::string::npos);
     CHECK(scatterSummary(with_points, true).find("a sample of 200000 points") != std::string::npos);
+}
+
+TEST_CASE("ScatterCounter colours the points by a third column", "[scatter]")
+{
+    ScatterRange range({}, true);
+    struct Row
+    {
+        CellValue x, y, color;
+    };
+    const std::vector<Row> rows = {
+        {int64_t{1}, int64_t{1}, std::string("a")}, {int64_t{2}, int64_t{2}, std::string("a")},
+        {int64_t{3}, int64_t{3}, std::string("b")}, {int64_t{4}, int64_t{4}, std::string("c")},
+        {int64_t{5}, int64_t{5}, CellValue{}},      {std::string("x"), int64_t{6}, std::string("a")},
+    };
+    for (const Row &row : rows)
+    {
+        range.add(row.x, row.y);
+        range.color().add(row.color);
+    }
+    ScatterOptions options;
+    options.max_colors = 2;
+    const ScatterPlot layout = range.layout(options);
+    REQUIRE(layout.colored);
+    CHECK(layout.colors.values == std::vector<CellValue>{std::string("a"), std::string("b")});
+    CHECK(layout.colors.other);
+    CHECK(layout.colors.empty);
+    REQUIRE(layout.colorCount() == 4);
+
+    ScatterCounter counter(layout, 100);
+    for (size_t i = 0; i < rows.size(); ++i)
+        counter.add(rows[i].x, rows[i].y, i, rows[i].color);
+    const ScatterPlot plot = counter.result();
+    CHECK(plot.pairs == 5);
+    CHECK(plot.color_pairs == std::vector<size_t>{2, 1, 1, 1});
+    REQUIRE(plot.points);
+    std::vector<size_t> colors;
+    for (const ScatterPoint &point : *plot.points)
+        colors.push_back(point.color);
+    CHECK(colors == std::vector<size_t>{0, 0, 1, 2, 3});
+    // Each cell's colours add up to its count; its main colour has most.
+    for (size_t x = 0; x < plot.xBinCount(); ++x)
+    {
+        for (size_t y = 0; y < plot.y_bins.binCount(); ++y)
+        {
+            size_t sum = 0;
+            for (size_t color = 0; color < plot.colorCount(); ++color)
+                sum += plot.color_counts[plot.colorIndex(x, y, color)];
+            CHECK(sum == plot.count(x, y));
+            CHECK(plot.mainColor(x, y).has_value() == (sum > 0));
+        }
+    }
+    CHECK(valueGroupText(plot.colors, 2) == "(other)");
+    CHECK(valueGroupText(plot.colors, 3) == "(empty)");
+
+    // A colour the layout does not have, without "(other)": no fit.
+    ScatterRange two({}, true);
+    two.add(int64_t{1}, int64_t{1});
+    two.add(int64_t{2}, int64_t{2});
+    two.color().add(std::string("a"), 2);
+    ScatterCounter narrow(two.layout({}), 100);
+    CHECK(narrow.fits(int64_t{1}, int64_t{2}, std::string("a")));
+    CHECK_FALSE(narrow.fits(int64_t{1}, int64_t{2}, std::string("z")));
+    CHECK(narrow.fits(int64_t{1}, CellValue{}, std::string("z"))); // not plotted
+}
+
+TEST_CASE("TableModel::startScatter: coloured by a column, scans and GROUP BY agree", "[scatter]")
+{
+    std::vector<std::shared_ptr<TableBook>> books;
+    auto csv = openFirst(books, kDemoData / "normal.csv");
+    auto parquet = openFirst(books, kDemoData / "normal.parquet");
+    const ScatterState scanned = waitForScatter(*csv, 3, 6, {}, 4); // Age, Salary by City
+    const ScatterState grouped = waitForScatter(*parquet, 3, 6, {}, 4);
+    const ScatterPlot &a = scanned.plot;
+    const ScatterPlot &b = grouped.plot;
+    CHECK(scanned.color_column == std::optional<size_t>(4));
+    REQUIRE(a.colored);
+    CHECK(a.colors.values.size() == MAX_VALUE_GROUPS);
+    CHECK(a.colors == b.colors);
+    CHECK(a.color_pairs == b.color_pairs);
+    CHECK(a.color_counts == b.color_counts);
+    size_t sum = 0;
+    for (const size_t count : a.color_pairs)
+        sum += count;
+    CHECK(sum == a.pairs);
+    // A colour's filter keeps the rows counted in it.
+    for (size_t color = 0; color < a.colorCount(); ++color)
+    {
+        INFO(valueGroupText(a.colors, color));
+        auto conditions = valueGroupConditions(a.colors, 4, color);
+        conditions.push_back({3, FilterOp::IsNumber, {}});
+        conditions.push_back({6, FilterOp::IsNumber, {}});
+        const ViewSpec spec{.filter = Filter{Filter::Combine::And, conditions}};
+        csv->setView(spec);
+        REQUIRE(waitFor([&]
+                        { return csv->view() == spec; }));
+        CHECK(csv->rowCount().value == a.color_pairs[color]);
+    }
 }

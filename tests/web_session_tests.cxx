@@ -600,6 +600,30 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
         CHECK(client.call("histogramFilter", sheetParams(id, "\"bin\":99"))["error"].string());
     }
 
+    SECTION("a scatter plot coloured by a column and the filter of a colour")
+    {
+        client.result("startScatter", sheetParams(id, "\"x\":3,\"y\":6,\"colorColumn\":5"));
+        const JsonValue plot = waitDone(client, "scatterState", sheetParams(id, "\"points\":true"));
+        CHECK(plot["colorColumn"].number() == 5);
+        const auto &colors = *plot["colors"].array();
+        REQUIRE(colors.size() > 1);
+        const auto &pairs = *plot["colorPairs"].array();
+        REQUIRE(pairs.size() == colors.size());
+        size_t total = 0;
+        for (const JsonValue &count : pairs)
+            total += static_cast<size_t>(*count.number());
+        CHECK(total == static_cast<size_t>(*plot["pairs"].number()));
+        const auto &point_colors = *plot["pointColors"].array();
+        CHECK(point_colors.size() == total);
+        size_t first = 0;
+        for (const JsonValue &color : point_colors)
+            first += *color.number() == 0 ? 1 : 0;
+        CHECK(first == static_cast<size_t>(*pairs[0].number()));
+        applyConditions(client, id, client.result("scatterFilter", sheetParams(id, "\"color\":0")));
+        CHECK(*client.readyInfo(id)["rows"].number() >= static_cast<double>(first));
+        CHECK(client.call("scatterFilter", sheetParams(id, "\"color\":99"))["error"].string());
+    }
+
     SECTION("a scatter plot, a cell's filter and a categorical X")
     {
         client.result("startScatter", sheetParams(id, "\"x\":3,\"y\":6"));

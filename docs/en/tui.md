@@ -150,9 +150,19 @@ least-squares line of the rows plotted, as in the GUI.
 | `y` / `Y`            | Next / previous column on Y                               |
 | `t`                  | Swap X and Y                                              |
 | `L`                  | Logarithmic / linear colour scale                         |
-| `Enter`              | Filter the sheet to the rows of the selected cell         |
+| `c` / `C`            | Colour by the next / previous column, or by none          |
+| `Tab` / `Shift+Tab`  | Select a colour of the legend (coloured)                  |
+| `Enter`              | Filter the sheet to the rows of the selected cell (and colour) |
 | `F`                  | Clear the filter                                          |
 | `Esc`, `M`, `q`      | Back to the sheet                                         |
+
+Coloured by a third column (`c`), the title says "by" that column and a
+legend under it shows the rows of each of its values (the 8 most frequent,
+then "(other)" and "(empty)", as for a stacked histogram). Each cell takes
+the colour of the value most of its rows have, darker for fewer rows, and
+the line at the bottom says how many of the cell's rows have it. `Tab`
+selects a colour: cells without its rows turn gray, the bottom line counts
+it instead, and `Enter` filters to the rows of the cell with that value.
 
 Y must hold numbers or dates, as for the GUI's [scatter
 plot](gui.md#scatter-plots-and-2d-density). The colours need a terminal

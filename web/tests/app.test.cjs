@@ -334,6 +334,12 @@ async function regressionPage() {
                         categories: [],
                         points: [],
                         fit: null,
+                        colorColumn: null,
+                        colors: [],
+                        otherColor: false,
+                        emptyColor: false,
+                        colorPairs: [],
+                        pointColors: [],
                     });
                 if (method === 'setView') {
                     let filter = 'filter' in params ? params.filter : this.view.filter;
@@ -1546,6 +1552,24 @@ describe('the web app', () => {
         await page.locator('#scatter-boxes:not([disabled])').click();
         await waitForText(page.locator('#scatter-summary'), 'Click a box');
         assert.equal(await page.locator('#scatter-fit').isDisabled(), true, 'no line for categories');
+        await page.context().close();
+    });
+
+    test('colours a scatter plot by a column and filters by a colour of the legend', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        await page.locator('#scatter-button').click();
+        await waitForText(page.locator('#scatter-summary'), '53 rows plotted');
+        await page.selectOption('#scatter-color', '4'); // City
+        await waitForText(page.locator('#scatter-summary'), 'click a colour');
+        // The legend's first entry, Fukuoka, above the plot.
+        const box = await page.locator('#scatter-chart').boundingBox();
+        await page.mouse.move(box.x + 72, box.y + 19);
+        await waitForText(page.locator('.chart-tooltip'), 'Fukuoka');
+        await page.mouse.down();
+        await page.mouse.up();
+        await waitForText(page.locator('#status-rows'), '9 rows of 54');
         await page.context().close();
     });
 

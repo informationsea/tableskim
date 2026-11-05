@@ -26,7 +26,9 @@ class Fl_Widget;
 // least-squares line of all the rows plotted are shown above the plot. With
 // text on X (ScatterPlot::categorical()), each category gets a column: a box
 // plot (double-click to filter to it), the density, or its points spread
-// sideways. "Save Image..." writes the plot as PNG or SVG. Like
+// sideways. "Color by" colours the points by a third column's values; a
+// click on the legend filters to one. "Save Image..." writes the plot as
+// PNG or SVG. Like
 // HistogramWindow it does not subscribe to the model: the owner calls
 // update() after events, and setModel() when the sheet changes.
 class ScatterWindow
@@ -56,6 +58,7 @@ private:
     Fl_Choice *x_choice_ = nullptr;
     Fl_Choice *y_choice_ = nullptr;
     Fl_Choice *mode_choice_ = nullptr;
+    Fl_Choice *color_choice_ = nullptr; // "(none)", then the columns
     Fl_Check_Button *log_button_ = nullptr;
     Fl_Box *status_ = nullptr;
     Fl_Box *stats_ = nullptr;
@@ -67,6 +70,7 @@ private:
     ScatterState state_;
     size_t x_column_ = 0;
     size_t y_column_ = 1;
+    std::optional<size_t> color_column_;
     // After a sheet switch: once its columns are known, drop a plot of
     // columns it does not have.
     bool check_columns_ = false;
@@ -78,19 +82,22 @@ private:
     std::optional<size_t> hovered_point_;                // index into the points
     std::optional<std::pair<size_t, size_t>> hovered_cell_; // x and y bins
     std::optional<size_t> hovered_category_;             // a box
+    std::optional<size_t> hovered_color_;                // an entry of the legend
     std::string title_;
     RowCallback row_callback_;
     // Shared by the column choices; the labels must outlive the items.
     std::vector<std::string> column_labels_;
     std::vector<Fl_Menu_Item> column_menu_;
+    std::vector<Fl_Menu_Item> color_menu_;
 
-    void start(size_t x_column, size_t y_column);
+    void start(size_t x_column, size_t y_column, std::optional<size_t> color_column);
     void rebuildColumnMenu();
     void setTitle(const std::string &sheet_name);
     void showDetail();
     void goToPoint(size_t index);
     void filterCell(size_t x_bin, size_t y_bin);
     void filterCategory(size_t category);
+    void filterColor(size_t color);
     void setMode(int mode);
     // A rectangle in coordinates (see histogramCoordinate()).
     void filterRange(double x_low, double x_high, double y_low, double y_high);
@@ -98,6 +105,7 @@ private:
     static void deferredUpdate(void *data);
     static void columnCallback(Fl_Widget *, void *data);
     static void modeCallback(Fl_Widget *, void *data);
+    static void colorCallback(Fl_Widget *, void *data);
     static void saveCallback(Fl_Widget *, void *data);
     static void closeCallback(Fl_Widget *, void *data);
 };

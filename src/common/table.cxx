@@ -2016,7 +2016,11 @@ void TableModel::continueAfterAppendLocked(size_t first_new)
     {
         const std::shared_ptr<ScatterCounter> counter = scatter_job_ ? scatter_job_->counter : nullptr;
         if (counter && all([&](const TableRow &row)
-                           { return counter->fits(cellAt(row, scatter_.x_column), cellAt(row, scatter_.y_column)); }))
+                           {
+                               return counter->fits(cellAt(row, scatter_.x_column), cellAt(row, scatter_.y_column),
+                                                    scatter_.color_column ? cellAt(row, *scatter_.color_column)
+                                                                          : CellValue{});
+                           }))
             scatter_.done = false;
         else
             restartScatterLocked();
@@ -2867,6 +2871,7 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
     ScatterJob &job = *scatter_job_;
     const size_t x_column = scatter_.x_column;
     const size_t y_column = scatter_.y_column;
+    const std::optional<size_t> color_column = scatter_.color_column;
     const bool counting = scatter_.counting;
     const std::shared_ptr<ScatterRange> range = job.range;
     const std::shared_ptr<ScatterCounter> counter = job.counter;
@@ -2884,7 +2889,11 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
                           .has_value() &&
                       source_->columnValueCounts(y_column, [&](const CellValue &value, size_t count)
                                                  { range->y().add(value, count); }, stop)
-                          .has_value();
+                          .has_value() &&
+                      (!color_column ||
+                       source_->columnValueCounts(*color_column, [&](const CellValue &value, size_t count)
+                                                  { range->color().add(value, count); }, stop)
+                           .has_value());
         }
         catch (const std::exception &)
         {
@@ -2896,7 +2905,7 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
         if (!counted)
         {
             // The source may have added some values before it gave up.
-            scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits);
+            scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits, color_column.has_value());
             return true;
         }
         finishScatterPassLocked(events);
@@ -2910,12 +2919,18 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
     const auto published = scatter_published_;
     lock.unlock();
 
+    static const CellValue no_color;
     for (const auto &[view_row, row] : chunk.rows)
     {
+        const CellValue &color = color_column ? cellAt(*row, *color_column) : no_color;
         if (counting)
-            counter->add(cellAt(*row, x_column), cellAt(*row, y_column), view_row);
+            counter->add(cellAt(*row, x_column), cellAt(*row, y_column), view_row, color);
         else
+        {
             range->add(cellAt(*row, x_column), cellAt(*row, y_column));
+            if (color_column)
+                range->color().add(color);
+        }
     }
     const auto now = std::chrono::steady_clock::now();
     // Copied outside the lock: the points take a while.
@@ -2983,12 +2998,14 @@ void TableModel::finishScatterPassLocked(std::vector<TableEvent> &events)
     events.push_back({TableEvent::Kind::ScatterProgress, 0, scatter_.scanned_rows});
 }
 
-void TableModel::startScatter(size_t x_column, size_t y_column, ScatterOptions options)
+void TableModel::startScatter(size_t x_column, size_t y_column, ScatterOptions options,
+                              std::optional<size_t> color_column)
 {
     {
         std::lock_guard lock(mutex_);
         scatter_.x_column = x_column;
         scatter_.y_column = y_column;
+        scatter_.color_column = color_column;
         scatter_.options = options;
         restartScatterLocked();
     }
@@ -3000,15 +3017,17 @@ void TableModel::restartScatterLocked()
     const size_t x_column = scatter_.x_column;
     const size_t y_column = scatter_.y_column;
     const ScatterOptions options = scatter_.options;
+    const std::optional<size_t> color_column = scatter_.color_column;
     scatter_ = {};
     scatter_.active = true;
     scatter_.x_column = x_column;
     scatter_.y_column = y_column;
+    scatter_.color_column = color_column;
     scatter_.options = options;
     ++scatter_generation_;
     // New accumulators: the worker may still be adding to the old ones.
     scatter_job_ = ScatterJob{};
-    scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits);
+    scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits, color_column.has_value());
 }
 
 void TableModel::cancelScatter()

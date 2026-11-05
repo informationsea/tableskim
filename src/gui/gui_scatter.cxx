@@ -28,6 +28,7 @@ namespace
     const int LOG_WIDTH = 140;
     const int FIT_WIDTH = 150;
     const int SAVE_WIDTH = 100;
+    const int COLOR_LABEL_WIDTH = 64;
     // A category's column: the box takes this part of it, the points are
     // spread over it.
     const double BOX_WIDTH = 0.6;
@@ -104,6 +105,9 @@ private:
     bool dragging_ = false;
     // Gridlines of the last draw (pixels), for drawing them under the points.
     std::vector<int> grid_x_, grid_y_;
+    // The legend's entries of the last draw, for clicks: x, y, w, h and
+    // the colour.
+    std::vector<std::array<int, 5>> legend_entries_;
 
     const ScatterPlot &plot() const { return owner_->state_.plot; }
 
@@ -135,6 +139,52 @@ private:
     bool categorical() const { return plot().categorical(); }
     bool boxMode() const { return owner_->box_ && categorical(); }
     bool densityMode() const { return owner_->density_; }
+    // The points take the colours of their groups, with a legend.
+    bool colorMode() const { return plot().colored && !densityMode() && !boxMode(); }
+
+    std::optional<size_t> legendAt(int mx, int my) const
+    {
+        for (const auto &[ex, ey, ew, eh, color] : legend_entries_)
+        {
+            if (mx >= ex && mx < ex + ew && my >= ey && my < ey + eh)
+                return static_cast<size_t>(color);
+        }
+        return std::nullopt;
+    }
+
+    // A swatch, the name and the rows of each colour, in as many lines as
+    // it takes from (left, top); returns the height used.
+    int drawLegend(int left, int top, int width)
+    {
+        const ScatterPlot &p = plot();
+        const int text_height = fl_height();
+        const int swatch = text_height - 4;
+        int xx = left;
+        int yy = top;
+        for (size_t color = 0; color < p.colorCount(); ++color)
+        {
+            // A colour without a point plotted (empty cells only in rows
+            // left out, say) needs no entry.
+            const size_t count = color < p.color_pairs.size() ? p.color_pairs[color] : 0;
+            if (count == 0)
+                continue;
+            const std::string label =
+                cellDisplayText(valueGroupText(p.colors, color), 24) + " (" + std::to_string(count) + ")";
+            const int entry = swatch + 4 + static_cast<int>(fl_width(label.c_str())) + 2 * TICK_GAP;
+            if (xx > left && xx + entry > left + width)
+            {
+                xx = left;
+                yy += text_height;
+            }
+            legend_entries_.push_back({xx, yy, entry - TICK_GAP, text_height, static_cast<int>(color)});
+            fl_color(valueGroupColor(p.colors, color));
+            fl_rectf(xx, yy + 2, swatch, swatch);
+            fl_color(owner_->hovered_color_ == color ? FL_SELECTION_COLOR : FL_FOREGROUND_COLOR);
+            fl_draw(label.c_str(), static_cast<int>(label.size()), xx + swatch + 4, yy + text_height - fl_descent());
+            xx += entry;
+        }
+        return yy - top + text_height + TICK_GAP;
+    }
 
     // The X a point is drawn at: spread over its category's column.
     double pointX(const ScatterPoint &point) const
@@ -183,11 +233,13 @@ private:
         }
         const int text_height = fl_height();
         // The axes' titles: the Y one turned, left of its labels; the X one
-        // below the labels.
+        // below the labels. The colours' legend above the plot.
         plot_x_ = x() + MARGIN + text_height + TICK_GAP + y_label_width + TICK_GAP;
-        plot_y_ = y() + MARGIN + text_height / 2;
         plot_w_ = std::max(1, x() + w() - MARGIN - legend_width - plot_x_);
-        plot_h_ = std::max(1, h() - 2 * MARGIN - text_height / 2 - 2 * text_height - 2 * TICK_GAP);
+        legend_entries_.clear();
+        const int colors_height = colorMode() ? drawLegend(plot_x_, y() + MARGIN, plot_w_) : 0;
+        plot_y_ = y() + MARGIN + colors_height + text_height / 2;
+        plot_h_ = std::max(1, h() - 2 * MARGIN - colors_height - text_height / 2 - 2 * text_height - 2 * TICK_GAP);
         laid_out_ = true;
     }
 
@@ -289,6 +341,12 @@ private:
         const int height = plot_h_;
         const auto background = rgbOf(FL_BACKGROUND2_COLOR);
         const auto foreground = rgbOf(FL_SELECTION_COLOR);
+        std::vector<std::array<unsigned char, 3>> colors;
+        if (colorMode())
+        {
+            for (size_t color = 0; color < plot().colorCount(); ++color)
+                colors.push_back(rgbOf(valueGroupColor(plot().colors, color)));
+        }
         const auto grid = rgbOf(fl_color_average(FL_FOREGROUND_COLOR, FL_BACKGROUND2_COLOR, 0.15f));
         std::vector<unsigned char> image(static_cast<size_t>(width) * static_cast<size_t>(height) * 3);
         auto pixelAt = [&](int px, int py)
@@ -320,8 +378,9 @@ private:
                 for (int px = std::max(cx - radius, 0); px <= std::min(cx + radius, width - 1); ++px)
                 {
                     unsigned char *pixel = pixelAt(px, py);
+                    const auto &color = point.color < colors.size() ? colors[point.color] : foreground;
                     for (size_t k = 0; k < 3; ++k)
-                        pixel[k] = static_cast<unsigned char>(std::lround(pixel[k] * (1 - alpha) + foreground[k] * alpha));
+                        pixel[k] = static_cast<unsigned char>(std::lround(pixel[k] * (1 - alpha) + color[k] * alpha));
                 }
             }
         }
@@ -499,6 +558,7 @@ private:
         std::optional<size_t> point;
         std::optional<std::pair<size_t, size_t>> cell;
         std::optional<size_t> category;
+        const std::optional<size_t> color = inside && !dragging_ ? legendAt(mx, my) : std::nullopt;
         if (inside && !dragging_)
         {
             if (densityMode())
@@ -508,11 +568,13 @@ private:
             else
                 point = pointAt(mx, my);
         }
-        if (point != owner_->hovered_point_ || cell != owner_->hovered_cell_ || category != owner_->hovered_category_)
+        if (point != owner_->hovered_point_ || cell != owner_->hovered_cell_ ||
+            category != owner_->hovered_category_ || color != owner_->hovered_color_)
         {
             owner_->hovered_point_ = point;
             owner_->hovered_cell_ = cell;
             owner_->hovered_category_ = category;
+            owner_->hovered_color_ = color;
             owner_->showDetail();
             redraw();
         }
@@ -566,6 +628,15 @@ public:
             hover(Fl::event_x(), Fl::event_y(), event == FL_MOVE);
             return 1;
         case FL_PUSH:
+            if (Fl::event_button() == FL_LEFT_MOUSE)
+            {
+                // A colour of the legend: its rows.
+                if (const auto color = legendAt(Fl::event_x(), Fl::event_y()))
+                {
+                    owner_->filterColor(*color);
+                    return 1;
+                }
+            }
             if (Fl::event_button() != FL_LEFT_MOUSE || !inPlot(Fl::event_x(), Fl::event_y()))
                 return 1;
             if (densityMode() && Fl::event_clicks() > 0)
@@ -647,8 +718,12 @@ ScatterWindow::ScatterWindow()
     log_button_ = new Fl_Check_Button(x, MARGIN, LOG_WIDTH, LINE_HEIGHT, "Log color scale");
     log_button_->value(1);
     log_button_->callback(modeCallback, this);
-    const int status_y = MARGIN + LINE_HEIGHT;
-    status_ = new Fl_Box(MARGIN, status_y, WINDOW_WIDTH - 2 * MARGIN, LINE_HEIGHT);
+    const int status_y = MARGIN + LINE_HEIGHT + MARGIN / 2;
+    color_choice_ = new Fl_Choice(MARGIN + COLOR_LABEL_WIDTH, status_y, CHOICE_WIDTH, LINE_HEIGHT, "Color by:");
+    color_choice_->callback(colorCallback, this);
+    color_choice_->tooltip("Colour the points by the values of another column");
+    const int status_x = MARGIN + COLOR_LABEL_WIDTH + CHOICE_WIDTH + MARGIN;
+    status_ = new Fl_Box(status_x, status_y, WINDOW_WIDTH - MARGIN - status_x, LINE_HEIGHT);
     status_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
     const int stats_y = status_y + LINE_HEIGHT;
     const int save_x = WINDOW_WIDTH - MARGIN - SAVE_WIDTH;
@@ -690,7 +765,9 @@ void ScatterWindow::show(std::shared_ptr<TableModel> model, const std::string &s
     model_ = std::move(model);
     setTitle(sheet_name);
     window_->show();
-    start(x_column, y_column);
+    // Not by a column plotted.
+    const bool plotted = color_column_ == x_column || color_column_ == y_column;
+    start(x_column, y_column, plotted ? std::nullopt : color_column_);
 }
 
 void ScatterWindow::setModel(std::shared_ptr<TableModel> model, const std::string &sheet_name)
@@ -703,7 +780,7 @@ void ScatterWindow::setModel(std::shared_ptr<TableModel> model, const std::strin
     setTitle(sheet_name);
     if (window_->shown() && model_)
     {
-        start(x_column_, y_column_);
+        start(x_column_, y_column_, color_column_);
         // The sheet switched to may not have those columns.
         check_columns_ = true;
     }
@@ -722,15 +799,17 @@ void ScatterWindow::setTitle(const std::string &sheet_name)
     window_->copy_label(title_.c_str());
 }
 
-void ScatterWindow::start(size_t x_column, size_t y_column)
+void ScatterWindow::start(size_t x_column, size_t y_column, std::optional<size_t> color_column)
 {
     x_column_ = x_column;
     y_column_ = y_column;
+    color_column_ = color_column;
     hovered_point_.reset();
     hovered_cell_.reset();
     hovered_category_.reset();
+    hovered_color_.reset();
     if (model_)
-        model_->startScatter(x_column, y_column);
+        model_->startScatter(x_column, y_column, {}, color_column);
     update();
 }
 
@@ -754,6 +833,7 @@ void ScatterWindow::update()
         hovered_point_.reset();
         hovered_cell_.reset();
         hovered_category_.reset();
+        hovered_color_.reset();
     }
     state_ = std::move(state);
     // Text on X is best seen as box plots, numbers as points; once the
@@ -774,6 +854,12 @@ void ScatterWindow::update()
     if (check_columns_ && model_ && model_->state() != ModelState::Opening)
     {
         check_columns_ = false;
+        if (state_.active && state_.color_column && *state_.color_column >= columns)
+        {
+            // Without the colour column, which the sheet does not have.
+            start(state_.x_column, state_.y_column, std::nullopt);
+            state_ = model_->scatterState();
+        }
         if (state_.active && (state_.x_column >= columns || state_.y_column >= columns))
         {
             model_->cancelScatter(); // "Choose the columns." instead of an empty plot
@@ -785,6 +871,9 @@ void ScatterWindow::update()
     y_choice_->value(shown ? static_cast<int>(state_.y_column) : -1);
     setActive(x_choice_, model_ && columns > 0);
     setActive(y_choice_, model_ && columns > 0);
+    const bool colored = shown && state_.color_column && *state_.color_column < columns;
+    color_choice_->value(colored ? static_cast<int>(*state_.color_column) + 1 : 0);
+    setActive(color_choice_, shown);
     setActive(log_button_, density_);
     setActive(fit_button_, !state_.plot.categorical());
     setActive(save_button_, state_.active && state_.plot.plottable());
@@ -825,8 +914,17 @@ void ScatterWindow::showDetail()
         const ScatterPoint &point = (*plot.points)[*hovered_point_];
         const std::string x = plot.categorical() ? scatterCategoryText(plot, static_cast<size_t>(point.x))
                                                  : scatterValueText(plot.x_axis, point.x);
-        text = "x = " + x + ", y = " + scatterValueText(plot.y_axis, point.y) + ", row " +
-               std::to_string(point.view_row + 1) + "  Click to go to the row.";
+        text = "x = " + x + ", y = " + scatterValueText(plot.y_axis, point.y);
+        if (plot.colored && point.color < plot.colorCount())
+            text += ", " + cellDisplayText(valueGroupText(plot.colors, point.color), 60);
+        text += ", row " + std::to_string(point.view_row + 1) + "  Click to go to the row.";
+    }
+    else if (hovered_color_ && *hovered_color_ < plot.colorCount() && model_ && state_.color_column)
+    {
+        const size_t count = *hovered_color_ < plot.color_pairs.size() ? plot.color_pairs[*hovered_color_] : 0;
+        text = model_->columnName(*state_.color_column) + ": " +
+               cellDisplayText(valueGroupText(plot.colors, *hovered_color_), 60) + ", " + std::to_string(count) +
+               (count == 1 ? " row (" : " rows (") + percentText(count, plot.pairs) + ")  Click to filter.";
     }
     else if (hovered_category_)
     {
@@ -873,6 +971,12 @@ void ScatterWindow::filterCategory(size_t category)
         addFilterConditions(scatterCategoryConditions(state_.plot, state_.x_column, state_.y_column, category));
 }
 
+void ScatterWindow::filterColor(size_t color)
+{
+    if (state_.done && state_.color_column && color < state_.plot.colorCount())
+        addFilterConditions(valueGroupConditions(state_.plot.colors, *state_.color_column, color));
+}
+
 void ScatterWindow::filterRange(double x_low, double x_high, double y_low, double y_high)
 {
     addFilterConditions(
@@ -910,6 +1014,12 @@ void ScatterWindow::rebuildColumnMenu()
     column_menu_.push_back({nullptr});
     x_choice_->menu(column_menu_.data());
     y_choice_->menu(column_menu_.data());
+    color_menu_.clear();
+    color_menu_.push_back({"(none)", 0, nullptr, nullptr, 0});
+    for (const std::string &label : column_labels_)
+        color_menu_.push_back({label.c_str(), 0, nullptr, nullptr, 0});
+    color_menu_.push_back({nullptr});
+    color_choice_->menu(color_menu_.data());
 }
 
 void ScatterWindow::columnCallback(Fl_Widget *, void *data)
@@ -917,7 +1027,17 @@ void ScatterWindow::columnCallback(Fl_Widget *, void *data)
     auto *self = static_cast<ScatterWindow *>(data);
     const int x = self->x_choice_->value();
     const int y = self->y_choice_->value();
-    self->start(x >= 0 ? static_cast<size_t>(x) : self->x_column_, y >= 0 ? static_cast<size_t>(y) : self->y_column_);
+    self->start(x >= 0 ? static_cast<size_t>(x) : self->x_column_, y >= 0 ? static_cast<size_t>(y) : self->y_column_,
+                self->color_column_);
+}
+
+void ScatterWindow::colorCallback(Fl_Widget *, void *data)
+{
+    auto *self = static_cast<ScatterWindow *>(data);
+    const int value = self->color_choice_->value();
+    if (value >= 0 && self->model_ && self->state_.active)
+        self->start(self->state_.x_column, self->state_.y_column,
+                    value == 0 ? std::nullopt : std::optional<size_t>(static_cast<size_t>(value - 1)));
 }
 
 void ScatterWindow::setMode(int mode)
@@ -928,6 +1048,7 @@ void ScatterWindow::setMode(int mode)
     hovered_point_.reset();
     hovered_cell_.reset();
     hovered_category_.reset();
+    hovered_color_.reset();
 }
 
 void ScatterWindow::modeCallback(Fl_Widget *, void *data)
@@ -946,6 +1067,7 @@ void ScatterWindow::saveCallback(Fl_Widget *, void *data)
     self->hovered_point_.reset();
     self->hovered_cell_.reset();
     self->hovered_category_.reset();
+    self->hovered_color_.reset();
     self->showDetail();
     const char *kind = self->density_ ? "density" : self->box_ ? "boxplot" : "scatter";
     saveWidgetImage(self->chart_, imageFileName(std::string(kind) + "-" + self->model_->columnName(self->state_.x_column) +

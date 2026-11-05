@@ -391,7 +391,7 @@ namespace
         json.key("groups").beginArray();
         for (size_t group = 0; group < histogram.groupCount(); ++group)
             json.value(cellDisplayText(histogramGroupText(histogram, group), 64));
-        json.endArray().key("otherGroup").value(histogram.other_group).key("emptyGroup").value(histogram.empty_group);
+        json.endArray().key("otherGroup").value(histogram.groups.other).key("emptyGroup").value(histogram.groups.empty);
         json.endObject();
     }
 
@@ -1412,7 +1412,15 @@ void WebSession::startScatter(const Params &params, JsonWriter &result)
 {
     ScatterOptions options;
     options.max_points = params["points"].boolean().value_or(true) ? SCATTER_POINTS : 0;
-    sheet(params).model->startScatter(params.index("x"), params.index("y"), options);
+    TableModel &model = *sheet(params).model;
+    std::optional<size_t> color_column;
+    if (!params["colorColumn"].isNull())
+    {
+        color_column = params.index("colorColumn");
+        if (*color_column >= model.columnCount())
+            throw std::invalid_argument("no such column");
+    }
+    model.startScatter(params.index("x"), params.index("y"), options, color_column);
     result.beginObject().endObject();
 }
 
@@ -1431,7 +1439,12 @@ void WebSession::scatterState(const Params &params, JsonWriter &result)
         .value(state.x_column)
         .key("y")
         .value(state.y_column)
-        .key("scannedRows")
+        .key("colorColumn");
+    if (state.color_column)
+        result.value(*state.color_column);
+    else
+        result.null();
+    result.key("scannedRows")
         .value(state.scanned_rows)
         .key("plottable")
         .value(plot.plottable())
@@ -1469,6 +1482,21 @@ void WebSession::scatterState(const Params &params, JsonWriter &result)
     result.endArray().key("boxTexts").beginArray();
     for (size_t category = 0; category < plot.boxes.size(); ++category)
         result.value(boxPlotText(plot, category));
+    // Coloured by a column: its groups (as a stacked histogram's), the
+    // rows plotted in each, and each point's group (with the points).
+    result.endArray().key("colors").beginArray();
+    for (size_t color = 0; color < plot.colorCount(); ++color)
+        result.value(cellDisplayText(valueGroupText(plot.colors, color), 64));
+    result.endArray().key("otherColor").value(plot.colors.other).key("emptyColor").value(plot.colors.empty);
+    result.key("colorPairs").beginArray();
+    for (const size_t count : plot.color_pairs)
+        result.value(count);
+    result.endArray().key("pointColors").beginArray();
+    if (params.flag("points") && plot.points && plot.colored)
+    {
+        for (const ScatterPoint &point : *plot.points)
+            result.value(point.color);
+    }
     // Points as x, y, view row, ... (only when asked for: they are many).
     result.endArray().key("points").beginArray();
     if (params.flag("points") && plot.points)
@@ -1485,6 +1513,15 @@ void WebSession::scatterFilter(const Params &params, JsonWriter &result)
     if (!state.done || !state.plot.plottable())
         throw std::invalid_argument("the plot is not ready");
     const ScatterPlot &plot = state.plot;
+    if (!params["color"].isNull())
+    {
+        // A colour of the legend.
+        const size_t color = params.index("color");
+        if (!state.color_column || color >= plot.colorCount())
+            throw std::invalid_argument("no such colour");
+        writeConditions(result, valueGroupConditions(plot.colors, *state.color_column, color));
+        return;
+    }
     if (!params["category"].isNull())
     {
         const size_t category = params.index("category");
