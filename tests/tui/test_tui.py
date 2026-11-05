@@ -91,6 +91,15 @@ class FirstRowTest(TuiTestCase):
 
 
 class ChartNarrowingTest(TuiTestCase):
+    def test_text_histogram_selects_a_bar_after_the_first(self):
+        path = self.temp_file("kinds.csv", "kind\na\na\na\nb\n")
+        tui = self.run_tui(path)
+        tui.wait_text("4 rows")
+        tui.send("B")
+        tui.wait_text("75%")
+        tui.send("down", "enter", "esc")
+        tui.wait_text("1 row of 4")
+
     def test_chart_only_filter_can_be_cleared_without_adding_a_condition(self):
         path = self.temp_file("numbers.csv", "value\n1\n2\n3\n4\n")
         tui = self.run_tui(path)

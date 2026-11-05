@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdio>
 
+#include <re2/re2.h>
+
 namespace
 {
     // Commas between the groups of three digits of a plain number's integer
@@ -721,15 +723,22 @@ std::string histogramGroupText(const Histogram &histogram, size_t group)
 
 std::vector<FilterCondition> valueGroupConditions(const ValueGroups &groups, size_t column, size_t group)
 {
+    // Equality filters interpret numbers and dates. Groups instead preserve
+    // the complete, case-sensitive cell text, including regex metacharacters.
+    const auto condition = [&](const CellValue &value, bool equal)
+    {
+        return FilterCondition{column, equal ? FilterOp::Matches : FilterOp::NotMatches,
+                               "(?-i)\\A" + re2::RE2::QuoteMeta(formatCell(value)) + "\\z"};
+    };
     if (group < groups.values.size())
-        return {cellFilterCondition(column, groups.values[group], true)};
+        return {condition(groups.values[group], true)};
     if (groups.isEmpty(group))
         return {{column, FilterOp::IsEmpty, {}}};
     if (!groups.isOther(group))
         return {};
     std::vector<FilterCondition> conditions{{column, FilterOp::IsNotEmpty, {}}};
     for (const CellValue &value : groups.values)
-        conditions.push_back(cellFilterCondition(column, value, false));
+        conditions.push_back(condition(value, false));
     return conditions;
 }
 

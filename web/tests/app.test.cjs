@@ -1519,6 +1519,38 @@ describe('the web app', () => {
         await page.context().close();
     });
 
+    for (const chart of ['histogram', 'scatter']) {
+        test(`${chart} group clicks preserve numeric-looking strings`, async () => {
+            const page = await newPage();
+            await open(page, {
+                name: 'groups.csv',
+                mimeType: 'text/csv',
+                buffer: Buffer.from('x,y,kind\n10,20,1\n10,20,01\n'),
+            });
+            await cell(page, 0, 0).click();
+            await page.locator(`#${chart}-button`).click();
+            if (chart === 'histogram') {
+                await page.selectOption('#histogram-group', '2');
+                await waitForText(page.locator('#histogram-legend'), '01');
+                const segment = page.locator('#histogram-chart .segment').first();
+                await segment.hover();
+                await waitForText(page.locator('.chart-tooltip'), '01');
+                await segment.click();
+            } else {
+                await page.selectOption('#scatter-color', '2');
+                await waitForText(page.locator('#scatter-summary'), 'click a colour');
+                const box = await page.locator('#scatter-chart').boundingBox();
+                await page.mouse.move(box.x + 72, box.y + 19);
+                await waitForText(page.locator('.chart-tooltip'), '01');
+                await page.mouse.click(box.x + 72, box.y + 19);
+            }
+            await waitForText(page.locator('#status-rows'), '1 row of 2');
+            await waitForText(cell(page, 0, 2), '01');
+            assert.equal(await cell(page, 0, 2).textContent(), '01');
+            await page.context().close();
+        });
+    }
+
     test('saves the charts as PNG and SVG', async () => {
         const page = await newPage();
         await open(page, demo('normal.csv'));

@@ -688,3 +688,61 @@ TEST_CASE("a group's filter keeps the rows counted in its part of the bin")
         }
     }
 }
+
+TEST_CASE("value groups and their filters use exact cell text")
+{
+    const std::vector<CellValue> values = {
+        std::string("1"), std::string("01"), std::string("1.0"),
+        std::string("A"), std::string("a"), std::string("a.b"), std::string("axb"),
+        std::string("line\nbreak"), std::string("line\nbreak\n"),
+        std::string("2024-01-01"), std::string("2024-01-01 00:00:00"),
+        std::string("\\E[日本]"), CellValue{}, std::string(),
+    };
+    const size_t max_groups = GENERATE(2, 20);
+    HistogramRange range({}, true);
+    for (const CellValue &value : values)
+    {
+        range.add(int64_t{1});
+        range.addGroup(value);
+    }
+    HistogramCounter counter(range.layout(30, max_groups));
+    for (const CellValue &value : values)
+        counter.addGrouped(int64_t{1}, value);
+    const Histogram &histogram = counter.result();
+    REQUIRE(histogram.values == values.size());
+    for (size_t group = 0; group < histogram.groupCount(); ++group)
+    {
+        INFO(histogramGroupText(histogram, group));
+        const auto conditions = histogramGroupConditions(histogram, 1, group);
+        REQUIRE_FALSE(filterError(Filter{Filter::Combine::And, conditions}));
+        size_t kept = 0;
+        for (const CellValue &value : values)
+            kept += std::all_of(conditions.begin(), conditions.end(), [&](const FilterCondition &condition)
+                                { return cellMatchesCondition(value, condition); });
+        CHECK(kept == histogram.groupCount(0, group));
+    }
+}
+
+TEST_CASE("value groups combine typed cells with the same exact text")
+{
+    ValueGroupAccumulator stats;
+    const std::vector<CellValue> values{int64_t{1}, 1.0, std::string("1"), std::string("01"), true};
+    for (const CellValue &value : values)
+        stats.add(value);
+    const ValueGroups groups = ValueGroups::fromStats(stats.result(), MAX_VALUE_GROUPS);
+    REQUIRE(groups.values.size() == 3);
+    CHECK_FALSE(groups.other);
+    CHECK(groups.groupOf(values[0]) == groups.groupOf(values[1]));
+    CHECK(groups.groupOf(values[0]) == groups.groupOf(values[2]));
+    CHECK(groups.groupOf(values[0]) != groups.groupOf(values[3]));
+    for (size_t group = 0; group < groups.count(); ++group)
+    {
+        const auto conditions = valueGroupConditions(groups, 0, group);
+        for (const CellValue &value : values)
+        {
+            const bool kept = std::all_of(conditions.begin(), conditions.end(), [&](const FilterCondition &condition)
+                                         { return cellMatchesCondition(value, condition); });
+            CHECK(kept == (groups.groupOf(value) == group));
+        }
+    }
+}

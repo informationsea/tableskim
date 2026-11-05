@@ -188,9 +188,12 @@ that column's values, and the parts of a bar add up to its count. The 8
 most frequent non-empty values of the second column (over the rows of the
 view) are the groups; its other values are counted together as "(other)",
 and its empty cells as "(empty)". The bins are the same as without
-stacking. Choosing a part of a bar adds the bar's conditions and one for
-the group: `=` its value, `is empty` for "(empty)", or, for "(other)",
-`is not empty` and `≠` each of the other groups. Stacking needs a pass
+stacking. Groups compare the full cell text, case-sensitively: "1" and
+"01" are separate, while typed values with the same text share a group.
+Choosing a part of a bar adds the bar's conditions and an exact-text
+regular expression for the group, `is empty` for "(empty)", or, for
+"(other)", `is not empty` and the negation of each group's expression.
+Stacking needs a pass
 over the rows, so for Parquet, JSON and DuckDB files only the first pass,
 which finds the range and the groups, is done inside the database.
 
@@ -242,8 +245,8 @@ rounded a little finer than the bins.
 The points can be coloured by a third column. Its values are grouped as
 for a [stacked histogram](#stacked-histograms): the 8 most frequent
 non-empty values (over the rows of the view), "(other)" and "(empty)".
-Choosing a colour adds the group's conditions on that column (`=` its
-value, `is empty`, or `is not empty` and `≠` each other group). For
+Choosing a colour adds the group's exact-text conditions on that column,
+as for a stacked histogram. For
 Parquet, JSON and DuckDB files the groups are found inside the database,
 as the ranges are.
 

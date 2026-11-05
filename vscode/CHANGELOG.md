@@ -17,6 +17,8 @@ The first release, as a preview.
 - Sorting, filters, search, statistics, histograms (stacked by another
   column too), scatter plots, Group By, SQL, exports and conversion to
   Parquet or DuckDB, as in TableSkim's web app.
+- Chart group filters preserve exact cell text, including leading zeros
+  and case, so the rows kept match the group's count.
 - Exports and chart images are saved where you choose; the file viewed is
   never written.
 - Asks whether to read the file again when it changes on disk;

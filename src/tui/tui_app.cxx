@@ -2230,7 +2230,8 @@ Element TuiApp::renderHistogram()
     const bool stacked = hg.grouped && hg.binCount() > 0;
     if (!stacked || histogram_group_ >= hg.groupCount())
         histogram_group_.reset();
-    histogram_selected_ = std::min(histogram_selected_, hg.binCount() > 0 ? hg.binCount() - 1 : 0);
+    const size_t bars = hg.binCount() > 0 ? hg.binCount() : hg.top.size();
+    histogram_selected_ = std::min(histogram_selected_, bars > 0 ? bars - 1 : 0);
 
     // A stacked histogram's legend, with the selected bar's count of each
     // group, on as many lines as it takes.

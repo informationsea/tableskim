@@ -149,14 +149,14 @@ public:
     void add(const CellValue &x, const CellValue &y);
     HistogramRange &x() { return x_; }
     HistogramRange &y() { return y_; }
-    ColumnStatsAccumulator &color() { return colors_; }
+    ValueGroupAccumulator &color() { return colors_; }
     // Axes and empty density bins.
     ScatterPlot layout(const ScatterOptions &options) const;
 
 private:
     HistogramRange x_;
     HistogramRange y_;
-    ColumnStatsAccumulator colors_;
+    ValueGroupAccumulator colors_;
     bool colored_ = false;
 };
 

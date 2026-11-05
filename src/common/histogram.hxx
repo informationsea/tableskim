@@ -33,7 +33,7 @@ enum class TimeUnit
 };
 
 // The groups a column's values are told apart by colour in: its most
-// frequent non-empty values, then "(other)" for its other values and
+// frequent non-empty cell texts, then "(other)" for its other values and
 // "(empty)" for empty cells, when there are any.
 struct ValueGroups
 {
@@ -53,6 +53,19 @@ struct ValueGroups
 
 // Groups told apart by colour, at most (the categorical palette's slots).
 constexpr size_t MAX_VALUE_GROUPS = 8;
+
+// Group identity is the full cell text, as used by a group's exact filter.
+// Typed values with the same text therefore share a group too.
+class ValueGroupAccumulator
+{
+public:
+    explicit ValueGroupAccumulator(ColumnStatsLimits limits = {}) : stats_(limits) {}
+    void add(const CellValue &value, size_t count = 1);
+    ColumnStats result() const { return stats_.result(); }
+
+private:
+    ColumnStatsAccumulator stats_;
+};
 
 struct Histogram
 {
@@ -110,7 +123,7 @@ public:
 
 private:
     ColumnStatsAccumulator stats_;
-    ColumnStatsAccumulator groups_;
+    ValueGroupAccumulator groups_;
     bool grouped_ = false;
     size_t numbers_ = 0;
     size_t times_ = 0;

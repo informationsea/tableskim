@@ -701,6 +701,36 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
     }
 }
 
+TEST_CASE("WebSession chart group filters preserve exact strings")
+{
+    const std::filesystem::path file = std::filesystem::temp_directory_path() / "chart-groups.csv";
+    std::ofstream(file) << "x,y,kind\n10,20,1\n10,20,01\n";
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    client.result("open", "{\"path\":\"" + jsonPath(file.string()) + "\",\"header\":\"yes\"}");
+    const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"chart-groups.csv\"}")["sheet"].number());
+    REQUIRE(*client.readyInfo(id)["rows"].number() == 2);
+    SECTION("stacked histogram")
+    {
+        client.result("startHistogram", sheetParams(id, "\"column\":0,\"groupColumn\":2"));
+        const JsonValue state = waitDone(client, "histogramState", sheetParams(id));
+        REQUIRE(*(*state["histogram"]["groups"].array())[0].string() == "01");
+        CHECK(*(*(*state["histogram"]["bins"].array())[0]["groups"].array())[0].number() == 1);
+        applyConditions(client, id, client.result("histogramFilter", sheetParams(id, "\"bin\":0,\"group\":0")));
+    }
+    SECTION("scatter legend")
+    {
+        client.result("startScatter", sheetParams(id, "\"x\":0,\"y\":1,\"colorColumn\":2"));
+        const JsonValue state = waitDone(client, "scatterState", sheetParams(id));
+        REQUIRE(*(*state["colors"].array())[0].string() == "01");
+        CHECK(*(*state["colorPairs"].array())[0].number() == 1);
+        applyConditions(client, id, client.result("scatterFilter", sheetParams(id, "\"color\":0")));
+    }
+    CHECK(*client.readyInfo(id)["rows"].number() == 1);
+    CHECK(cell(client.rows(id, 0, 0), 0, 2) == "01");
+    std::filesystem::remove(file);
+}
+
 TEST_CASE("WebSession exports a view and groups it as jobs")
 {
     std::atomic<unsigned> session_events = 0;

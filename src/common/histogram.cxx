@@ -124,12 +124,22 @@ std::optional<size_t> ValueGroups::groupOf(const CellValue &value) const
     if (isEmptyCell(value))
         return empty ? std::optional<size_t>(count() - 1) : std::nullopt;
     // Few groups: a linear search is quick enough.
-    const auto it = std::find(values.begin(), values.end(), value);
+    const auto it = std::holds_alternative<std::string>(value)
+        ? std::find(values.begin(), values.end(), value)
+        : std::find(values.begin(), values.end(), CellValue{formatCell(value)});
     if (it != values.end())
         return static_cast<size_t>(it - values.begin());
     if (other)
         return values.size();
     return std::nullopt;
+}
+
+void ValueGroupAccumulator::add(const CellValue &value, size_t count)
+{
+    if (std::holds_alternative<std::string>(value) || isEmptyCell(value))
+        stats_.add(value, count);
+    else
+        stats_.add(formatCell(value), count);
 }
 
 std::vector<double> numberHistogramEdges(double min, double max, bool integers, size_t target, int *decimals)
