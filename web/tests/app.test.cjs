@@ -1525,7 +1525,8 @@ describe('the web app', () => {
             await open(page, {
                 name: 'groups.csv',
                 mimeType: 'text/csv',
-                buffer: Buffer.from('x,y,kind\n10,20,1\n10,20,01\n'),
+                // Give "01" more rows so it is first regardless of tie ordering.
+                buffer: Buffer.from('x,y,kind\n10,20,1\n10,20,01\n10,20,01\n'),
             });
             await cell(page, 0, 0).click();
             await page.locator(`#${chart}-button`).click();
@@ -1544,7 +1545,7 @@ describe('the web app', () => {
                 await waitForText(page.locator('.chart-tooltip'), '01');
                 await page.mouse.click(box.x + 72, box.y + 19);
             }
-            await waitForText(page.locator('#status-rows'), '1 row of 2');
+            await waitForText(page.locator('#status-rows'), '2 rows of 3');
             await waitForText(cell(page, 0, 2), '01');
             assert.equal(await cell(page, 0, 2).textContent(), '01');
             await page.context().close();
