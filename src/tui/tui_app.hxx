@@ -137,6 +137,9 @@ private:
     std::shared_ptr<TableModel> histogram_model_;
     size_t histogram_selected_ = 0;
     size_t histogram_top_ = 0; // first bar shown when they do not all fit
+    // Stacked by a column (g / G): the group picked in the selected bar
+    // (Tab), which Enter filters to as well.
+    std::optional<size_t> histogram_group_;
 
     // 2D density (M): shown instead of the sheet like the histogram; the
     // selected cell can filter the sheet.
@@ -318,7 +321,7 @@ private:
     ftxui::Element renderSidebar(int width);
     ftxui::Element renderStatsSidebar(int width);
     void showColumnStats();
-    void showHistogram(size_t column);
+    void showHistogram(size_t column, std::optional<size_t> group_column = std::nullopt);
     void closeHistogram();
     bool handleHistogramEvent(ftxui::Event event);
     ftxui::Element renderHistogram();

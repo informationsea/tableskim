@@ -118,6 +118,25 @@ class ChartNarrowingTest(TuiTestCase):
         tui.wait_text("2 rows of 4")
         self.assertNotIn("Additional narrowing:", tui.text())
 
+    def test_histogram_stacked_by_a_column_filters_to_a_part(self):
+        path = self.temp_file("kinds.csv", "value,kind\n1,a\n1,b\n2,a\n2,a\n")
+        tui = self.run_tui(path)
+        tui.wait_text("4 rows")
+        tui.send("B")
+        tui.wait_text("4 numbers")
+        tui.send("g")  # the next column, as the histogram's own is skipped
+        tui.wait_text("Histogram: value  by kind")
+        tui.wait_text("■ a 1")  # the first bar: one "a" and one "b"
+        tui.wait_text("■ b 1")
+        tui.send("tab", "tab")
+        tui.wait_text("b: 1 row (50% of the bin)")
+        tui.send("enter")
+        tui.wait_text("1 number")
+        tui.send("esc")
+        tui.wait_text("1 row of 4")
+        tui.send("B", "g", "g")  # by kind, then by none
+        tui.wait_for(lambda text: "Histogram: value" in text and "by kind" not in text)
+
 
 class HiddenColumnsTest(TuiTestCase):
     def test_histogram_columns_skip_hidden_ones(self):

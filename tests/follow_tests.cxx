@@ -413,6 +413,27 @@ TEST_CASE("readAppended: statistics, histograms and filters go on with the new r
         CHECK(model->histogramState().generation != generation);
         CHECK(model->histogramState().histogram.edges.back() >= 1000);
     }
+    SECTION("a grouped histogram goes on with rows of its groups")
+    {
+        model->startHistogram(0, 10, 1);
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done; }));
+        const uint64_t generation = model->histogramState().generation;
+        REQUIRE(model->histogramState().histogram.groupCount() == 2);
+        file.write("50,odd\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done && model->histogramState().histogram.values == 101; }));
+        CHECK(model->histogramState().generation == generation);
+
+        // A new group starts it over, with the group.
+        file.write("60,prime\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done && model->histogramState().histogram.values == 102; }));
+        CHECK(model->histogramState().generation != generation);
+        CHECK(model->histogramState().histogram.groupCount() == 3);
+    }
     SECTION("an unsorted filter takes the matching rows at its end")
     {
         const ViewSpec odd{.filter = Filter{Filter::Combine::And, {{1, FilterOp::Equals, "odd"}}}};

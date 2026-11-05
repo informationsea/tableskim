@@ -31,6 +31,18 @@
     --seq-3: #256abf;
     --seq-4: #184f95;
     --seq-5: #0d366b;
+    /* Groups of a stacked histogram: the categorical slots in their fixed
+       order (as in the GUI), then grays for "(other)" and "(empty)". */
+    --cat-1: #2a78d6;
+    --cat-2: #eb6834;
+    --cat-3: #1baf7a;
+    --cat-4: #eda100;
+    --cat-5: #e87ba4;
+    --cat-6: #008300;
+    --cat-7: #6250d6;
+    --cat-8: #e34948;
+    --cat-other: #8f8d86;
+    --cat-empty: #c8c6bf;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -62,6 +74,16 @@
         --seq-3: #3987e5;
         --seq-4: #6da7ec;
         --seq-5: #b7d3f6;
+        --cat-1: #3987e5;
+        --cat-2: #d95926;
+        --cat-3: #199e70;
+        --cat-4: #c98500;
+        --cat-5: #d55181;
+        --cat-6: #008300;
+        --cat-7: #9085e9;
+        --cat-8: #e66767;
+        --cat-other: #77756f;
+        --cat-empty: #4a4945;
     }
 }
 

@@ -549,6 +549,44 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
         CHECK(*client.readyInfo(id)["rows"].number() == first_count);
     }
 
+    SECTION("a histogram stacked by a column and the filter of a part of a bar")
+    {
+        client.result("startHistogram", sheetParams(id, "\"column\":3,\"bins\":10,\"groupColumn\":5"));
+        const JsonValue state = waitDone(client, "histogramState", sheetParams(id));
+        CHECK(state["groupColumn"].number() == 5);
+        const JsonValue &histogram = state["histogram"];
+        const auto &groups = *histogram["groups"].array();
+        REQUIRE(groups.size() > 1);
+        const auto &bins = *histogram["bins"].array();
+        size_t bin_index = 0;
+        size_t group_index = 0;
+        size_t part = 0;
+        for (size_t b = 0; b < bins.size(); ++b)
+        {
+            const auto &counts = *bins[b]["groups"].array();
+            REQUIRE(counts.size() == groups.size());
+            size_t sum = 0;
+            for (size_t g = 0; g < counts.size(); ++g)
+            {
+                const auto count = static_cast<size_t>(*counts[g].number());
+                sum += count;
+                if (count > part)
+                {
+                    part = count;
+                    bin_index = b;
+                    group_index = g;
+                }
+            }
+            CHECK(sum == static_cast<size_t>(*bins[b]["count"].number()));
+        }
+        REQUIRE(part > 0);
+        applyConditions(client, id,
+                        client.result("histogramFilter", sheetParams(id, "\"bin\":" + std::to_string(bin_index) +
+                                                                             ",\"group\":" + std::to_string(group_index))));
+        CHECK(*client.readyInfo(id)["rows"].number() == part);
+        CHECK(client.call("startHistogram", sheetParams(id, "\"column\":3,\"groupColumn\":99"))["error"].string());
+    }
+
     SECTION("the most frequent values of a text column and the filter of one")
     {
         client.result("startHistogram", sheetParams(id, "\"column\":4"));

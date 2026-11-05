@@ -106,7 +106,9 @@ count and percentage.
 | -------------------- | -------------------------------------------------------- |
 | `↑` / `↓`, `k` / `j` | Select a bar; its exact range is shown at the bottom      |
 | `←` / `→`, `h` / `l` | Histogram of the previous / next column                   |
-| `Enter`              | Filter the sheet to the rows of the selected bar          |
+| `Enter`              | Filter the sheet to the rows of the selected bar (or part) |
+| `g` / `G`            | Stack the bars by the next / previous column, or by none  |
+| `Tab` / `Shift+Tab`  | Select a part of the selected stacked bar                 |
 | `F`                  | Clear the filter                                          |
 | `Esc`, `B`, `q`      | Back to the sheet                                         |
 
@@ -115,6 +117,13 @@ dates into bins of whole days, months, years and so on, and text columns
 show their most frequent values. After `Enter`, the histogram is computed
 again for the rows left, so you can narrow down step by step; press `Esc`
 to see the filtered sheet.
+
+Stacked by a column (`g`), the title says "by" that column, each bar is
+split into a colour per value of it (its 8 most frequent values, then
+"(other)" and "(empty)"), and the legend under the title shows each
+group's count in the selected bar. `Tab` picks one of those groups, whose
+count is shown at the bottom; `Enter` then filters to the rows of that
+part of the bar.
 
 ![Histogram of a date column](../images/tui-histogram-dates.png)
 

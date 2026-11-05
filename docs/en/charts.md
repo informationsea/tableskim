@@ -52,7 +52,9 @@ How to read it:
   less than 50.
 
 Dates are counted into whole days, months or years; a column of text shows
-its most frequent values instead, longest bar first. See
+its most frequent values instead, longest bar first. **Stack by** another
+column (Region, say) splits each bar by that column's values, in a colour
+for each, so that you can see what each range is made of. See
 [Histograms](gui.md#histograms) for every option and
 [How bins are chosen](filtering.md#how-bins-are-chosen) for the details.
 
@@ -225,7 +227,8 @@ its SVG.
 
 The terminal UI has the same tools, drawn with characters:
 
-- `B` shows a histogram of the cursor's column; `Enter` filters to a bar.
+- `B` shows a histogram of the cursor's column; `Enter` filters to a bar,
+  and `g` / `G` stack its bars by another column.
 - `M` shows the density of two columns (select them first), or box plots
   when X holds text; `b` switches between the box plots and the density,
   `Enter` filters to a box or cell.

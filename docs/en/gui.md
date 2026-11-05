@@ -248,6 +248,16 @@ sheet to that value.
 
 ![Most frequent values of a text column](../images/gui-histogram-text.png)
 
+**Stack by** splits each bar of numbers or dates by the values of another
+column, in a colour for each value, with a legend above the chart: a
+histogram of ages stacked by City shows how many people of each age live
+in each city. The 8 most frequent values get a colour of their own; the
+others are counted together as **(other)** (gray), and empty cells as
+**(empty)** (light gray). Pointing at a part of a bar shows its group and
+count as well, and double-clicking it filters the sheet to the rows of
+that bar *and* that group. Choose **(none)** to go back to plain bars; the
+choice is kept when you choose another column.
+
 How bins are chosen is described in [Sorting, Filtering, Searching and
 Statistics](filtering.md#histograms).
 

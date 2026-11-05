@@ -206,6 +206,13 @@ std::string histogramBinRange(const Histogram &histogram, size_t bin);
 std::vector<FilterCondition> histogramBinConditions(const Histogram &histogram, size_t column, size_t bin);
 // "53 numbers in 10 bins, 2 other values, 1 empty"
 std::string histogramSummary(const Histogram &histogram);
+// A group of a stacked histogram: its value as text, "(other)" or "(empty)".
+std::string histogramGroupText(const Histogram &histogram, size_t group);
+// Conditions that keep the rows of a group: equal to its value, empty, or
+// for "(other)" neither empty nor equal to any other group.
+std::vector<FilterCondition> histogramGroupConditions(const Histogram &histogram, size_t group_column, size_t group);
+// "Osaka: 12 rows (40.0% of the bin)", a group's part of a bin.
+std::string histogramSegmentText(const Histogram &histogram, size_t bin, size_t group);
 
 // Scatter plot texts. A coordinate on an axis (see histogramCoordinate()):
 // the number, or the time as a date or date-time.

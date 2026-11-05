@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 
+#include <FL/Fl_Choice.H>
 #include <FL/Fl_Input.H>
 
 #include "file_util.hxx"
@@ -237,6 +238,44 @@ TEST_CASE("GUI: charts and statistics start on a visible column", "[regression]"
     window->show_scatter_plot();
     CHECK(view->model()->scatterState().x_column == 1);
     CHECK(view->model()->scatterState().y_column == 3);
+}
+
+TEST_CASE("GUI: a histogram stacked by a column")
+{
+    Window window(kDemoData / "normal.parquet");
+    GuiTableView *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 54));
+    view->set_selection(0, 3, 0, 3); // Age
+    window->show_histogram();
+    Fl_Window *histogram = shownWindow("Histogram");
+    REQUIRE(histogram);
+    Fl_Choice *stack_by = findChoice(*histogram, "Stack by:");
+    REQUIRE(stack_by);
+    REQUIRE(waitFor([&] { return view->model()->histogramState().done; }));
+    CHECK(stack_by->value() == 0); // (none)
+
+    stack_by->value(5); // City
+    stack_by->do_callback();
+    HistogramState state;
+    REQUIRE(waitFor([&]
+                    { state = view->model()->histogramState(); return state.done; }));
+    CHECK(state.column == 3);
+    CHECK(state.group_column == std::optional<size_t>(4));
+    CHECK(state.histogram.grouped);
+    CHECK(state.histogram.groupCount() > 1);
+    CHECK(stack_by->value() == 5);
+
+    // Another column keeps the stacking.
+    Fl_Choice *column = findChoice(*histogram, "Column:");
+    REQUIRE(column);
+    column->value(6); // Salary
+    column->do_callback();
+    CHECK(view->model()->histogramState().column == 6);
+    CHECK(view->model()->histogramState().group_column == std::optional<size_t>(4));
+
+    stack_by->value(0);
+    stack_by->do_callback();
+    CHECK_FALSE(view->model()->histogramState().group_column);
 }
 
 TEST_CASE("GUI: edits are saved and the file is read again")

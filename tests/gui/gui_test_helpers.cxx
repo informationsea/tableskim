@@ -7,6 +7,7 @@
 
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Choice.H>
 #include <FL/Fl_Group.H>
 
 #include "file_util.hxx"
@@ -100,6 +101,29 @@ namespace gui_test
                 return false;
             button->do_callback();
             return true; });
+    }
+
+    Fl_Window *shownWindow(const std::string &title)
+    {
+        for (Fl_Window *window = Fl::first_window(); window; window = Fl::next_window(window))
+        {
+            if (window->label() && std::string(window->label()).starts_with(title))
+                return window;
+        }
+        return nullptr;
+    }
+
+    Fl_Choice *findChoice(Fl_Window &window, const std::string &label)
+    {
+        Fl_Choice *found = nullptr;
+        visitWidgets(window, [&](Fl_Widget &widget)
+                     {
+            auto *choice = dynamic_cast<Fl_Choice *>(&widget);
+            if (!choice || !choice->label() || choice->label() != label)
+                return false;
+            found = choice;
+            return true; });
+        return found;
     }
 
     Window::Window()

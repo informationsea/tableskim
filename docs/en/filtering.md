@@ -181,6 +181,19 @@ edit these conditions in the Filter pane (`f` in the TUI).
 For Parquet, JSON and DuckDB files the values are counted inside the
 database.
 
+### Stacked histograms
+
+A histogram can be stacked by a second column: each bar is then split by
+that column's values, and the parts of a bar add up to its count. The 8
+most frequent non-empty values of the second column (over the rows of the
+view) are the groups; its other values are counted together as "(other)",
+and its empty cells as "(empty)". The bins are the same as without
+stacking. Choosing a part of a bar adds the bar's conditions and one for
+the group: `=` its value, `is empty` for "(empty)", or, for "(other)",
+`is not empty` and `≠` each of the other groups. Stacking needs a pass
+over the rows, so for Parquet, JSON and DuckDB files only the first pass,
+which finds the range and the groups, is done inside the database.
+
 ## Scatter plots and 2D density
 
 A scatter plot draws one column (X) against another (Y) over the rows of

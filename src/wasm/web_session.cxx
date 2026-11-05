@@ -375,11 +375,23 @@ namespace
                 .key("range")
                 .value(histogramBinRange(histogram, bin))
                 .key("count")
-                .value(histogram.counts[bin])
-                .endObject();
+                .value(histogram.counts[bin]);
+            if (histogram.grouped)
+            {
+                json.key("groups").beginArray();
+                for (size_t group = 0; group < histogram.groupCount(); ++group)
+                    json.value(histogram.groupCount(bin, group));
+                json.endArray();
+            }
+            json.endObject();
         }
         json.endArray().key("top");
         writeTop(json, histogram.top);
+        // Stacked: the groups' names, in the order of each bin's counts.
+        json.key("groups").beginArray();
+        for (size_t group = 0; group < histogram.groupCount(); ++group)
+            json.value(cellDisplayText(histogramGroupText(histogram, group), 64));
+        json.endArray().key("otherGroup").value(histogram.other_group).key("emptyGroup").value(histogram.empty_group);
         json.endObject();
     }
 
@@ -1324,7 +1336,15 @@ void WebSession::statsState(const Params &params, JsonWriter &result)
 
 void WebSession::startHistogram(const Params &params, JsonWriter &result)
 {
-    sheet(params).model->startHistogram(params.index("column"), std::clamp<size_t>(params.index("bins", 30), 2, 200));
+    TableModel &model = *sheet(params).model;
+    std::optional<size_t> group_column;
+    if (!params["groupColumn"].isNull())
+    {
+        group_column = params.index("groupColumn");
+        if (*group_column >= model.columnCount())
+            throw std::invalid_argument("no such column");
+    }
+    model.startHistogram(params.index("column"), std::clamp<size_t>(params.index("bins", 30), 2, 200), group_column);
     histogramState(params, result);
 }
 
@@ -1340,7 +1360,12 @@ void WebSession::histogramState(const Params &params, JsonWriter &result)
         .value(state.counting)
         .key("column")
         .value(state.column)
-        .key("scannedRows")
+        .key("groupColumn");
+    if (state.group_column)
+        result.value(*state.group_column);
+    else
+        result.null();
+    result.key("scannedRows")
         .value(state.scanned_rows)
         .key("histogram");
     writeHistogram(result, state.histogram);
@@ -1356,7 +1381,19 @@ void WebSession::histogramFilter(const Params &params, JsonWriter &result)
         throw std::invalid_argument("no such bin");
     // Without bins, the histogram shows the most frequent values instead.
     if (histogram.binCount() > 0)
-        writeConditions(result, histogramBinConditions(histogram, state.column, bin));
+    {
+        std::vector<FilterCondition> conditions = histogramBinConditions(histogram, state.column, bin);
+        // A part of a stacked bar: its group too.
+        if (!params["group"].isNull() && state.group_column)
+        {
+            const size_t group = params.index("group");
+            if (group >= histogram.groupCount())
+                throw std::invalid_argument("no such group");
+            for (FilterCondition &condition : histogramGroupConditions(histogram, *state.group_column, group))
+                conditions.push_back(std::move(condition));
+        }
+        writeConditions(result, conditions);
+    }
     else
         writeConditions(result, {cellFilterCondition(state.column, histogram.top[bin].value, true)});
 }

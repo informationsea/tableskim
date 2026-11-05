@@ -229,8 +229,8 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `sqlSchema` | | `name`, `columns` of each table and view |
 | `completeSql` | `sql`, `cursor` (bytes of UTF-8) | `begin`, `end` (bytes), `common`, `candidates` |
 | `startStats` / `statsState` | `sheet`, `column` | `active`, `done`, `column`, `scannedRows`, `lines` (`label`, `value`), `top` (`value`, `count`) |
-| `startHistogram` / `histogramState` | `sheet`, `column`, `bins` (2 to 200) | `active`, `done`, `counting`, `column`, `scannedRows`, `histogram` (`kind`, `summary`, `bins`: `label`, `range`, `count`; `top` without bins) |
-| `histogramFilter` | `sheet`, `bin` (a frequent value's index without bins) | `conditions` |
+| `startHistogram` / `histogramState` | `sheet`, `column`, `bins` (2 to 200), `groupColumn` (stacked by it; optional) | `active`, `done`, `counting`, `column`, `groupColumn`, `scannedRows`, `histogram` (`kind`, `summary`, `bins`: `label`, `range`, `count`, `groups` (counts, when stacked); `top` without bins; `groups`, `otherGroup`, `emptyGroup`) |
+| `histogramFilter` | `sheet`, `bin` (a frequent value's index without bins), `group` (a part of a stacked bar; optional) | `conditions` |
 | `defaultScatter` | `sheet`, `column`, `hidden` | `x`, `y`: the columns to start with |
 | `startScatter` / `scatterState` | `sheet`, `x`, `y`; `points` (state: send them) | `done`, `plottable`, `summary`, `statsText`, `pairs`, `fit` (`slope`, `intercept` of the regression line; null for categories), `xAxis` / `yAxis` (`kind`, `ticks`, `edges`, `binRanges`), `counts` (by X bin, then Y bin), `categories`, `boxes`, `boxTexts`, `points` (x, y, view row, ...) |
 | `scatterFilter` | `sheet` and `xBin`, `yBin`; or `category`; or `xLow`, `xHigh`, `yLow`, `yHigh` | `conditions` |

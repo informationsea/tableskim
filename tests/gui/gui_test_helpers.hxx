@@ -15,6 +15,8 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 
+class Fl_Choice;
+
 #include "gui.h"
 #include "gui_table_view.hxx"
 
@@ -53,6 +55,10 @@ namespace gui_test
     // Presses the button labelled `label` in `window` (searched
     // recursively). False if there is none.
     bool pressButton(Fl_Window &window, const std::string &label);
+    // The first shown window whose label starts with `title`, if any.
+    Fl_Window *shownWindow(const std::string &title);
+    // The choice (Fl_Choice) labelled `label` in the window, if any.
+    Fl_Choice *findChoice(Fl_Window &window, const std::string &label);
 
     // A TableWindow, shown and registered as main() does, closed and
     // deleted (without asking about unsaved changes) when destroyed.

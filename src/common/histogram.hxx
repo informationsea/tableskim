@@ -51,23 +51,52 @@ struct Histogram
     size_t rows = 0;
     // The most frequent non-empty values, for columns of kind None.
     std::vector<ValueCount> top;
+    // Stacked by a second column (bins only): its most frequent non-empty
+    // values are the groups, then "(other)" for its other values and
+    // "(empty)" for empty cells, when there are any. group_counts has the
+    // rows of each bin and group, at groupIndex(); a bin's add up to its
+    // count.
+    bool grouped = false;
+    std::vector<CellValue> groups;
+    bool other_group = false;
+    bool empty_group = false;
+    std::vector<size_t> group_counts;
 
     size_t binCount() const { return counts.size(); }
+    size_t groupCount() const { return grouped ? groups.size() + (other_group ? 1 : 0) + (empty_group ? 1 : 0) : 0; }
+    size_t groupIndex(size_t bin, size_t group) const { return bin * groupCount() + group; }
+    size_t groupCount(size_t bin, size_t group) const { return group_counts[groupIndex(bin, group)]; }
+    // Which group an index stands for.
+    bool isOtherGroup(size_t group) const { return other_group && group == groups.size(); }
+    bool isEmptyGroup(size_t group) const { return empty_group && group + 1 == groupCount(); }
 };
+
+// Groups a stacked histogram tells apart by color, at most.
+constexpr size_t HISTOGRAM_MAX_GROUPS = 8;
 
 // The first pass: finds the kind of the column, its range, and the most
 // frequent values. Not thread-safe.
 class HistogramRange
 {
 public:
-    explicit HistogramRange(ColumnStatsLimits limits = {}) : stats_(limits) {}
+    // `grouped`: stacked by a second column, whose values addGroup() takes.
+    explicit HistogramRange(ColumnStatsLimits limits = {}, bool grouped = false)
+        : stats_(limits), groups_(limits), grouped_(grouped)
+    {
+    }
     void add(const CellValue &value, size_t count = 1);
+    // A value of the column the bins are stacked by. Its values may come
+    // apart from those of the binned column (the distinct values of each).
+    void addGroup(const CellValue &group, size_t count = 1);
     // Bins (about `target` of them) with zero counts, the totals, and the
     // most frequent values; `values` and `others` are those of the kind.
-    Histogram layout(size_t target) const;
+    // Grouped bins get up to `max_groups` groups.
+    Histogram layout(size_t target, size_t max_groups = HISTOGRAM_MAX_GROUPS) const;
 
 private:
     ColumnStatsAccumulator stats_;
+    ColumnStatsAccumulator groups_;
+    bool grouped_ = false;
     size_t numbers_ = 0;
     size_t times_ = 0;
     double min_number_ = 0;
@@ -84,13 +113,21 @@ class HistogramCounter
 public:
     explicit HistogramCounter(Histogram layout);
     void add(const CellValue &value, size_t count = 1);
+    // A row of a grouped layout: its value and that of the column the bins
+    // are stacked by.
+    void addGrouped(const CellValue &value, const CellValue &group, size_t count = 1);
     const Histogram &result() const { return histogram_; }
+    // The group that addGrouped() counts `group` in; nullopt for a value
+    // the layout has no group for.
+    std::optional<size_t> groupOf(const CellValue &group) const;
     // The bin that add() counts `value` in; nullopt for empty values and
     // values of another kind.
     std::optional<size_t> binOf(const CellValue &value) const;
     // False for a value of the layout's kind outside its bins, which a
     // layout taken with it would have covered (rows added later, say).
     bool fits(const CellValue &value) const;
+    // Grouped: also false for a row of a bin whose group the layout lacks.
+    bool fits(const CellValue &value, const CellValue &group) const;
 
 private:
     Histogram histogram_;

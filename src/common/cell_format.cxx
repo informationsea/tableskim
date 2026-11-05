@@ -707,6 +707,36 @@ std::string histogramSummary(const Histogram &histogram)
     return text;
 }
 
+std::string histogramGroupText(const Histogram &histogram, size_t group)
+{
+    if (group < histogram.groups.size())
+        return formatCell(histogram.groups[group]);
+    return histogram.isEmptyGroup(group) ? "(empty)" : "(other)";
+}
+
+std::vector<FilterCondition> histogramGroupConditions(const Histogram &histogram, size_t group_column, size_t group)
+{
+    if (group < histogram.groups.size())
+        return {cellFilterCondition(group_column, histogram.groups[group], true)};
+    if (histogram.isEmptyGroup(group))
+        return {{group_column, FilterOp::IsEmpty, {}}};
+    if (!histogram.isOtherGroup(group))
+        return {};
+    std::vector<FilterCondition> conditions{{group_column, FilterOp::IsNotEmpty, {}}};
+    for (const CellValue &value : histogram.groups)
+        conditions.push_back(cellFilterCondition(group_column, value, false));
+    return conditions;
+}
+
+std::string histogramSegmentText(const Histogram &histogram, size_t bin, size_t group)
+{
+    if (bin >= histogram.binCount() || group >= histogram.groupCount())
+        return {};
+    const size_t count = histogram.groupCount(bin, group);
+    return histogramGroupText(histogram, group) + ": " + std::to_string(count) + (count == 1 ? " row (" : " rows (") +
+           percentText(count, histogram.counts[bin]) + " of the bin)";
+}
+
 std::string scatterValueText(const Histogram &axis, double coordinate)
 {
     if (axis.kind == HistogramKind::Time)

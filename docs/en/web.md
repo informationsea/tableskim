@@ -218,7 +218,10 @@ follows the cursor from column to column. See
 
 - **Histogram** shows how the values of the cursor's column are
   distributed. Choose the column and the number of bins; **Table** shows
-  the counts as a table. Click a bar to narrow the rows to it.
+  the counts as a table. Click a bar to narrow the rows to it. **Stack
+  by** splits each bar by the values of another column, in a colour for
+  each (the 8 most frequent, then "(other)" and "(empty)"); click a part
+  of a bar to narrow the rows to that bar and that value.
 
   ![A histogram](../images/web-histogram.png)
 

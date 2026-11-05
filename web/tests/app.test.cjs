@@ -288,6 +288,7 @@ async function regressionPage() {
                         done: !!this.chartReady,
                         counting: false,
                         column: this.histogramColumn ?? 0,
+                        groupColumn: null,
                         scannedRows: 100,
                         histogram: this.chartReady
                             ? {
@@ -295,8 +296,19 @@ async function regressionPage() {
                                   summary: '1 number',
                                   bins: [{ label: '20', range: '20 to 25', count: 1 }],
                                   top: [],
+                                  groups: [],
+                                  otherGroup: false,
+                                  emptyGroup: false,
                               }
-                            : { kind: 'none', summary: '', bins: [], top: [] },
+                            : {
+                                  kind: 'none',
+                                  summary: '',
+                                  bins: [],
+                                  top: [],
+                                  groups: [],
+                                  otherGroup: false,
+                                  emptyGroup: false,
+                              },
                     });
                 if (method === 'histogramFilter')
                     return this.reply(request, {
@@ -1401,6 +1413,36 @@ describe('the web app', () => {
         assert.equal(total, 9);
         await page.keyboard.press('Escape');
         await page.locator('#histogram-dialog').waitFor({ state: 'detached' });
+        await page.context().close();
+    });
+
+    test('stacks a histogram by a column and filters by a part of a bar', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        await page.locator('#histogram-button').click();
+        await waitForText(page.locator('#histogram-summary'), '53 numbers');
+        await page.selectOption('#histogram-group', '4'); // City
+        await waitForText(page.locator('#histogram-legend'), 'Fukuoka');
+        await waitForText(page.locator('#histogram-legend'), '(other)');
+        // The table has a column per group, adding up to each bin's rows.
+        await page.locator('#histogram-dialog button', { hasText: 'Table' }).click();
+        await waitForText(page.locator('#histogram-table thead'), 'Fukuoka');
+        const first = page.locator('#histogram-table tbody tr').first().locator('td');
+        const counts = (await first.allTextContents()).slice(1).map(Number);
+        assert.equal(
+            counts.slice(1).reduce((a, b) => a + b, 0),
+            counts[0],
+        );
+        await page.locator('#histogram-dialog button', { hasText: 'Table' }).click();
+        // The bottom part of the first bar: its first group with rows.
+        const group = counts.slice(1).findIndex((count) => count > 0);
+        const segment = page.locator('#histogram-chart .bar').first().locator('.segment').first();
+        await segment.hover();
+        await waitForText(page.locator('.chart-tooltip'), 'of the bin');
+        await segment.click();
+        const expected = counts[group + 1];
+        await waitForText(page.locator('#status-rows'), `${expected} ${expected === 1 ? 'row' : 'rows'} of 54`);
         await page.context().close();
     });
 
