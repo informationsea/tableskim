@@ -413,6 +413,47 @@ TEST_CASE("readAppended: statistics, histograms and filters go on with the new r
         CHECK(model->histogramState().generation != generation);
         CHECK(model->histogramState().histogram.edges.back() >= 1000);
     }
+    SECTION("a grouped histogram goes on with rows of its groups")
+    {
+        model->startHistogram(0, 10, 1);
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done; }));
+        const uint64_t generation = model->histogramState().generation;
+        REQUIRE(model->histogramState().histogram.groupCount() == 2);
+        file.write("50,odd\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done && model->histogramState().histogram.values == 101; }));
+        CHECK(model->histogramState().generation == generation);
+
+        // A new group starts it over, with the group.
+        file.write("60,prime\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->histogramState().done && model->histogramState().histogram.values == 102; }));
+        CHECK(model->histogramState().generation != generation);
+        CHECK(model->histogramState().histogram.groupCount() == 3);
+    }
+    SECTION("a coloured scatter plot goes on with rows of its colours")
+    {
+        model->startScatter(0, 0, {}, 1);
+        REQUIRE(waitFor([&]
+                        { return model->scatterState().done; }));
+        const uint64_t generation = model->scatterState().generation;
+        REQUIRE(model->scatterState().plot.colorCount() == 2);
+        file.write("50,odd\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->scatterState().done && model->scatterState().plot.pairs == 101; }));
+        CHECK(model->scatterState().generation == generation);
+
+        file.write("60,prime\n", true);
+        CHECK(readAppended(*book) == AppendResult::Appended);
+        REQUIRE(waitFor([&]
+                        { return model->scatterState().done && model->scatterState().plot.pairs == 102; }));
+        CHECK(model->scatterState().generation != generation);
+        CHECK(model->scatterState().plot.colorCount() == 3);
+    }
     SECTION("an unsorted filter takes the matching rows at its end")
     {
         const ViewSpec odd{.filter = Filter{Filter::Combine::And, {{1, FilterOp::Equals, "odd"}}}};

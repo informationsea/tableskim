@@ -106,7 +106,9 @@ count and percentage.
 | -------------------- | -------------------------------------------------------- |
 | `↑` / `↓`, `k` / `j` | Select a bar; its exact range is shown at the bottom      |
 | `←` / `→`, `h` / `l` | Histogram of the previous / next column                   |
-| `Enter`              | Filter the sheet to the rows of the selected bar          |
+| `Enter`              | Filter the sheet to the rows of the selected bar (or part) |
+| `g` / `G`            | Stack the bars by the next / previous column, or by none  |
+| `Tab` / `Shift+Tab`  | Select a part of the selected stacked bar                 |
 | `F`                  | Clear the filter                                          |
 | `Esc`, `B`, `q`      | Back to the sheet                                         |
 
@@ -115,6 +117,15 @@ dates into bins of whole days, months, years and so on, and text columns
 show their most frequent values. After `Enter`, the histogram is computed
 again for the rows left, so you can narrow down step by step; press `Esc`
 to see the filtered sheet.
+
+Stacked by a column (`g`), the title says "by" that column, each bar is
+split into a colour per value of it (its 8 most frequent values, then
+"(other)" and "(empty)"), and the legend under the title shows each
+group's count in the selected bar. `Tab` picks one of those groups, whose
+count is shown at the bottom; `Enter` then filters to the rows of that
+part of the bar.
+
+![Age stacked by City, the Sendai part of a bar selected](../images/tui-histogram-stacked.png)
 
 ![Histogram of a date column](../images/tui-histogram-dates.png)
 
@@ -141,9 +152,21 @@ least-squares line of the rows plotted, as in the GUI.
 | `y` / `Y`            | Next / previous column on Y                               |
 | `t`                  | Swap X and Y                                              |
 | `L`                  | Logarithmic / linear colour scale                         |
-| `Enter`              | Filter the sheet to the rows of the selected cell         |
+| `c` / `C`            | Colour by the next / previous column, or by none          |
+| `Tab` / `Shift+Tab`  | Select a colour of the legend (coloured)                  |
+| `Enter`              | Filter the sheet to the rows of the selected cell (and colour) |
 | `F`                  | Clear the filter                                          |
 | `Esc`, `M`, `q`      | Back to the sheet                                         |
+
+Coloured by a third column (`c`), the title says "by" that column and a
+legend under it shows the rows of each of its values (the 8 most frequent,
+then "(other)" and "(empty)", as for a stacked histogram). Each cell takes
+the colour of the value most of its rows have, darker for fewer rows, and
+the line at the bottom says how many of the cell's rows have it. `Tab`
+selects a colour: cells without its rows turn gray, the bottom line counts
+it instead, and `Enter` filters to the rows of the cell with that value.
+
+![Age against Salary, coloured by City](../images/tui-density-colored.png)
 
 Y must hold numbers or dates, as for the GUI's [scatter
 plot](gui.md#scatter-plots-and-2d-density). The colours need a terminal

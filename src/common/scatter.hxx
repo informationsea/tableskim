@@ -18,6 +18,7 @@ struct ScatterPoint
     double x = 0;
     double y = 0;
     size_t view_row = 0;
+    size_t color = 0; // the group of its row's colour column (ScatterPlot::colors)
 };
 
 // Pearson's correlation and the least-squares line of points, on their
@@ -98,6 +99,13 @@ struct ScatterPlot
     std::vector<CellValue> categories;
     bool other_category = false;
     std::vector<BoxStats> boxes;
+    // Coloured by a third column: the groups of its values, the rows counted
+    // in each, and in each cell of the density grid and group, at
+    // colorIndex().
+    bool colored = false;
+    ValueGroups colors;
+    std::vector<size_t> color_pairs;
+    std::vector<size_t> color_counts;
 
     bool categorical() const { return !categories.empty(); }
     // Columns of the density grid: X bins, or categories.
@@ -105,6 +113,14 @@ struct ScatterPlot
     bool plottable() const { return xBinCount() > 0 && y_bins.binCount() > 0; }
     size_t densityIndex(size_t x_bin, size_t y_bin) const { return x_bin * y_bins.binCount() + y_bin; }
     size_t count(size_t x_bin, size_t y_bin) const { return counts[densityIndex(x_bin, y_bin)]; }
+    size_t colorCount() const { return colored ? colors.count() : 0; }
+    size_t colorIndex(size_t x_bin, size_t y_bin, size_t color) const
+    {
+        return densityIndex(x_bin, y_bin) * colorCount() + color;
+    }
+    // The group most of a cell's rows are in (the first of a tie); nullopt
+    // for an empty cell or a plot without colours.
+    std::optional<size_t> mainColor(size_t x_bin, size_t y_bin) const;
     // Whether the points are a sample of the rows counted.
     bool sampled() const { return points && points->size() < pairs; }
 };
@@ -115,24 +131,33 @@ struct ScatterOptions
     size_t density_bins_y = 50;
     size_t max_points = 200000; // 0: no points, the density only
     size_t max_categories = 30; // categorical X: the most frequent values shown apart
+    size_t max_colors = MAX_VALUE_GROUPS; // coloured: the most frequent values of the colour column
 };
 
 // The first pass: the range of each column. Not thread-safe.
 class ScatterRange
 {
 public:
-    explicit ScatterRange(ColumnStatsLimits limits = {}) : x_(limits), y_(limits) {}
+    // `colored`: the points are coloured by a third column, whose values
+    // color() takes.
+    explicit ScatterRange(ColumnStatsLimits limits = {}, bool colored = false)
+        : x_(limits), y_(limits), colors_(limits), colored_(colored)
+    {
+    }
     // Values of the columns may come together (a row) or separately (the
     // distinct values of one column with their counts).
     void add(const CellValue &x, const CellValue &y);
     HistogramRange &x() { return x_; }
     HistogramRange &y() { return y_; }
+    ValueGroupAccumulator &color() { return colors_; }
     // Axes and empty density bins.
     ScatterPlot layout(const ScatterOptions &options) const;
 
 private:
     HistogramRange x_;
     HistogramRange y_;
+    ValueGroupAccumulator colors_;
+    bool colored_ = false;
 };
 
 // The second pass: counts the rows into the density grid and samples points.
@@ -141,13 +166,15 @@ class ScatterCounter
 {
 public:
     ScatterCounter(ScatterPlot layout, size_t max_points);
-    void add(const CellValue &x, const CellValue &y, size_t view_row);
+    // `color`: the row's value of the colour column, if the plot has one.
+    void add(const CellValue &x, const CellValue &y, size_t view_row, const CellValue &color = {});
     // A copy, with the points so far.
     ScatterPlot result() const;
     // False if the row has a value outside the grid that a layout taken
     // with it would have covered: a number or time beyond an axis, or a
     // new value of a categorical X without "(other)" (rows added later).
-    bool fits(const CellValue &x, const CellValue &y) const;
+    // Coloured: also false for a row plotted whose colour the layout lacks.
+    bool fits(const CellValue &x, const CellValue &y, const CellValue &color = {}) const;
 
 private:
     ScatterPlot plot_;

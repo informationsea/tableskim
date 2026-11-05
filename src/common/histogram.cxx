@@ -109,6 +109,39 @@ namespace
     }
 } // namespace
 
+ValueGroups ValueGroups::fromStats(const ColumnStats &stats, size_t max)
+{
+    ValueGroups groups;
+    for (size_t i = 0; i < stats.top.size() && i < max; ++i)
+        groups.values.push_back(stats.top[i].value);
+    groups.other = stats.distinct > groups.values.size();
+    groups.empty = stats.empty > 0;
+    return groups;
+}
+
+std::optional<size_t> ValueGroups::groupOf(const CellValue &value) const
+{
+    if (isEmptyCell(value))
+        return empty ? std::optional<size_t>(count() - 1) : std::nullopt;
+    // Few groups: a linear search is quick enough.
+    const auto it = std::holds_alternative<std::string>(value)
+        ? std::find(values.begin(), values.end(), value)
+        : std::find(values.begin(), values.end(), CellValue{formatCell(value)});
+    if (it != values.end())
+        return static_cast<size_t>(it - values.begin());
+    if (other)
+        return values.size();
+    return std::nullopt;
+}
+
+void ValueGroupAccumulator::add(const CellValue &value, size_t count)
+{
+    if (std::holds_alternative<std::string>(value) || isEmptyCell(value))
+        stats_.add(value, count);
+    else
+        stats_.add(formatCell(value), count);
+}
+
 std::vector<double> numberHistogramEdges(double min, double max, bool integers, size_t target, int *decimals)
 {
     if (max < min)
@@ -293,7 +326,13 @@ void HistogramRange::add(const CellValue &value, size_t count)
     }
 }
 
-Histogram HistogramRange::layout(size_t target) const
+void HistogramRange::addGroup(const CellValue &group, size_t count)
+{
+    if (count > 0)
+        groups_.add(group, count);
+}
+
+Histogram HistogramRange::layout(size_t target, size_t max_groups) const
 {
     const ColumnStats stats = stats_.result();
     Histogram histogram;
@@ -317,6 +356,13 @@ Histogram HistogramRange::layout(size_t target) const
         histogram.top = stats.top;
     histogram.others = stats.rows - stats.empty - histogram.values;
     histogram.counts.assign(histogram.edges.size() > 1 ? histogram.edges.size() - 1 : 0, 0);
+    if (grouped_ && histogram.binCount() > 0)
+    {
+        const ColumnStats groups = groups_.result();
+        histogram.grouped = true;
+        histogram.groups = ValueGroups::fromStats(groups, max_groups);
+        histogram.group_counts.assign(histogram.binCount() * histogram.groupCount(), 0);
+    }
     return histogram;
 }
 
@@ -332,6 +378,7 @@ HistogramCounter::HistogramCounter(Histogram layout) : histogram_(std::move(layo
         }
     }
     std::fill(histogram_.counts.begin(), histogram_.counts.end(), 0);
+    std::fill(histogram_.group_counts.begin(), histogram_.group_counts.end(), 0);
     histogram_.values = 0;
     histogram_.others = 0;
     histogram_.empty = 0;
@@ -353,6 +400,33 @@ void HistogramCounter::add(const CellValue &value, size_t count)
     }
     else
         histogram_.others += count;
+}
+
+void HistogramCounter::addGrouped(const CellValue &value, const CellValue &group, size_t count)
+{
+    histogram_.rows += count;
+    if (isEmptyCell(value))
+    {
+        histogram_.empty += count;
+        return;
+    }
+    const auto bin = binOf(value);
+    // A row without a group would break the bin's sum: counted apart.
+    const auto group_index = bin && histogram_.grouped ? groupOf(group) : std::nullopt;
+    if (bin && (group_index || !histogram_.grouped))
+    {
+        histogram_.counts[*bin] += count;
+        histogram_.values += count;
+        if (group_index)
+            histogram_.group_counts[histogram_.groupIndex(*bin, *group_index)] += count;
+    }
+    else
+        histogram_.others += count;
+}
+
+std::optional<size_t> HistogramCounter::groupOf(const CellValue &group) const
+{
+    return histogram_.grouped ? histogram_.groups.groupOf(group) : std::nullopt;
 }
 
 std::optional<size_t> HistogramCounter::binOf(const CellValue &value) const
@@ -388,6 +462,13 @@ bool HistogramCounter::fits(const CellValue &value) const
     if (histogram_.integers && *coordinate != std::floor(*coordinate))
         return false;
     return binOf(value).has_value();
+}
+
+bool HistogramCounter::fits(const CellValue &value, const CellValue &group) const
+{
+    if (!fits(value))
+        return false;
+    return !histogram_.grouped || !binOf(value) || groupOf(group).has_value();
 }
 
 std::optional<double> histogramCoordinate(HistogramKind kind, const CellValue &value)

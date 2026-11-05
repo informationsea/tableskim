@@ -1,5 +1,6 @@
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Histogram } from '../protocol';
+import { groupColor, legendLayout, SWATCH } from './groups';
 import { type ChartImage, svgOfElement } from './image';
 import { barPath, columnPath, compactCount, niceTicks, observeWidth } from './scale';
 import { Tooltip } from './Tooltip';
@@ -7,7 +8,8 @@ import { Tooltip } from './Tooltip';
 interface HistogramChartProps {
     histogram: Histogram;
     rows: number; // in the view, for the shares
-    onPick: (bin: number) => void; // a bar (or a frequent value) was clicked
+    // A bar (or a frequent value) was clicked; `group`: a part of a stacked bar.
+    onPick: (bin: number, group?: number) => void;
     ref?: Ref<ChartImage>;
 }
 
@@ -34,7 +36,7 @@ export function HistogramChart({ histogram, rows, onPick, ref }: HistogramChartP
         },
     }));
     const [width, setWidth] = useState(600);
-    const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
+    const [hover, setHover] = useState<{ index: number; group?: number; x: number; y: number } | null>(null);
     useEffect(() => (box.current ? observeWidth(box.current, setWidth) : undefined), []);
 
     const bins = histogram.bins;
@@ -51,14 +53,25 @@ export function HistogramChart({ histogram, rows, onPick, ref }: HistogramChartP
         }
     };
     const hovered = hover && items[hover.index];
-    const tooltip = hovered && hover && (
-        <Tooltip
-            x={hover.x}
-            y={hover.y}
-            value={`${hovered.count.toLocaleString()} rows${share(hovered.count, rows)}`}
-            label={hovered.range || '(empty)'}
-        />
-    );
+    const part = hover?.group !== undefined ? bins[hover.index]?.groups?.[hover.group] : undefined;
+    const tooltip =
+        hovered &&
+        hover &&
+        (part !== undefined && hover.group !== undefined ? (
+            <Tooltip
+                x={hover.x}
+                y={hover.y}
+                value={`${part.toLocaleString()} ${part === 1 ? 'row' : 'rows'}${share(part, hovered.count)} of the bin`}
+                label={`${histogram.groups[hover.group]} · ${hovered.range}`}
+            />
+        ) : (
+            <Tooltip
+                x={hover.x}
+                y={hover.y}
+                value={`${hovered.count.toLocaleString()} rows${share(hovered.count, rows)}`}
+                label={hovered.range || '(empty)'}
+            />
+        ));
 
     if (bins.length === 0) {
         // Text: the most frequent values, as bars from a common baseline.
@@ -128,17 +141,71 @@ export function HistogramChart({ histogram, rows, onPick, ref }: HistogramChartP
     }
 
     const plotWidth = Math.max(40, width - MARGIN.left - MARGIN.right);
+    // A group without a row in a bin needs no entry.
+    const legend = legendLayout(
+        histogram.groups
+            .map((label, group) => ({ group, label }))
+            .filter(({ group }) => bins.some((bin) => (bin.groups?.[group] ?? 0) > 0)),
+        plotWidth,
+    );
+    const plotTop = MARGIN.top + legend.height;
     const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
     const ticks = niceTicks(0, most);
     const top = ticks[ticks.length - 1];
-    const toY = (count: number) => MARGIN.top + plotHeight - (plotHeight * count) / top;
+    const toY = (count: number) => plotTop + plotHeight - (plotHeight * count) / top;
+    const bottom = plotTop + plotHeight;
+    // The parts of a stacked bar, from the bottom: running totals, so that
+    // the bar keeps its height.
+    const parts = (counts: number[]) => {
+        let sum = 0;
+        return counts.map((count, group) => {
+            const below = toY(sum);
+            sum += count;
+            return { group, count, y: toY(sum), height: below - toY(sum) };
+        });
+    };
+    // The part of a stacked bar under the pointer.
+    const partAt = (event: React.MouseEvent, counts: number[] | undefined) => {
+        const svg = chart.current?.getBoundingClientRect();
+        if (!counts || !svg) return undefined;
+        const y = event.clientY - svg.top;
+        return parts(counts).find((p) => p.count > 0 && y >= p.y && y <= p.y + p.height);
+    };
     const slot = plotWidth / bins.length;
     // Every k-th bin is labelled, so that the labels do not collide.
     const longest = Math.max(...bins.map((bin) => bin.label.length));
     const every = Math.max(1, Math.ceil((longest * 7 + 12) / slot));
     return (
         <div ref={box} className="relative w-full">
-            <svg ref={chart} id="histogram-chart" width={width} height={HEIGHT} role="img" aria-label="Histogram">
+            <svg
+                ref={chart}
+                id="histogram-chart"
+                width={width}
+                height={HEIGHT + legend.height}
+                role="img"
+                aria-label="Histogram"
+            >
+                {legend.entries.length > 0 && (
+                    <g id="histogram-legend" aria-label="Groups">
+                        {legend.entries.map((entry) => (
+                            <g
+                                key={entry.group}
+                                transform={`translate(${MARGIN.left + entry.x},${MARGIN.top + entry.y})`}
+                            >
+                                <rect
+                                    y={2}
+                                    width={SWATCH}
+                                    height={SWATCH}
+                                    rx={2}
+                                    style={{ fill: groupColor(histogram, entry.group) }}
+                                />
+                                <text x={SWATCH + 6} y={SWATCH / 2 + 2} dy="0.35em" className="fill-fg text-xs">
+                                    {entry.label}
+                                </text>
+                            </g>
+                        ))}
+                    </g>
+                )}
                 {ticks.map((tick) => (
                     <g key={tick}>
                         <line
@@ -172,25 +239,51 @@ export function HistogramChart({ histogram, rows, onPick, ref }: HistogramChartP
                             className="bar cursor-pointer outline-none"
                             tabIndex={0}
                             aria-label={`${bin.range}: ${bin.count}`}
-                            onClick={() => onPick(i)}
+                            onClick={(event) => onPick(i, partAt(event, bin.groups)?.group)}
                             onKeyDown={(event) => keyDown(event, i)}
-                            onPointerMove={() => setHover({ index: i, x: x + slot / 2, y: barTop })}
+                            onPointerMove={(event) => {
+                                const under = partAt(event, bin.groups);
+                                setHover({ index: i, group: under?.group, x: x + slot / 2, y: under?.y ?? barTop });
+                            }}
                             onFocus={() => setHover({ index: i, x: x + slot / 2, y: barTop })}
                             onPointerLeave={() => setHover(null)}
                             onBlur={() => setHover(null)}
                         >
                             {/* The whole slot answers the pointer, not only the painted bar. */}
-                            <rect x={x} y={MARGIN.top} width={slot} height={plotHeight} fill="transparent" />
-                            {bin.count > 0 && (
+                            <rect x={x} y={plotTop} width={slot} height={plotHeight} fill="transparent" />
+                            {bin.groups &&
+                                parts(bin.groups).map(
+                                    (p) =>
+                                        p.count > 0 && (
+                                            <rect
+                                                key={p.group}
+                                                className="segment"
+                                                x={x + 1}
+                                                y={p.y}
+                                                width={barWidth}
+                                                // A 2px gap in the surface colour between parts.
+                                                height={Math.max(1, p.height - (p.y + p.height < bottom ? 2 : 0))}
+                                                style={{ fill: groupColor(histogram, p.group) }}
+                                                opacity={
+                                                    hover?.index === i &&
+                                                    hover.group !== undefined &&
+                                                    hover.group !== p.group
+                                                        ? 0.55
+                                                        : 1
+                                                }
+                                            />
+                                        ),
+                                )}
+                            {!bin.groups && bin.count > 0 && (
                                 <path
-                                    d={columnPath(x + 1, barTop, barWidth, MARGIN.top + plotHeight - barTop)}
+                                    d={columnPath(x + 1, barTop, barWidth, bottom - barTop)}
                                     className={hover?.index === i ? 'fill-series-hover' : 'fill-series'}
                                 />
                             )}
                             {i % every === 0 && (
                                 <text
                                     x={x + slot / 2}
-                                    y={MARGIN.top + plotHeight + 16}
+                                    y={bottom + 16}
                                     textAnchor="middle"
                                     className="fill-muted text-xs tabular-nums"
                                 >

@@ -34,6 +34,12 @@ void setTheme(const char *name);
 bool isFluentTheme();
 const ThemeColors &themeColors();
 
+struct ValueGroups;
+// A group of values (a stacked histogram's, a scatter plot's colours): eight
+// hues in a fixed order, then gray for "(other)" and a lighter gray for
+// "(empty)", as in the TUI and the web app.
+Fl_Color valueGroupColor(const ValueGroups &groups, size_t group);
+
 // FLTK has no scheme hook for scrollbar colors, so widgets owning
 // scrollbars call this before drawing them.
 void styleScrollbar(Fl_Scrollbar *scrollbar);

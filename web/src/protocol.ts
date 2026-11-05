@@ -199,8 +199,14 @@ export type HistogramKind = 'number' | 'time' | 'none';
 export interface Histogram {
     kind: HistogramKind;
     summary: string;
-    bins: { label: string; range: string; count: number }[];
+    // `groups`: the rows of each group, when stacked by a column.
+    bins: { label: string; range: string; count: number; groups?: number[] }[];
     top: ValueCount[]; // for kind "none"
+    // Stacked by a column: its most frequent values, then "(other)" and
+    // "(empty)" when there are any (empty when not stacked).
+    groups: string[];
+    otherGroup: boolean; // the groups end with "(other)"
+    emptyGroup: boolean; // ... and then "(empty)"
 }
 
 export interface HistogramState {
@@ -208,6 +214,7 @@ export interface HistogramState {
     done: boolean;
     counting: boolean; // the second pass
     column: number;
+    groupColumn: number | null; // the column the bars are stacked by
     scannedRows: number;
     histogram: Histogram;
 }
@@ -251,6 +258,14 @@ export interface ScatterState {
     boxes: BoxStats[];
     boxTexts: string[];
     points: number[]; // x, y, view row, ... (when asked for)
+    // Coloured by a column: its groups (as a stacked histogram's), the rows
+    // plotted in each, and each point's group (with the points).
+    colorColumn: number | null;
+    colors: string[];
+    otherColor: boolean;
+    emptyColor: boolean;
+    colorPairs: number[];
+    pointColors: number[];
 }
 
 export type ExportFormat = 'csv' | 'tsv' | 'excel' | 'parquet';
@@ -333,20 +348,28 @@ export interface Methods {
     completeSql: { params: { sql: string; cursor: number }; result: SqlCompletion };
     startStats: { params: SheetParams & { column: number }; result: StatsState };
     statsState: { params: SheetParams; result: StatsState };
-    startHistogram: { params: SheetParams & { column: number; bins?: number }; result: HistogramState };
+    startHistogram: {
+        params: SheetParams & { column: number; bins?: number; groupColumn?: number | null };
+        result: HistogramState;
+    };
     histogramState: { params: SheetParams; result: HistogramState };
-    histogramFilter: { params: SheetParams & { bin: number }; result: Conditions };
+    // `group`: a part of a stacked bar.
+    histogramFilter: { params: SheetParams & { bin: number; group?: number | null }; result: Conditions };
     defaultScatter: {
         params: SheetParams & { column: number; firstRow?: number; lastRow?: number; hidden?: number[] };
         result: { x: number; y: number };
     };
-    startScatter: { params: SheetParams & { x: number; y: number; points?: boolean }; result: Empty };
+    startScatter: {
+        params: SheetParams & { x: number; y: number; points?: boolean; colorColumn?: number | null };
+        result: Empty;
+    };
     scatterState: { params: SheetParams & { points?: boolean }; result: ScatterState };
     scatterFilter: {
         params: SheetParams &
             (
                 | { xBin: number; yBin: number }
                 | { category: number }
+                | { color: number } // a colour of the legend
                 | { xLow: number; xHigh: number; yLow: number; yHigh: number }
             );
         result: Conditions;

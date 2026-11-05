@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdio>
 
+#include <re2/re2.h>
+
 namespace
 {
     // Commas between the groups of three digits of a plain number's integer
@@ -705,6 +707,53 @@ std::string histogramSummary(const Histogram &histogram)
     if (histogram.empty > 0)
         text += ", " + std::to_string(histogram.empty) + " empty";
     return text;
+}
+
+std::string valueGroupText(const ValueGroups &groups, size_t group)
+{
+    if (group < groups.values.size())
+        return formatCell(groups.values[group]);
+    return groups.isEmpty(group) ? "(empty)" : "(other)";
+}
+
+std::string histogramGroupText(const Histogram &histogram, size_t group)
+{
+    return valueGroupText(histogram.groups, group);
+}
+
+std::vector<FilterCondition> valueGroupConditions(const ValueGroups &groups, size_t column, size_t group)
+{
+    // Equality filters interpret numbers and dates. Groups instead preserve
+    // the complete, case-sensitive cell text, including regex metacharacters.
+    const auto condition = [&](const CellValue &value, bool equal)
+    {
+        return FilterCondition{column, equal ? FilterOp::Matches : FilterOp::NotMatches,
+                               "(?-i)\\A" + re2::RE2::QuoteMeta(formatCell(value)) + "\\z"};
+    };
+    if (group < groups.values.size())
+        return {condition(groups.values[group], true)};
+    if (groups.isEmpty(group))
+        return {{column, FilterOp::IsEmpty, {}}};
+    if (!groups.isOther(group))
+        return {};
+    std::vector<FilterCondition> conditions{{column, FilterOp::IsNotEmpty, {}}};
+    for (const CellValue &value : groups.values)
+        conditions.push_back(condition(value, false));
+    return conditions;
+}
+
+std::vector<FilterCondition> histogramGroupConditions(const Histogram &histogram, size_t group_column, size_t group)
+{
+    return valueGroupConditions(histogram.groups, group_column, group);
+}
+
+std::string histogramSegmentText(const Histogram &histogram, size_t bin, size_t group)
+{
+    if (bin >= histogram.binCount() || group >= histogram.groupCount())
+        return {};
+    const size_t count = histogram.groupCount(bin, group);
+    return histogramGroupText(histogram, group) + ": " + std::to_string(count) + (count == 1 ? " row (" : " rows (") +
+           percentText(count, histogram.counts[bin]) + " of the bin)";
 }
 
 std::string scatterValueText(const Histogram &axis, double coordinate)

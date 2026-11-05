@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import type { TableSkimClient } from '../client';
 import { HistogramChart } from '../charts/HistogramChart';
+import { groupColor } from '../charts/groups';
 import type { ChartImage } from '../charts/image';
-import { errorText, usePolled } from '../hooks';
+import { columnLabel, errorText, usePolled } from '../hooks';
 import { type Condition, Events, type HistogramState, type SheetInfo } from '../protocol';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
@@ -30,6 +31,8 @@ export function HistogramDialog({
     checkpoint,
 }: HistogramDialogProps) {
     const [column, setColumn] = useState(initialColumn);
+    // The column the bars are stacked by.
+    const [groupColumn, setGroupColumn] = useState<number | null>(null);
     const [bins, setBins] = useState(DEFAULT_BINS);
     // As typed: "15" passes through "1", which is no count of bins.
     const [binsText, setBinsText] = useState(String(DEFAULT_BINS));
@@ -39,7 +42,7 @@ export function HistogramDialog({
     const chart = useRef<ChartImage>(null);
     const sheet = info.sheet;
 
-    const start = `${sheet}:${column}:${bins}`;
+    const start = `${sheet}:${column}:${bins}:${groupColumn}`;
     const started = useRef(''); // what the last startHistogram was for
     usePolled(
         client,
@@ -49,7 +52,7 @@ export function HistogramDialog({
             try {
                 if (started.current !== start) {
                     started.current = start;
-                    setState(await client.call('startHistogram', { sheet, column, bins }));
+                    setState(await client.call('startHistogram', { sheet, column, bins, groupColumn }));
                 } else setState(await client.call('histogramState', { sheet }));
                 setError('');
             } catch (failure) {
@@ -59,10 +62,10 @@ export function HistogramDialog({
         start,
     );
 
-    const pick = async (bin: number) => {
+    const pick = async (bin: number, group?: number) => {
         if (!info.capabilities.filter) return;
         try {
-            const reply = await client.call('histogramFilter', { sheet, bin });
+            const reply = await client.call('histogramFilter', { sheet, bin, group });
             // The model starts the histogram over on the rows left.
             onFilter(reply.conditions);
         } catch (failure) {
@@ -70,7 +73,8 @@ export function HistogramDialog({
         }
     };
 
-    const histogram = state?.column === column ? state.histogram : null;
+    const histogram = state?.column === column && state.groupColumn === groupColumn ? state.histogram : null;
+    const groups = histogram && histogram.bins.length > 0 ? histogram.groups : [];
     const progress =
         !state || state.done
             ? ''
@@ -86,6 +90,25 @@ export function HistogramDialog({
                 <label className="flex items-center gap-1">
                     Column
                     <ColumnSelect id="histogram-column" info={info} value={column} onChange={setColumn} />
+                </label>
+                <label className="flex items-center gap-1">
+                    Stack by
+                    <select
+                        id="histogram-group"
+                        className="control max-w-64"
+                        title="Split each bar by the values of another column, in a colour per value"
+                        value={groupColumn ?? ''}
+                        onChange={(event) =>
+                            setGroupColumn(event.target.value === '' ? null : Number(event.target.value))
+                        }
+                    >
+                        <option value="">(none)</option>
+                        {info.columns.map((_, c) => (
+                            <option key={c} value={c}>
+                                {columnLabel(info, c)}
+                            </option>
+                        ))}
+                    </select>
                 </label>
                 <label className="flex items-center gap-1">
                     Bins
@@ -132,6 +155,16 @@ export function HistogramDialog({
                                         {histogram.bins.length > 0 ? 'Range' : 'Value'}
                                     </th>
                                     <th className="py-0.5 text-right font-semibold">Rows</th>
+                                    {groups.map((group, g) => (
+                                        <th key={g} className="py-0.5 pl-2 text-right font-semibold">
+                                            <span
+                                                className="mr-1 inline-block size-2.5 rounded-sm"
+                                                style={{ background: groupColor(histogram, g) }}
+                                                aria-hidden
+                                            />
+                                            {group}
+                                        </th>
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody>
@@ -141,6 +174,11 @@ export function HistogramDialog({
                                         <td className="py-0.5 text-right tabular-nums">
                                             {item.count.toLocaleString()}
                                         </td>
+                                        {groups.map((_, g) => (
+                                            <td key={g} className="py-0.5 pl-2 text-right tabular-nums">
+                                                {(histogram.bins[i]?.groups?.[g] ?? 0).toLocaleString()}
+                                            </td>
+                                        ))}
                                     </tr>
                                 ))}
                             </tbody>
@@ -150,7 +188,7 @@ export function HistogramDialog({
                             ref={chart}
                             histogram={histogram}
                             rows={info.rows}
-                            onPick={(bin) => void pick(bin)}
+                            onPick={(bin, group) => void pick(bin, group)}
                         />
                     )}
                 </>

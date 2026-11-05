@@ -341,7 +341,12 @@ read their header comments before changing anything in `src/common/`.
   `histogramBinConditions()` (`cell_format`) gives a bin's filter, which
   must keep exactly the rows counted in it (tested). The GUI shows it in
   `HistogramWindow` (`gui_histogram.cxx`), the TUI instead of the sheet
-  (`B`).
+  (`B`). Stacked by a second column (`group_column`), the first pass also
+  takes that column's most frequent values (`ValueGroups`:
+  `MAX_VALUE_GROUPS`, then "(other)" and "(empty)") and the second counts
+  each bin per group (`HistogramCounter::addGrouped()`), always by a scan,
+  as it needs pairs; `valueGroupConditions()` gives a group's filter. The
+  three UIs share the group colours' order.
 - `TableModel::startScatter()` plots two columns against each other
   (`scatter.{hxx,cxx}`) the same way: `ScatterRange` takes each column's
   range (pushdown sources by `columnValueCounts()` per column), then
@@ -356,6 +361,10 @@ read their header comments before changing anything in `src/common/`.
   plot categorical: its most frequent values (`x_axis.top`) are the
   categories, plus "(other)"; the counter keeps each category's Y values
   for `boxStats()` (box plots, both UIs).
+  With a colour column (`ScatterState::color_column`) the points carry
+  their `ValueGroups` group, and each density cell its rows per group
+  (`ScatterPlot::mainColor()`, the TUI's colours), as for a stacked
+  histogram.
 - The GUI's histogram and scatter windows write their chart widget as PNG
   (`Fl_Image_Surface`, `fl_write_png()`) or SVG (`Fl_SVG_File_Surface`)
   with `writeWidgetImage()` (`gui_image_export.cxx`), so the image is what
@@ -547,7 +556,12 @@ Match the existing code:
   the web app (`docs/images/web-*.png`) the same way, and
   `vscode/scripts/screenshots.cjs` the VS Code extension's README's
   (`vscode/images/vscode-*.png`, in VS Code itself); run them after
-  changing what they show.
+  changing what they show. The GUI's chart windows have theirs in the
+  hidden `[.screenshots]` cases of `tableskim-gui-tests`
+  (`tests/gui/gui_screenshots.cxx`, written to `TABLESKIM_SCREENSHOT_DIR`),
+  and some of the TUI's views in `tests/tui/screenshots.py` (pyte's
+  screen drawn with Pillow); the other `gui-*` and `tui-*` images were
+  taken by hand. Look at each image before committing it.
 - The GUI is tested in-process by `tableskim-gui-tests` (`tests/gui/`,
   Linux only), which links `tableskim-gui` and runs under Xvfb: ctest
   starts it with `xvfb-run -a` (`TABLESKIM_GUI_TESTS`: `AUTO` when

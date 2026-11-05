@@ -1999,7 +1999,13 @@ void TableModel::continueAfterAppendLocked(size_t first_new)
     if (histogram_.active && histogram_.counting)
     {
         const std::shared_ptr<HistogramCounter> counter = histogram_job_ ? histogram_job_->counter : nullptr;
-        if (counter && all([&](const TableRow &row) { return counter->fits(cellAt(row, histogram_.column)); }))
+        const auto fits = [&](const TableRow &row)
+        {
+            const CellValue &value = cellAt(row, histogram_.column);
+            return histogram_.group_column ? counter->fits(value, cellAt(row, *histogram_.group_column))
+                                           : counter->fits(value);
+        };
+        if (counter && all(fits))
             histogram_.done = false;
         else
             restartHistogramLocked();
@@ -2010,7 +2016,11 @@ void TableModel::continueAfterAppendLocked(size_t first_new)
     {
         const std::shared_ptr<ScatterCounter> counter = scatter_job_ ? scatter_job_->counter : nullptr;
         if (counter && all([&](const TableRow &row)
-                           { return counter->fits(cellAt(row, scatter_.x_column), cellAt(row, scatter_.y_column)); }))
+                           {
+                               return counter->fits(cellAt(row, scatter_.x_column), cellAt(row, scatter_.y_column),
+                                                    scatter_.color_column ? cellAt(row, *scatter_.color_column)
+                                                                          : CellValue{});
+                           }))
             scatter_.done = false;
         else
             restartScatterLocked();
@@ -2684,6 +2694,7 @@ bool TableModel::stepHistogram(std::unique_lock<std::mutex> &lock, std::stop_tok
 {
     HistogramJob &job = *histogram_job_;
     const size_t column = histogram_.column;
+    const std::optional<size_t> group_column = histogram_.group_column;
     const bool counting = histogram_.counting;
     const std::shared_ptr<HistogramRange> range = job.range;
     const std::shared_ptr<HistogramCounter> counter = job.counter;
@@ -2696,7 +2707,8 @@ bool TableModel::stepHistogram(std::unique_lock<std::mutex> &lock, std::stop_tok
             range->add(value, count);
     };
 
-    if (capabilities_.query_pushdown && !job.pushdown_tried)
+    // Grouped bins count pairs of values: the second pass scans.
+    if (capabilities_.query_pushdown && !job.pushdown_tried && !(counting && group_column))
     {
         job.pushdown_tried = true;
         lock.unlock();
@@ -2704,6 +2716,10 @@ bool TableModel::stepHistogram(std::unique_lock<std::mutex> &lock, std::stop_tok
         try
         {
             counted = source_->columnValueCounts(column, add, stop).has_value();
+            if (counted && group_column)
+                counted = source_->columnValueCounts(*group_column, [&](const CellValue &value, size_t count)
+                                                     { range->addGroup(value, count); }, stop)
+                              .has_value();
         }
         catch (const std::exception &)
         {
@@ -2718,7 +2734,8 @@ bool TableModel::stepHistogram(std::unique_lock<std::mutex> &lock, std::stop_tok
             if (counting)
                 histogram_job_->counter = std::make_shared<HistogramCounter>(histogram_.histogram);
             else
-                histogram_job_->range = std::make_shared<HistogramRange>(options_.stats_limits);
+                histogram_job_->range =
+                    std::make_shared<HistogramRange>(options_.stats_limits, histogram_.group_column.has_value());
             return true;
         }
         histogram_.scanned_rows = counting ? counter->result().rows : histogram_.scanned_rows;
@@ -2734,7 +2751,17 @@ bool TableModel::stepHistogram(std::unique_lock<std::mutex> &lock, std::stop_tok
     lock.unlock();
 
     for (const auto &[view_row, row] : chunk.rows)
-        add(cellAt(*row, column), 1);
+    {
+        if (!group_column)
+            add(cellAt(*row, column), 1);
+        else if (counting)
+            counter->addGrouped(cellAt(*row, column), cellAt(*row, *group_column));
+        else
+        {
+            range->add(cellAt(*row, column));
+            range->addGroup(cellAt(*row, *group_column));
+        }
+    }
     const auto now = std::chrono::steady_clock::now();
 
     lock.lock();
@@ -2791,12 +2818,13 @@ void TableModel::finishHistogramPassLocked(std::vector<TableEvent> &events)
     events.push_back({TableEvent::Kind::HistogramProgress, 0, histogram_.scanned_rows});
 }
 
-void TableModel::startHistogram(size_t column, size_t target_bins)
+void TableModel::startHistogram(size_t column, size_t target_bins, std::optional<size_t> group_column)
 {
     {
         std::lock_guard lock(mutex_);
         histogram_.column = column;
         histogram_.target_bins = target_bins;
+        histogram_.group_column = group_column;
         restartHistogramLocked();
     }
     wakeWorker();
@@ -2806,14 +2834,16 @@ void TableModel::restartHistogramLocked()
 {
     const size_t column = histogram_.column;
     const size_t target_bins = histogram_.target_bins;
+    const std::optional<size_t> group_column = histogram_.group_column;
     histogram_ = {};
     histogram_.active = true;
     histogram_.column = column;
     histogram_.target_bins = target_bins;
+    histogram_.group_column = group_column;
     ++histogram_generation_;
     // New accumulators: the worker may still be adding to the old ones.
     histogram_job_ = HistogramJob{};
-    histogram_job_->range = std::make_shared<HistogramRange>(options_.stats_limits);
+    histogram_job_->range = std::make_shared<HistogramRange>(options_.stats_limits, group_column.has_value());
 }
 
 void TableModel::cancelHistogram()
@@ -2841,6 +2871,7 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
     ScatterJob &job = *scatter_job_;
     const size_t x_column = scatter_.x_column;
     const size_t y_column = scatter_.y_column;
+    const std::optional<size_t> color_column = scatter_.color_column;
     const bool counting = scatter_.counting;
     const std::shared_ptr<ScatterRange> range = job.range;
     const std::shared_ptr<ScatterCounter> counter = job.counter;
@@ -2858,7 +2889,11 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
                           .has_value() &&
                       source_->columnValueCounts(y_column, [&](const CellValue &value, size_t count)
                                                  { range->y().add(value, count); }, stop)
-                          .has_value();
+                          .has_value() &&
+                      (!color_column ||
+                       source_->columnValueCounts(*color_column, [&](const CellValue &value, size_t count)
+                                                  { range->color().add(value, count); }, stop)
+                           .has_value());
         }
         catch (const std::exception &)
         {
@@ -2870,7 +2905,7 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
         if (!counted)
         {
             // The source may have added some values before it gave up.
-            scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits);
+            scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits, color_column.has_value());
             return true;
         }
         finishScatterPassLocked(events);
@@ -2884,12 +2919,18 @@ bool TableModel::stepScatter(std::unique_lock<std::mutex> &lock, std::stop_token
     const auto published = scatter_published_;
     lock.unlock();
 
+    static const CellValue no_color;
     for (const auto &[view_row, row] : chunk.rows)
     {
+        const CellValue &color = color_column ? cellAt(*row, *color_column) : no_color;
         if (counting)
-            counter->add(cellAt(*row, x_column), cellAt(*row, y_column), view_row);
+            counter->add(cellAt(*row, x_column), cellAt(*row, y_column), view_row, color);
         else
+        {
             range->add(cellAt(*row, x_column), cellAt(*row, y_column));
+            if (color_column)
+                range->color().add(color);
+        }
     }
     const auto now = std::chrono::steady_clock::now();
     // Copied outside the lock: the points take a while.
@@ -2957,12 +2998,14 @@ void TableModel::finishScatterPassLocked(std::vector<TableEvent> &events)
     events.push_back({TableEvent::Kind::ScatterProgress, 0, scatter_.scanned_rows});
 }
 
-void TableModel::startScatter(size_t x_column, size_t y_column, ScatterOptions options)
+void TableModel::startScatter(size_t x_column, size_t y_column, ScatterOptions options,
+                              std::optional<size_t> color_column)
 {
     {
         std::lock_guard lock(mutex_);
         scatter_.x_column = x_column;
         scatter_.y_column = y_column;
+        scatter_.color_column = color_column;
         scatter_.options = options;
         restartScatterLocked();
     }
@@ -2974,15 +3017,17 @@ void TableModel::restartScatterLocked()
     const size_t x_column = scatter_.x_column;
     const size_t y_column = scatter_.y_column;
     const ScatterOptions options = scatter_.options;
+    const std::optional<size_t> color_column = scatter_.color_column;
     scatter_ = {};
     scatter_.active = true;
     scatter_.x_column = x_column;
     scatter_.y_column = y_column;
+    scatter_.color_column = color_column;
     scatter_.options = options;
     ++scatter_generation_;
     // New accumulators: the worker may still be adding to the old ones.
     scatter_job_ = ScatterJob{};
-    scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits);
+    scatter_job_->range = std::make_shared<ScatterRange>(options_.stats_limits, color_column.has_value());
 }
 
 void TableModel::cancelScatter()

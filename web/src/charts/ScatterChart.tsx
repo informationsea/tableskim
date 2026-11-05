@@ -1,5 +1,6 @@
 import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ScatterAxis, ScatterState } from '../protocol';
+import { groupColorName, LEGEND_LINE, legendLayout, SWATCH, type ValueGroups } from './groups';
 import { type ChartImage, SvgContext, surfaceColor } from './image';
 import { compactCount, observeWidth } from './scale';
 import { Tooltip } from './Tooltip';
@@ -10,6 +11,7 @@ export type ScatterPick =
     | { kind: 'row'; row: number }
     | { kind: 'cell'; xBin: number; yBin: number }
     | { kind: 'category'; category: number }
+    | { kind: 'color'; color: number } // an entry of the legend
     | { kind: 'range'; xLow: number; xHigh: number; yLow: number; yHigh: number };
 
 interface ScatterChartProps {
@@ -97,6 +99,7 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
     const canvas = useRef<HTMLCanvasElement>(null);
     const [width, setWidth] = useState(600);
     const [hover, setHover] = useState<{ x: number; y: number; value: string; label: string } | null>(null);
+    const [hoveredColor, setHoveredColor] = useState<number | null>(null); // an entry of the legend
     const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
     const press = useRef<{ x: number; y: number } | null>(null);
     useEffect(() => (box.current ? observeWidth(box.current, setWidth) : undefined), []);
@@ -105,10 +108,26 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
     const xBins = categorical ? state.categories.length : Math.max(0, state.xAxis.edges.length - 1);
     const yBins = Math.max(0, state.yAxis.edges.length - 1);
     const legend = mode === 'density';
+    // Coloured points: a legend of the colours with rows, above the plot.
+    const colored = mode === 'points' && state.colors.length > 0;
+    const groups: ValueGroups = { names: state.colors, other: state.otherColor, empty: state.emptyColor };
+    const plotWidth = Math.max(40, width - MARGIN.left - MARGIN.right - (legend ? LEGEND_WIDTH : 0));
+    const colorLegend = legendLayout(
+        colored
+            ? state.colors
+                  .map((name, group) => ({
+                      group,
+                      label: `${name} (${(state.colorPairs[group] ?? 0).toLocaleString()})`,
+                  }))
+                  .filter(({ group }) => (state.colorPairs[group] ?? 0) > 0)
+            : [],
+        plotWidth,
+    );
+    const height = HEIGHT + colorLegend.height;
     const plot = {
         x: MARGIN.left,
-        y: MARGIN.top,
-        w: Math.max(40, width - MARGIN.left - MARGIN.right - (legend ? LEGEND_WIDTH : 0)),
+        y: MARGIN.top + colorLegend.height,
+        w: plotWidth,
         h: HEIGHT - MARGIN.top - MARGIN.bottom,
     };
     const [xLow, xHigh] = categorical ? [-0.5, state.categories.length - 0.5] : axisRange(state.xAxis);
@@ -119,19 +138,20 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
     const fromX = (px: number) => xLow + ((px - inner.x) / inner.w) * (xHigh - xLow);
     const fromY = (py: number) => yLow + ((inner.y + inner.h - py) / inner.h) * (yHigh - yLow);
 
-    // Points as screen coordinates with their rows.
+    // Points as screen coordinates with their rows and colours.
     const points = useMemo(() => {
-        const result: { x: number; y: number; row: number }[] = [];
+        const result: { x: number; y: number; row: number; color: number }[] = [];
         for (let i = 0; i + 2 < state.points.length; i += 3) {
             const row = state.points[i + 2];
             result.push({
                 x: categorical ? state.points[i] + SPREAD_WIDTH * spreadOf(row) : state.points[i],
                 y: state.points[i + 1],
                 row,
+                color: state.pointColors[i / 3] ?? 0,
             });
         }
         return result;
-    }, [state.points, categorical]);
+    }, [state.points, state.pointColors, categorical]);
     const most = Math.max(0, ...state.counts);
     const line = fit && mode !== 'boxes' && !categorical ? state.fit : null;
 
@@ -140,6 +160,18 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
 
     const paint = (context: Painter, color: (name: string) => string) => {
         context.font = '12px system-ui, sans-serif';
+
+        // The colours' legend: a swatch and the name with its rows.
+        context.textAlign = 'left';
+        context.textBaseline = 'middle';
+        for (const entry of colorLegend.entries) {
+            const x = plot.x + entry.x;
+            const y = MARGIN.top + entry.y;
+            context.fillStyle = color(groupColorName(groups, entry.group));
+            context.fillRect(x, y + 2, SWATCH, SWATCH);
+            context.fillStyle = color(hoveredColor === entry.group ? '--accent' : '--fg');
+            context.fillText(entry.label, x + SWATCH + 6, y + SWATCH / 2 + 2);
+        }
 
         // Gridlines at the ticks, hairline and recessive; the labels outside.
         context.lineWidth = 1;
@@ -226,15 +258,20 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
             });
         } else {
             const few = points.length <= FEW_POINTS;
-            context.fillStyle = color('--series');
             context.strokeStyle = color('--surface');
             context.lineWidth = 2;
             context.globalAlpha = few ? 1 : 0.5;
-            for (const point of points) {
-                context.beginPath();
-                context.arc(toX(point.x), toY(point.y), few ? POINT_RADIUS : SMALL_POINT_RADIUS, 0, 2 * Math.PI);
-                if (few) context.stroke();
-                context.fill();
+            // A colour at a time: switching the fill for each of many points is slow.
+            const colours = colored ? state.colors.length : 1;
+            for (let group = 0; group < colours; group++) {
+                context.fillStyle = color(colored ? groupColorName(groups, group) : '--series');
+                for (const point of points) {
+                    if (colored && point.color !== group) continue;
+                    context.beginPath();
+                    context.arc(toX(point.x), toY(point.y), few ? POINT_RADIUS : SMALL_POINT_RADIUS, 0, 2 * Math.PI);
+                    if (few) context.stroke();
+                    context.fill();
+                }
             }
             context.globalAlpha = 1;
         }
@@ -272,9 +309,9 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
         if (!element || !context) return;
         const ratio = window.devicePixelRatio || 1;
         element.width = Math.round(width * ratio);
-        element.height = Math.round(HEIGHT * ratio);
+        element.height = Math.round(height * ratio);
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
-        context.clearRect(0, 0, width, HEIGHT);
+        context.clearRect(0, 0, width, height);
         const style = getComputedStyle(element);
         paint(context, (name) => style.getPropertyValue(name).trim());
     });
@@ -284,14 +321,29 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
             const element = canvas.current;
             if (!element) return null;
             const style = getComputedStyle(element);
-            const svg = new SvgContext(width, HEIGHT, surfaceColor(element));
+            const svg = new SvgContext(width, height, surfaceColor(element));
             paint(svg, (name) => style.getPropertyValue(name).trim());
-            return { svg: svg.toString(), width, height: HEIGHT };
+            return { svg: svg.toString(), width, height };
         },
     }));
 
     // What lies under the pointer: a point, a density cell or a category.
     const find = (px: number, py: number): { pick: ScatterPick; value: string; label: string } | null => {
+        const entry = colorLegend.entries.find(
+            (e) =>
+                px >= plot.x + e.x &&
+                px <= plot.x + e.x + e.width &&
+                py >= MARGIN.top + e.y &&
+                py < MARGIN.top + e.y + LEGEND_LINE,
+        );
+        if (entry) {
+            const rows = state.colorPairs[entry.group] ?? 0;
+            return {
+                pick: { kind: 'color', color: entry.group },
+                value: `${rows.toLocaleString()} ${rows === 1 ? 'row' : 'rows'}`,
+                label: `${state.colors[entry.group]} · click to filter to it`,
+            };
+        }
         if (px < plot.x || px > plot.x + plot.w || py < plot.y || py > plot.y + plot.h) return null;
         if (mode === 'boxes' && categorical) {
             const category = Math.round(fromX(px));
@@ -339,7 +391,9 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
         return {
             pick: { kind: 'row', row: point.row },
             value: `Row ${(point.row + 1).toLocaleString()}`,
-            label: xText && yText ? `${xText}, ${yText} · click to go to the row` : 'Click to go to the row',
+            label:
+                (colored ? `${state.colors[point.color] ?? ''} · ` : '') +
+                (xText && yText ? `${xText}, ${yText} · click to go to the row` : 'Click to go to the row'),
         };
     };
 
@@ -358,7 +412,7 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
                 aria-label={state.summary}
                 className="block cursor-crosshair"
                 data-fit={line ? 'true' : undefined}
-                style={{ width, height: HEIGHT }}
+                style={{ width, height }}
                 onPointerDown={(event) => {
                     if (event.button !== 0) return;
                     press.current = position(event);
@@ -385,6 +439,7 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
                     }
                     const found = find(at.x, at.y);
                     setHover(found && { x: at.x, y: at.y, value: found.value, label: found.label });
+                    setHoveredColor(found?.pick.kind === 'color' ? found.pick.color : null);
                 }}
                 onPointerUp={(event) => {
                     const at = position(event);
@@ -405,7 +460,10 @@ export function ScatterChart({ state, mode, fit, onPick, ref }: ScatterChartProp
                     const found = find(at.x, at.y);
                     if (found) onPick(found.pick);
                 }}
-                onPointerLeave={() => setHover(null)}
+                onPointerLeave={() => {
+                    setHover(null);
+                    setHoveredColor(null);
+                }}
             />
             {band && (
                 <div

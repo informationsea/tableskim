@@ -293,6 +293,7 @@ async function regressionPage() {
                         done: !!this.chartReady,
                         counting: false,
                         column: this.histogramColumn ?? 0,
+                        groupColumn: null,
                         scannedRows: 100,
                         histogram: this.chartReady
                             ? {
@@ -300,8 +301,19 @@ async function regressionPage() {
                                   summary: '1 number',
                                   bins: [{ label: '20', range: '20 to 25', count: 1 }],
                                   top: [],
+                                  groups: [],
+                                  otherGroup: false,
+                                  emptyGroup: false,
                               }
-                            : { kind: 'none', summary: '', bins: [], top: [] },
+                            : {
+                                  kind: 'none',
+                                  summary: '',
+                                  bins: [],
+                                  top: [],
+                                  groups: [],
+                                  otherGroup: false,
+                                  emptyGroup: false,
+                              },
                     });
                 if (method === 'histogramFilter')
                     return this.reply(request, {
@@ -327,6 +339,12 @@ async function regressionPage() {
                         categories: [],
                         points: [],
                         fit: null,
+                        colorColumn: null,
+                        colors: [],
+                        otherColor: false,
+                        emptyColor: false,
+                        colorPairs: [],
+                        pointColors: [],
                     });
                 if (method === 'setView') {
                     let filter = 'filter' in params ? params.filter : this.view.filter;
@@ -1471,6 +1489,69 @@ describe('the web app', () => {
         await page.context().close();
     });
 
+    test('stacks a histogram by a column and filters by a part of a bar', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        await page.locator('#histogram-button').click();
+        await waitForText(page.locator('#histogram-summary'), '53 numbers');
+        await page.selectOption('#histogram-group', '4'); // City
+        await waitForText(page.locator('#histogram-legend'), 'Fukuoka');
+        await waitForText(page.locator('#histogram-legend'), '(other)');
+        // The table has a column per group, adding up to each bin's rows.
+        await page.locator('#histogram-dialog button', { hasText: 'Table' }).click();
+        await waitForText(page.locator('#histogram-table thead'), 'Fukuoka');
+        const first = page.locator('#histogram-table tbody tr').first().locator('td');
+        const counts = (await first.allTextContents()).slice(1).map(Number);
+        assert.equal(
+            counts.slice(1).reduce((a, b) => a + b, 0),
+            counts[0],
+        );
+        await page.locator('#histogram-dialog button', { hasText: 'Table' }).click();
+        // The bottom part of the first bar: its first group with rows.
+        const group = counts.slice(1).findIndex((count) => count > 0);
+        const segment = page.locator('#histogram-chart .bar').first().locator('.segment').first();
+        await segment.hover();
+        await waitForText(page.locator('.chart-tooltip'), 'of the bin');
+        await segment.click();
+        const expected = counts[group + 1];
+        await waitForText(page.locator('#status-rows'), `${expected} ${expected === 1 ? 'row' : 'rows'} of 54`);
+        await page.context().close();
+    });
+
+    for (const chart of ['histogram', 'scatter']) {
+        test(`${chart} group clicks preserve numeric-looking strings`, async () => {
+            const page = await newPage();
+            await open(page, {
+                name: 'groups.csv',
+                mimeType: 'text/csv',
+                // Give "01" more rows so it is first regardless of tie ordering.
+                buffer: Buffer.from('x,y,kind\n10,20,1\n10,20,01\n10,20,01\n'),
+            });
+            await cell(page, 0, 0).click();
+            await page.locator(`#${chart}-button`).click();
+            if (chart === 'histogram') {
+                await page.selectOption('#histogram-group', '2');
+                await waitForText(page.locator('#histogram-legend'), '01');
+                const segment = page.locator('#histogram-chart .segment').first();
+                await segment.hover();
+                await waitForText(page.locator('.chart-tooltip'), '01');
+                await segment.click();
+            } else {
+                await page.selectOption('#scatter-color', '2');
+                await waitForText(page.locator('#scatter-summary'), 'click a colour');
+                const box = await page.locator('#scatter-chart').boundingBox();
+                await page.mouse.move(box.x + 72, box.y + 19);
+                await waitForText(page.locator('.chart-tooltip'), '01');
+                await page.mouse.click(box.x + 72, box.y + 19);
+            }
+            await waitForText(page.locator('#status-rows'), '2 rows of 3');
+            await waitForText(cell(page, 0, 2), '01');
+            assert.equal(await cell(page, 0, 2).textContent(), '01');
+            await page.context().close();
+        });
+    }
+
     test('saves the charts as PNG and SVG', async () => {
         const page = await newPage();
         await open(page, demo('normal.csv'));
@@ -1571,6 +1652,24 @@ describe('the web app', () => {
         await page.locator('#scatter-boxes:not([disabled])').click();
         await waitForText(page.locator('#scatter-summary'), 'Click a box');
         assert.equal(await page.locator('#scatter-fit').isDisabled(), true, 'no line for categories');
+        await page.context().close();
+    });
+
+    test('colours a scatter plot by a column and filters by a colour of the legend', async () => {
+        const page = await newPage();
+        await open(page, demo('normal.csv'));
+        await cell(page, 0, 3).click();
+        await page.locator('#scatter-button').click();
+        await waitForText(page.locator('#scatter-summary'), '53 rows plotted');
+        await page.selectOption('#scatter-color', '4'); // City
+        await waitForText(page.locator('#scatter-summary'), 'click a colour');
+        // The legend's first entry, Fukuoka, above the plot.
+        const box = await page.locator('#scatter-chart').boundingBox();
+        await page.mouse.move(box.x + 72, box.y + 19);
+        await waitForText(page.locator('.chart-tooltip'), 'Fukuoka');
+        await page.mouse.down();
+        await page.mouse.up();
+        await waitForText(page.locator('#status-rows'), '9 rows of 54');
         await page.context().close();
     });
 

@@ -119,6 +119,8 @@ struct HistogramState
     bool done = false;
     size_t column = 0;
     size_t target_bins = 0;
+    // The column the bins are stacked by, if any (Histogram::grouped).
+    std::optional<size_t> group_column;
     // The first pass finds the range; the second counts the values into
     // bins, which `histogram` then has (counts grow until done).
     bool counting = false;
@@ -135,6 +137,8 @@ struct ScatterState
     bool done = false;
     size_t x_column = 0;
     size_t y_column = 0;
+    // The column the points are coloured by, if any (ScatterPlot::colors).
+    std::optional<size_t> color_column;
     ScatterOptions options;
     // The first pass finds the ranges; the second counts the rows into the
     // grid and samples the points, which `plot` then has (growing until done).
@@ -326,16 +330,19 @@ public:
 
     // A histogram of one column over the rows of the view, computed in the
     // background in two passes; HistogramProgress is emitted as rows are
-    // counted. A view change starts it over.
-    void startHistogram(size_t column, size_t target_bins = 30);
+    // counted. A view change starts it over. With `group_column`, each bin
+    // is split by that column's most frequent values (Histogram::groups).
+    void startHistogram(size_t column, size_t target_bins = 30, std::optional<size_t> group_column = std::nullopt);
     void cancelHistogram();
     HistogramState histogramState() const;
 
     // Two columns plotted against each other over the rows of the view
     // (points and a 2D density), computed in the background in two passes
     // like a histogram; ScatterProgress is emitted as rows are counted. A
-    // view change starts it over.
-    void startScatter(size_t x_column, size_t y_column, ScatterOptions options = {});
+    // view change starts it over. With `color_column`, the points and cells
+    // are counted by that column's most frequent values too.
+    void startScatter(size_t x_column, size_t y_column, ScatterOptions options = {},
+                      std::optional<size_t> color_column = std::nullopt);
     void cancelScatter();
     ScatterState scatterState() const;
 

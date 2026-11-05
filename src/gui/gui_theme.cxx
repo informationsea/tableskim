@@ -7,6 +7,9 @@
 #include <FL/fl_draw.H>
 #include <algorithm>
 #include <cstring>
+#include <iterator>
+
+#include "histogram.hxx"
 
 namespace
 {
@@ -210,6 +213,20 @@ bool isFluentTheme()
 const ThemeColors &themeColors()
 {
     return fluent_active ? FLUENT_COLORS : CLASSIC_COLORS;
+}
+
+Fl_Color valueGroupColor(const ValueGroups &groups, size_t group)
+{
+    static const Fl_Color colors[] = {
+        fl_rgb_color(0x2a, 0x78, 0xd6), fl_rgb_color(0xeb, 0x68, 0x34), fl_rgb_color(0x1b, 0xaf, 0x7a),
+        fl_rgb_color(0xed, 0xa1, 0x00), fl_rgb_color(0xe8, 0x7b, 0xa4), fl_rgb_color(0x00, 0x83, 0x00),
+        fl_rgb_color(0x62, 0x50, 0xd6), fl_rgb_color(0xe3, 0x49, 0x48),
+    };
+    if (groups.isEmpty(group))
+        return fl_rgb_color(0xc8, 0xc6, 0xbf);
+    if (groups.isOther(group))
+        return fl_rgb_color(0x8f, 0x8d, 0x86);
+    return colors[group % std::size(colors)];
 }
 
 void styleScrollbar(Fl_Scrollbar *scrollbar)

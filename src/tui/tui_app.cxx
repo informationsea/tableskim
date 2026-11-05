@@ -62,8 +62,8 @@ namespace
         {"Home / End, 0 / $", "First / last column"},
         {"Enter, double click", "Show the whole cell in the sidebar (in edit mode: edit it)"},
         {"S", "Statistics of the cursor's column in the sidebar (again: the cell)"},
-        {"B", "Histogram of the cursor's column (Enter: filter to a bar; Esc: back)"},
-        {"M", "2D density of the selected two columns, else of number or date columns near the cursor"},
+        {"B", "Histogram of the cursor's column (Enter: filter to a bar; g / G: stack by a column; Esc: back)"},
+        {"M", "2D density of the selected two columns, else of number or date columns near the cursor (c / C: colour by a column)"},
         {"A", "Group By: rows per value of columns, with sums, means, ..., in a sheet"},
         {"%", "Format the column(s): thousands separator, decimal places, date format"},
         {"< / >", "Narrow / widen the column"},
@@ -143,6 +143,66 @@ namespace
 
     // The next column of `count` after `column` (before it if !forward) that
     // is not hidden, going round if `wrap`; none if there is no other.
+    // A group of values (a stacked histogram's, a density's colours): the
+    // GUI's and the web app's eight hues in a fixed order, then grays for
+    // "(other)" and "(empty)".
+    Color valueGroupColor(const ValueGroups &groups, size_t group)
+    {
+        static const std::array<uint8_t, 3> colors[] = {
+            {0x2a, 0x78, 0xd6}, {0xeb, 0x68, 0x34}, {0x1b, 0xaf, 0x7a}, {0xed, 0xa1, 0x00},
+            {0xe8, 0x7b, 0xa4}, {0x00, 0x83, 0x00}, {0x62, 0x50, 0xd6}, {0xe3, 0x49, 0x48},
+        };
+        if (groups.isEmpty(group))
+            return Color::RGB(0xc8, 0xc6, 0xbf);
+        if (groups.isOther(group))
+            return Color::RGB(0x8f, 0x8d, 0x86);
+        const auto &rgb = colors[group % std::size(colors)];
+        return Color::RGB(rgb[0], rgb[1], rgb[2]);
+    }
+
+    struct LegendEntry
+    {
+        size_t group = 0;
+        std::string label; // with a count, say
+        Color color;
+    };
+
+    // Swatches and labels on as many lines as it takes; the selected entry
+    // inverted.
+    Elements legendLines(const std::vector<LegendEntry> &entries, std::optional<size_t> selected, int width)
+    {
+        Elements lines;
+        Elements line;
+        int used = 0;
+        for (const LegendEntry &entry : entries)
+        {
+            const int entry_width = string_width(entry.label) + 4;
+            if (used > 0 && used + entry_width > width)
+            {
+                lines.push_back(hbox(std::move(line)));
+                line.clear();
+                used = 0;
+            }
+            Element item = hbox({text("■") | color(entry.color), text(" " + entry.label)});
+            if (selected == entry.group)
+                item = item | inverted;
+            line.push_back(hbox({text(" "), item, text(" ")}));
+            used += entry_width;
+        }
+        if (!line.empty())
+            lines.push_back(hbox(std::move(line)));
+        return lines;
+    }
+
+    // A group's name, short enough for a few on a line.
+    std::string legendLabel(const ValueGroups &groups, size_t group)
+    {
+        std::string label = fitText(singleLine(valueGroupText(groups, group)), 16, TextAlign::Left);
+        while (!label.empty() && label.back() == ' ')
+            label.pop_back();
+        return label;
+    }
+
     std::optional<size_t> nextVisibleColumn(const HiddenColumns &hidden, size_t column, bool forward, size_t count,
                                             bool wrap)
     {
@@ -464,11 +524,14 @@ void TuiApp::showSheet(size_t index)
             checkMemoryCheckpoint(raw->model());
             // The sheet was reopened or replaced: its new model's histogram.
             if (histogram_model_ && currentView() == raw && raw->model() && raw->model() != histogram_model_)
-                showHistogram(histogram_model_->histogramState().column);
+            {
+                const HistogramState state = histogram_model_->histogramState();
+                showHistogram(state.column, state.group_column);
+            }
             if (density_model_ && currentView() == raw && raw->model() && raw->model() != density_model_)
             {
                 const ScatterState state = density_model_->scatterState();
-                showDensity(state.x_column, state.y_column);
+                showDensity(state.x_column, state.y_column, state.color_column);
             }
             if (currentView() == raw)
                 refreshSearch(); });
@@ -2056,7 +2119,7 @@ void TuiApp::showColumnStats()
     sidebar_mode_ = SidebarMode::Stats;
 }
 
-void TuiApp::showHistogram(size_t column)
+void TuiApp::showHistogram(size_t column, std::optional<size_t> group_column)
 {
     TuiTableView *view = currentView();
     if (!view || !view->model())
@@ -2064,9 +2127,10 @@ void TuiApp::showHistogram(size_t column)
     if (histogram_model_ && histogram_model_ != view->model())
         histogram_model_->cancelHistogram();
     histogram_model_ = view->model();
-    histogram_model_->startHistogram(column);
+    histogram_model_->startHistogram(column, 30, group_column);
     histogram_selected_ = 0;
     histogram_top_ = 0;
+    histogram_group_.reset();
 }
 
 void TuiApp::closeHistogram()
@@ -2095,7 +2159,39 @@ bool TuiApp::handleHistogramEvent(Event event)
         const bool forward = event == Event::ArrowRight || event == Event::l;
         const HiddenColumns &hidden = hiddenColumnsOf(histogram_model_);
         if (const auto column = nextVisibleColumn(hidden, state.column, forward, columns, false))
-            showHistogram(*column);
+            showHistogram(*column, state.group_column);
+    }
+    else if ((event == Event::g || event == Event::G) && columns > 1)
+    {
+        // Stack by the next (previous) visible column, or by none after the
+        // last one; never by the histogram's own column.
+        const bool forward = event == Event::g;
+        const HiddenColumns &hidden = hiddenColumnsOf(histogram_model_);
+        std::optional<size_t> group = state.group_column;
+        do
+        {
+            if (!group)
+                group = forward ? 0 : columns - 1;
+            else if (forward ? *group + 1 < columns : *group > 0)
+                group = forward ? *group + 1 : *group - 1;
+            else
+                group.reset();
+        } while (group && (*group == state.column || hidden.contains(*group)) && group != state.group_column);
+        if (group != state.group_column)
+            showHistogram(state.column, group);
+    }
+    else if ((event == Event::Tab || event == Event::TabReverse) && hg.grouped && hg.groupCount() > 0)
+    {
+        // The parts of the selected bar, then the whole bar again.
+        const size_t groups = hg.groupCount();
+        if (event == Event::Tab)
+            histogram_group_ = !histogram_group_ ? std::optional<size_t>(0)
+                               : *histogram_group_ + 1 < groups ? std::optional<size_t>(*histogram_group_ + 1)
+                                                                 : std::nullopt;
+        else
+            histogram_group_ = !histogram_group_    ? std::optional<size_t>(groups - 1)
+                               : *histogram_group_ > 0 ? std::optional<size_t>(*histogram_group_ - 1)
+                                                        : std::nullopt;
     }
     else if (event == Event::F)
         clearFilter();
@@ -2106,7 +2202,13 @@ bool TuiApp::handleHistogramEvent(Event event)
         ViewSpec spec = histogram_model_->requestedView();
         if (hg.binCount() > 0)
         {
-            addNarrowingConditions(spec, histogramBinConditions(hg, state.column, histogram_selected_));
+            auto conditions = histogramBinConditions(hg, state.column, histogram_selected_);
+            if (state.group_column && histogram_group_ && *histogram_group_ < hg.groupCount())
+            {
+                for (FilterCondition &condition : histogramGroupConditions(hg, *state.group_column, *histogram_group_))
+                    conditions.push_back(std::move(condition));
+            }
+            addNarrowingConditions(spec, std::move(conditions));
         }
         else
             addNarrowingConditions(spec, {cellFilterCondition(state.column, hg.top[histogram_selected_].value, true)});
@@ -2114,6 +2216,7 @@ bool TuiApp::handleHistogramEvent(Event event)
         histogram_model_->setView(std::move(spec));
         histogram_selected_ = 0;
         histogram_top_ = 0;
+        histogram_group_.reset();
     }
     return true;
 }
@@ -2124,15 +2227,44 @@ Element TuiApp::renderHistogram()
     const HistogramState state = model->histogramState();
     const Histogram &hg = state.histogram;
     const int width = Terminal::Size().dimx;
-    // The title, a separator, the hint and the status bar.
-    const int height = std::max(Terminal::Size().dimy - 4 - (views_.size() > 1 ? 1 : 0), 3);
+    const bool stacked = hg.grouped && hg.binCount() > 0;
+    if (!stacked || histogram_group_ >= hg.groupCount())
+        histogram_group_.reset();
+    const size_t bars = hg.binCount() > 0 ? hg.binCount() : hg.top.size();
+    histogram_selected_ = std::min(histogram_selected_, bars > 0 ? bars - 1 : 0);
+
+    // A stacked histogram's legend, with the selected bar's count of each
+    // group, on as many lines as it takes.
+    Elements legend;
+    if (stacked)
+    {
+        std::vector<LegendEntry> entries;
+        for (size_t group = 0; group < hg.groupCount(); ++group)
+        {
+            // A group without a row in a bin needs no entry.
+            size_t rows = 0;
+            for (size_t bin = 0; bin < hg.binCount(); ++bin)
+                rows += hg.groupCount(bin, group);
+            if (rows > 0)
+                entries.push_back({group,
+                                   legendLabel(hg.groups, group) + " " +
+                                       std::to_string(hg.groupCount(histogram_selected_, group)),
+                                   valueGroupColor(hg.groups, group)});
+        }
+        legend = legendLines(entries, histogram_group_, width);
+    }
+    // The title, a separator, the hint, the status bar and the legend.
+    const int height =
+        std::max(Terminal::Size().dimy - 4 - static_cast<int>(legend.size()) - (views_.size() > 1 ? 1 : 0), 3);
 
     std::string status;
     if (!state.done)
         status = (state.counting ? "counting… " : "reading… ") + std::to_string(state.scanned_rows) + " rows";
     else
         status = histogramSummary(hg) + (model->view().filtered() ? " (filtered rows)" : "");
-    const std::string title = " Histogram: " + singleLine(model->columnName(state.column)) + "  ";
+    std::string title = " Histogram: " + singleLine(model->columnName(state.column)) + "  ";
+    if (state.group_column)
+        title += "by " + singleLine(model->columnName(*state.group_column)) + "  ";
 
     // Rows: a label, a bar, and the count with its share.
     std::vector<std::string> labels;
@@ -2175,18 +2307,44 @@ Element TuiApp::renderHistogram()
         label_width = std::min(label_width, width / 3);
         const int bar_width = std::max(width - label_width - count_width - 6, 4);
         static const char *const partial[] = {"", "▏", "▎", "▍", "▌", "▋", "▊", "▉"};
+        const auto blocks = [](size_t cells)
+        {
+            std::string bar;
+            for (size_t k = 0; k < cells; ++k)
+                bar += "█";
+            return bar;
+        };
         for (size_t i = histogram_top_; i < labels.size() && i < histogram_top_ + static_cast<size_t>(height); ++i)
         {
-            const auto eighths = static_cast<size_t>(std::llround(static_cast<double>(counts[i]) /
-                                                                  static_cast<double>(most) * bar_width * 8));
-            std::string bar;
-            for (size_t k = 0; k < eighths / 8; ++k)
-                bar += "█";
-            bar += partial[eighths % 8];
+            const auto cells = [&](size_t count)
+            { return static_cast<double>(count) / static_cast<double>(most) * bar_width; };
+            Element bar;
+            if (stacked)
+            {
+                // Whole cells per group, from the rounded running totals so
+                // that the bar keeps its length.
+                Elements parts;
+                size_t sum = 0;
+                size_t drawn = 0;
+                for (size_t group = 0; group < hg.groupCount(); ++group)
+                {
+                    sum += hg.groupCount(i, group);
+                    const auto end = static_cast<size_t>(std::llround(cells(sum)));
+                    if (end > drawn)
+                        parts.push_back(text(blocks(end - drawn)) | color(valueGroupColor(hg.groups, group)));
+                    drawn = std::max(drawn, end);
+                }
+                bar = hbox(std::move(parts));
+            }
+            else
+            {
+                const auto eighths = static_cast<size_t>(std::llround(cells(counts[i]) * 8));
+                bar = text(blocks(eighths / 8) + partial[eighths % 8]) | color(Color::CyanLight);
+            }
             const std::string count = std::to_string(counts[i]) + " " + percentText(counts[i], total);
             Element line = hbox({
                 text(" " + fitText(labels[i], label_width, TextAlign::Right) + " │"),
-                text(bar) | color(Color::CyanLight),
+                bar,
                 text(" " + count),
                 filler(),
             });
@@ -2198,18 +2356,27 @@ Element TuiApp::renderHistogram()
     else
         rows.push_back(text(state.done ? " No values" : " Reading the column…") | dim);
 
-    std::string hint = " ↑↓: bar  ←→: column  Enter: filter to the bar  F: clear the filter  Esc: back";
+    std::string hint = stacked ? " ↑↓: bar  Tab: part  ←→: column  g/G: stack by  Enter: filter  F: clear filter  Esc: back"
+                               : " ↑↓: bar  ←→: column  g/G: stack by a column  Enter: filter to the bar  F: clear the "
+                                 "filter  Esc: back";
     if (!labels.empty() && hg.binCount() > 0)
-        hint = " " + histogramBinRange(hg, histogram_selected_) + "   " + hint.substr(1);
-    return vbox({
-        hbox({text(title) | bold, text(fitText(status, std::max(width - string_width(title), 1), TextAlign::Left)) | dim}),
-        separator(),
-        vbox(std::move(rows)) | flex,
-        text(fitText(hint, width, TextAlign::Left)) | dim,
-    });
+    {
+        std::string selected = histogramBinRange(hg, histogram_selected_);
+        if (histogram_group_)
+            selected += " " + histogramSegmentText(hg, histogram_selected_, *histogram_group_);
+        hint = " " + selected + "   " + hint.substr(1);
+    }
+    Elements page{
+        hbox({text(title) | bold, text(fitText(status, std::max(width - string_width(title), 1), TextAlign::Left)) | dim})};
+    for (Element &line : legend)
+        page.push_back(std::move(line));
+    page.push_back(separator());
+    page.push_back(vbox(std::move(rows)) | flex);
+    page.push_back(text(fitText(hint, width, TextAlign::Left)) | dim);
+    return vbox(std::move(page));
 }
 
-void TuiApp::showDensity(size_t x_column, size_t y_column)
+void TuiApp::showDensity(size_t x_column, size_t y_column, std::optional<size_t> color_column)
 {
     TuiTableView *view = currentView();
     if (!view || !view->model())
@@ -2224,8 +2391,9 @@ void TuiApp::showDensity(size_t x_column, size_t y_column)
     options.density_bins_x = static_cast<size_t>(std::max((size.dimx - 12) / 2, 4));
     options.density_bins_y = static_cast<size_t>(std::max(size.dimy - 6 - (views_.size() > 1 ? 1 : 0), 4));
     options.max_points = 0;
-    density_model_->startScatter(x_column, y_column, options);
+    density_model_->startScatter(x_column, y_column, options, color_column);
     density_chosen_ = false;
+    density_color_.reset();
 }
 
 void TuiApp::closeDensity()
@@ -2269,11 +2437,11 @@ bool TuiApp::handleDensityEvent(Event event)
     {
         // The keys below are the density's.
         if (columns > 0 && (event == Event::x || event == Event::X))
-            showDensity(otherColumn(state.x_column, event == Event::x), state.y_column);
+            showDensity(otherColumn(state.x_column, event == Event::x), state.y_column, state.color_column);
         else if (columns > 0 && (event == Event::y || event == Event::Y))
-            showDensity(state.x_column, otherColumn(state.y_column, event == Event::y));
+            showDensity(state.x_column, otherColumn(state.y_column, event == Event::y), state.color_column);
         else if (event == Event::t)
-            showDensity(state.y_column, state.x_column);
+            showDensity(state.y_column, state.x_column, state.color_column);
         else if (event == Event::F)
             clearFilter();
     }
@@ -2302,13 +2470,46 @@ bool TuiApp::handleDensityEvent(Event event)
         choose();
     }
     else if (columns > 0 && (event == Event::x || event == Event::X))
-        showDensity(otherColumn(state.x_column, event == Event::x), state.y_column);
+        showDensity(otherColumn(state.x_column, event == Event::x), state.y_column, state.color_column);
     else if (columns > 0 && (event == Event::y || event == Event::Y))
-        showDensity(state.x_column, otherColumn(state.y_column, event == Event::y));
+        showDensity(state.x_column, otherColumn(state.y_column, event == Event::y), state.color_column);
     else if (event == Event::t)
-        showDensity(state.y_column, state.x_column);
+        showDensity(state.y_column, state.x_column, state.color_column);
     else if (event == Event::L)
         density_log_ = !density_log_;
+    else if ((event == Event::c || event == Event::C) && columns > 0)
+    {
+        // Colour by the next (previous) visible column, or by none after the
+        // last one; never by a column plotted.
+        const bool forward = event == Event::c;
+        const HiddenColumns &hidden = hiddenColumnsOf(density_model_);
+        std::optional<size_t> next = state.color_column;
+        do
+        {
+            if (!next)
+                next = forward ? 0 : columns - 1;
+            else if (forward ? *next + 1 < columns : *next > 0)
+                next = forward ? *next + 1 : *next - 1;
+            else
+                next.reset();
+        } while (next && (*next == state.x_column || *next == state.y_column || hidden.contains(*next)) &&
+                 next != state.color_column);
+        if (next != state.color_column)
+            showDensity(state.x_column, state.y_column, next);
+    }
+    else if ((event == Event::Tab || event == Event::TabReverse) && plot.colorCount() > 0)
+    {
+        // The colours, then none again.
+        const size_t colors = plot.colorCount();
+        if (event == Event::Tab)
+            density_color_ = !density_color_ ? std::optional<size_t>(0)
+                             : *density_color_ + 1 < colors ? std::optional<size_t>(*density_color_ + 1)
+                                                             : std::nullopt;
+        else
+            density_color_ = !density_color_    ? std::optional<size_t>(colors - 1)
+                             : *density_color_ > 0 ? std::optional<size_t>(*density_color_ - 1)
+                                                    : std::nullopt;
+    }
     else if (event == Event::F)
         clearFilter();
     else if (event == Event::Return && state.done && density_x_ < x_bins && density_y_ < y_bins)
@@ -2316,7 +2517,14 @@ bool TuiApp::handleDensityEvent(Event event)
         if (!density_model_->viewCapabilities().filter)
             return true;
         ViewSpec spec = density_model_->requestedView();
-        addNarrowingConditions(spec, densityCellConditions(plot, state.x_column, state.y_column, density_x_, density_y_));
+        auto conditions = densityCellConditions(plot, state.x_column, state.y_column, density_x_, density_y_);
+        if (state.color_column && density_color_ && *density_color_ < plot.colorCount())
+        {
+            for (FilterCondition &condition : valueGroupConditions(plot.colors, *state.color_column, *density_color_))
+                conditions.push_back(std::move(condition));
+        }
+        addNarrowingConditions(spec, std::move(conditions));
+        density_color_.reset();
         // The density starts over on the rows left.
         density_model_->setView(std::move(spec));
     }
@@ -2329,8 +2537,6 @@ Element TuiApp::renderDensity()
     const ScatterState state = model->scatterState();
     const ScatterPlot &plot = state.plot;
     const int width = Terminal::Size().dimx;
-    // The title, a separator, the X labels, the hint and the status bar.
-    const int height = std::max(Terminal::Size().dimy - 5 - (views_.size() > 1 ? 1 : 0), 2);
     if (state.generation != density_generation_)
     {
         density_generation_ = state.generation;
@@ -2343,6 +2549,27 @@ Element TuiApp::renderDensity()
         density_box_ = density_categorical_;
         box_selected_ = 0;
     }
+    const bool boxes = density_box_ && plot.categorical();
+    const bool colored = plot.colored && plot.plottable() && !boxes;
+    if (!colored || density_color_ >= plot.colorCount())
+        density_color_.reset();
+    // The colours' legend: the rows of each, of a colour with any.
+    Elements legend;
+    if (colored)
+    {
+        std::vector<LegendEntry> entries;
+        for (size_t color = 0; color < plot.colorCount(); ++color)
+        {
+            if (const size_t count = plot.color_pairs[color]; count > 0)
+                entries.push_back({color, legendLabel(plot.colors, color) + " " + std::to_string(count),
+                                   valueGroupColor(plot.colors, color)});
+        }
+        legend = legendLines(entries, density_color_, width);
+    }
+    // The title, a separator, the X labels, the hint, the status bar and
+    // the legend.
+    const int height =
+        std::max(Terminal::Size().dimy - 5 - static_cast<int>(legend.size()) - (views_.size() > 1 ? 1 : 0), 2);
 
     std::string status;
     if (!state.done)
@@ -2353,13 +2580,14 @@ Element TuiApp::renderDensity()
         if (const std::string stats = scatterStatsText(plot); !stats.empty())
             status += "  " + stats;
     }
-    const bool boxes = density_box_ && plot.categorical();
-    const std::string title = std::string(boxes ? " Box plot: " : " Density: ") +
-                              singleLine(model->columnName(state.x_column)) + " × " +
-                              singleLine(model->columnName(state.y_column)) + "  ";
-    std::string hint = plot.categorical()
-                           ? " ↑↓←→: cell  b: box plot  x/X y/Y: columns  t: swap  L: log scale  Enter: filter  F: clear filter  Esc: back"
-                           : " ↑↓←→: cell  x/X y/Y: columns  t: swap  L: log scale  Enter: filter  F: clear filter  Esc: back";
+    std::string title = std::string(boxes ? " Box plot: " : " Density: ") +
+                        singleLine(model->columnName(state.x_column)) + " × " +
+                        singleLine(model->columnName(state.y_column)) + "  ";
+    if (state.color_column && !boxes)
+        title += "by " + singleLine(model->columnName(*state.color_column)) + "  ";
+    std::string hint = std::string(" ↑↓←→: cell  ") + (plot.categorical() ? "b: box plot  " : "") +
+                       "x/X y/Y: columns  t: swap  c/C: colour by" + (colored ? "  Tab: colour" : "") +
+                       "  L: log scale  Enter: filter  F: clear filter  Esc: back";
 
     Elements lines;
     const size_t x_bins = plot.xBinCount();
@@ -2416,7 +2644,19 @@ Element TuiApp::renderDensity()
                 if (selected)
                     content = cell_width >= 2 ? "[" + std::string(static_cast<size_t>(cell_width - 2), ' ') + "]" : "▪";
                 Element cell = text(content);
-                if (count > 0)
+                if (count > 0 && colored)
+                {
+                    // The colour of most of the cell's rows, darker for
+                    // fewer rows; the colour picked stands out.
+                    const size_t main = plot.mainColor(x_bin, y_bin).value_or(0);
+                    const bool faded = density_color_ &&
+                                       plot.color_counts[plot.colorIndex(x_bin, y_bin, *density_color_)] == 0;
+                    const double t = densityScale(count, most, density_log_);
+                    const Color base = faded ? Color::RGB(0x50, 0x50, 0x50) : valueGroupColor(plot.colors, main);
+                    cell = cell | bgcolor(Color::Interpolate(static_cast<float>(0.35 + 0.65 * t), Color::Black, base)) |
+                           color(Color::White);
+                }
+                else if (count > 0)
                 {
                     const double t = densityScale(count, most, density_log_);
                     const auto rgb = densityColor(t);
@@ -2453,17 +2693,31 @@ Element TuiApp::renderDensity()
             free_from = at + label.size() + 2;
         }
         lines.push_back(text(axis) | dim);
-        hint = " " + densityCellText(plot, density_x_, density_y_) + "  " + hint;
+        std::string cell_text = densityCellText(plot, density_x_, density_y_);
+        if (colored)
+        {
+            const size_t total = plot.count(density_x_, density_y_);
+            const auto shown_color = density_color_ ? density_color_ : plot.mainColor(density_x_, density_y_);
+            if (shown_color)
+            {
+                const size_t count = plot.color_counts[plot.colorIndex(density_x_, density_y_, *shown_color)];
+                cell_text += "; " + singleLine(valueGroupText(plot.colors, *shown_color)) + " " +
+                             std::to_string(count) + " of " + std::to_string(total);
+            }
+        }
+        hint = " " + cell_text + "  " + hint;
     }
     else
         lines.push_back(text(state.done ? " " + scatterSummary(plot, false) : " Reading the columns…") | dim);
 
-    return vbox({
-        hbox({text(title) | bold, text(fitText(status, std::max(width - string_width(title), 1), TextAlign::Left)) | dim}),
-        separator(),
-        vbox(std::move(lines)) | flex,
-        text(fitText(hint, width, TextAlign::Left)) | dim,
-    });
+    Elements page{
+        hbox({text(title) | bold, text(fitText(status, std::max(width - string_width(title), 1), TextAlign::Left)) | dim})};
+    for (Element &line : legend)
+        page.push_back(std::move(line));
+    page.push_back(separator());
+    page.push_back(vbox(std::move(lines)) | flex);
+    page.push_back(text(fitText(hint, width, TextAlign::Left)) | dim);
+    return vbox(std::move(page));
 }
 
 // One line per category: its whiskers ├──┤, box ███ from Q1 to Q3 with the

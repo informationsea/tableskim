@@ -91,6 +91,15 @@ class FirstRowTest(TuiTestCase):
 
 
 class ChartNarrowingTest(TuiTestCase):
+    def test_text_histogram_selects_a_bar_after_the_first(self):
+        path = self.temp_file("kinds.csv", "kind\na\na\na\nb\n")
+        tui = self.run_tui(path)
+        tui.wait_text("4 rows")
+        tui.send("B")
+        tui.wait_text("75%")
+        tui.send("down", "enter", "esc")
+        tui.wait_text("1 row of 4")
+
     def test_chart_only_filter_can_be_cleared_without_adding_a_condition(self):
         path = self.temp_file("numbers.csv", "value\n1\n2\n3\n4\n")
         tui = self.run_tui(path)
@@ -128,6 +137,43 @@ class ChartNarrowingTest(TuiTestCase):
         tui.send("\x18", "enter")  # Ctrl+X clears only chart narrowing
         tui.wait_text("2 rows of 4")
         self.assertNotIn("Additional narrowing:", tui.text())
+
+    def test_histogram_stacked_by_a_column_filters_to_a_part(self):
+        path = self.temp_file("kinds.csv", "value,kind\n1,a\n1,b\n2,a\n2,a\n")
+        tui = self.run_tui(path)
+        tui.wait_text("4 rows")
+        tui.send("B")
+        tui.wait_text("4 numbers")
+        tui.send("g")  # the next column, as the histogram's own is skipped
+        tui.wait_text("Histogram: value  by kind")
+        tui.wait_text("■ a 1")  # the first bar: one "a" and one "b"
+        tui.wait_text("■ b 1")
+        tui.send("tab", "tab")
+        tui.wait_text("b: 1 row (50% of the bin)")
+        tui.send("enter")
+        tui.wait_text("1 number")
+        tui.send("esc")
+        tui.wait_text("1 row of 4")
+        tui.send("B", "g", "g")  # by kind, then by none
+        tui.wait_for(lambda text: "Histogram: value" in text and "by kind" not in text)
+
+    def test_density_coloured_by_a_column_filters_to_a_colour(self):
+        path = self.temp_file("points.csv", "x,y,kind\n1,1,a\n1,1,b\n1,1,a\n5,5,b\n")
+        tui = self.run_tui(path)
+        tui.wait_text("4 rows")
+        tui.send("v", "l", "M")  # x and y selected
+        tui.wait_text("Density: x × y")
+        tui.send("c")  # the next column not plotted
+        tui.wait_text("Density: x × y  by kind")
+        tui.wait_text("■ a 2")
+        tui.wait_text("■ b 2")
+        tui.wait_text("3 rows")  # the densest cell is chosen
+        tui.send("tab")
+        tui.wait_text("a 2 of 3")
+        tui.send("enter")
+        tui.wait_text("2 rows plotted")
+        tui.send("esc")
+        tui.wait_text("2 rows of 4")
 
 
 class HiddenColumnsTest(TuiTestCase):

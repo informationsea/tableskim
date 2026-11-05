@@ -1,8 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <filesystem>
 #include <fstream>
 
+#include <FL/Fl_Choice.H>
+#include <FL/Fl_Box.H>
 #include <FL/Fl_Input.H>
 
 #include "file_util.hxx"
@@ -13,6 +16,45 @@ using namespace gui_test;
 namespace
 {
     const std::filesystem::path kDemoData = TABLESKIM_DEMO_DATA_DIR;
+
+    void clickChartDetail(Fl_Window &window, const std::string &needle, bool double_click)
+    {
+        Fl_Widget *chart = nullptr;
+        Fl_Box *detail = nullptr;
+        const std::function<void(Fl_Widget &)> visit = [&](Fl_Widget &widget)
+        {
+            if (widget.box() == FL_DOWN_FRAME)
+                chart = &widget;
+            if (auto *box = dynamic_cast<Fl_Box *>(&widget); box && (!detail || box->y() > detail->y()))
+                detail = box;
+            if (Fl_Group *group = widget.as_group())
+                for (int i = 0; i < group->children(); ++i)
+                    visit(*group->child(i));
+        };
+        visit(window);
+        REQUIRE(chart);
+        REQUIRE(detail);
+        REQUIRE(waitFor([&]
+                        {
+            Fl::flush();
+            for (int y = chart->y() + 2; y < chart->y() + chart->h(); y += 4)
+                for (int x = chart->x() + 2; x < chart->x() + chart->w(); x += 4)
+                {
+                    Fl::e_x = x;
+                    Fl::e_y = y;
+                    chart->handle(FL_MOVE);
+                    if (detail->label() && std::string(detail->label()).find(needle) != std::string::npos)
+                        return true;
+                }
+            return false; }));
+        const int keysym = Fl::e_keysym;
+        const int clicks = Fl::e_clicks;
+        Fl::e_keysym = FL_Button + FL_LEFT_MOUSE;
+        Fl::e_clicks = double_click ? 1 : 0;
+        chart->handle(FL_PUSH);
+        Fl::e_keysym = keysym;
+        Fl::e_clicks = clicks;
+    }
 
     GuiTableView *viewNamed(const Window &window, const std::string &label)
     {
@@ -237,6 +279,124 @@ TEST_CASE("GUI: charts and statistics start on a visible column", "[regression]"
     window->show_scatter_plot();
     CHECK(view->model()->scatterState().x_column == 1);
     CHECK(view->model()->scatterState().y_column == 3);
+}
+
+TEST_CASE("GUI: a histogram stacked by a column")
+{
+    Window window(kDemoData / "normal.parquet");
+    GuiTableView *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 54));
+    view->set_selection(0, 3, 0, 3); // Age
+    window->show_histogram();
+    Fl_Window *histogram = shownWindow("Histogram");
+    REQUIRE(histogram);
+    Fl_Choice *stack_by = findChoice(*histogram, "Stack by:");
+    REQUIRE(stack_by);
+    REQUIRE(waitFor([&] { return view->model()->histogramState().done; }));
+    CHECK(stack_by->value() == 0); // (none)
+
+    stack_by->value(5); // City
+    stack_by->do_callback();
+    HistogramState state;
+    REQUIRE(waitFor([&]
+                    { state = view->model()->histogramState(); return state.done; }));
+    CHECK(state.column == 3);
+    CHECK(state.group_column == std::optional<size_t>(4));
+    CHECK(state.histogram.grouped);
+    CHECK(state.histogram.groupCount() > 1);
+    CHECK(stack_by->value() == 5);
+
+    // Another column keeps the stacking.
+    Fl_Choice *column = findChoice(*histogram, "Column:");
+    REQUIRE(column);
+    column->value(6); // Salary
+    column->do_callback();
+    CHECK(view->model()->histogramState().column == 6);
+    CHECK(view->model()->histogramState().group_column == std::optional<size_t>(4));
+
+    stack_by->value(0);
+    stack_by->do_callback();
+    CHECK_FALSE(view->model()->histogramState().group_column);
+}
+
+TEST_CASE("GUI: a scatter plot coloured by a column")
+{
+    Window window(kDemoData / "normal.parquet");
+    GuiTableView *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 54));
+    view->set_selection(0, 3, 0, 6); // Age, ..., Salary
+    window->show_scatter_plot();
+    Fl_Window *scatter = shownWindow("Scatter Plot");
+    REQUIRE(scatter);
+    Fl_Choice *color_by = findChoice(*scatter, "Color by:");
+    REQUIRE(color_by);
+    REQUIRE(waitFor([&] { return view->model()->scatterState().done; }));
+    CHECK(color_by->value() == 0); // (none)
+
+    color_by->value(5); // City
+    color_by->do_callback();
+    ScatterState state;
+    REQUIRE(waitFor([&]
+                    { state = view->model()->scatterState(); return state.done; }));
+    CHECK(state.x_column == 3);
+    CHECK(state.y_column == 6);
+    CHECK(state.color_column == std::optional<size_t>(4));
+    CHECK(state.plot.colored);
+    CHECK(state.plot.colorCount() > 1);
+    CHECK(color_by->value() == 5);
+
+    // Other columns keep the colours.
+    Fl_Choice *y = findChoice(*scatter, "Y:");
+    REQUIRE(y);
+    y->value(7); // Birthday
+    y->do_callback();
+    CHECK(view->model()->scatterState().y_column == 7);
+    CHECK(view->model()->scatterState().color_column == std::optional<size_t>(4));
+
+    color_by->value(0);
+    color_by->do_callback();
+    CHECK_FALSE(view->model()->scatterState().color_column);
+}
+
+TEST_CASE("GUI: chart group clicks keep exact numeric-looking text")
+{
+    const bool pushdown = GENERATE(false, true);
+    TempDir dir;
+    const auto csv = dir.write("groups.csv", "x,y,kind\n10,20,1\n10,20,01\n");
+    Window window(pushdown ? kDemoData / "normal.parquet" : csv, OpenOptions::Header::Yes);
+    GuiTableView *view = pushdown
+        ? runSql(window, "SELECT * FROM (VALUES (10,20,'1'),(10,20,'01')) t(x,y,kind)", 2)
+        : window.currentView();
+    REQUIRE(window.waitForRows(view, 2));
+
+    SECTION("stacked histogram segment")
+    {
+        view->set_selection(0, 0, 0, 0);
+        window->show_histogram();
+        Fl_Window *chart = shownWindow("Histogram");
+        REQUIRE(chart);
+        Fl_Choice *choice = findChoice(*chart, "Stack by:");
+        REQUIRE(choice);
+        choice->value(3);
+        choice->do_callback();
+        REQUIRE(waitFor([&] { return view->model()->histogramState().done; }));
+        clickChartDetail(*chart, "01: 1 row", true);
+    }
+    SECTION("scatter colour legend")
+    {
+        view->set_selection(0, 0, 0, 1);
+        window->show_scatter_plot();
+        Fl_Window *chart = shownWindow("Scatter Plot");
+        REQUIRE(chart);
+        Fl_Choice *choice = findChoice(*chart, "Color by:");
+        REQUIRE(choice);
+        choice->value(3);
+        choice->do_callback();
+        REQUIRE(waitFor([&] { return view->model()->scatterState().done; }));
+        clickChartDetail(*chart, "kind: 01, 1 row", false);
+    }
+    REQUIRE(window.waitForRows(view, 1));
+    CHECK(currentCell(window, 0, 2) == "01");
 }
 
 TEST_CASE("GUI: edits are saved and the file is read again")

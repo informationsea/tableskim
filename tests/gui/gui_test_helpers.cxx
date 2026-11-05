@@ -7,6 +7,7 @@
 
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Choice.H>
 #include <FL/Fl_File_Input.H>
 #include <FL/Fl_Group.H>
 
@@ -114,6 +115,29 @@ namespace gui_test
             input->do_callback();
             return true; });
         return filled && pressButton(window, "OK");
+    }
+
+    Fl_Window *shownWindow(const std::string &title)
+    {
+        for (Fl_Window *window = Fl::first_window(); window; window = Fl::next_window(window))
+        {
+            if (window->label() && std::string(window->label()).starts_with(title))
+                return window;
+        }
+        return nullptr;
+    }
+
+    Fl_Choice *findChoice(Fl_Window &window, const std::string &label)
+    {
+        Fl_Choice *found = nullptr;
+        visitWidgets(window, [&](Fl_Widget &widget)
+                     {
+            auto *choice = dynamic_cast<Fl_Choice *>(&widget);
+            if (!choice || !choice->label() || choice->label() != label)
+                return false;
+            found = choice;
+            return true; });
+        return found;
     }
 
     Window::Window()

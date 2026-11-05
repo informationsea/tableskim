@@ -137,12 +137,18 @@ private:
     std::shared_ptr<TableModel> histogram_model_;
     size_t histogram_selected_ = 0;
     size_t histogram_top_ = 0; // first bar shown when they do not all fit
+    // Stacked by a column (g / G): the group picked in the selected bar
+    // (Tab), which Enter filters to as well.
+    std::optional<size_t> histogram_group_;
 
     // 2D density (M): shown instead of the sheet like the histogram; the
     // selected cell can filter the sheet.
     std::shared_ptr<TableModel> density_model_;
     size_t density_x_ = 0; // the selected cell's bins
     size_t density_y_ = 0;
+    // Coloured by a column (c / C): the colour picked (Tab), which Enter
+    // filters to as well.
+    std::optional<size_t> density_color_;
     // Until the plot is done or a cell is chosen, the densest cell is selected.
     bool density_chosen_ = false;
     uint64_t density_generation_ = 0;
@@ -318,11 +324,11 @@ private:
     ftxui::Element renderSidebar(int width);
     ftxui::Element renderStatsSidebar(int width);
     void showColumnStats();
-    void showHistogram(size_t column);
+    void showHistogram(size_t column, std::optional<size_t> group_column = std::nullopt);
     void closeHistogram();
     bool handleHistogramEvent(ftxui::Event event);
     ftxui::Element renderHistogram();
-    void showDensity(size_t x_column, size_t y_column);
+    void showDensity(size_t x_column, size_t y_column, std::optional<size_t> color_column = std::nullopt);
     void closeDensity();
     bool handleDensityEvent(ftxui::Event event);
     ftxui::Element renderDensity();

@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -549,6 +550,44 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
         CHECK(*client.readyInfo(id)["rows"].number() == first_count);
     }
 
+    SECTION("a histogram stacked by a column and the filter of a part of a bar")
+    {
+        client.result("startHistogram", sheetParams(id, "\"column\":3,\"bins\":10,\"groupColumn\":5"));
+        const JsonValue state = waitDone(client, "histogramState", sheetParams(id));
+        CHECK(state["groupColumn"].number() == 5);
+        const JsonValue &histogram = state["histogram"];
+        const auto &groups = *histogram["groups"].array();
+        REQUIRE(groups.size() > 1);
+        const auto &bins = *histogram["bins"].array();
+        size_t bin_index = 0;
+        size_t group_index = 0;
+        size_t part = 0;
+        for (size_t b = 0; b < bins.size(); ++b)
+        {
+            const auto &counts = *bins[b]["groups"].array();
+            REQUIRE(counts.size() == groups.size());
+            size_t sum = 0;
+            for (size_t g = 0; g < counts.size(); ++g)
+            {
+                const auto count = static_cast<size_t>(*counts[g].number());
+                sum += count;
+                if (count > part)
+                {
+                    part = count;
+                    bin_index = b;
+                    group_index = g;
+                }
+            }
+            CHECK(sum == static_cast<size_t>(*bins[b]["count"].number()));
+        }
+        REQUIRE(part > 0);
+        applyConditions(client, id,
+                        client.result("histogramFilter", sheetParams(id, "\"bin\":" + std::to_string(bin_index) +
+                                                                             ",\"group\":" + std::to_string(group_index))));
+        CHECK(*client.readyInfo(id)["rows"].number() == part);
+        CHECK(client.call("startHistogram", sheetParams(id, "\"column\":3,\"groupColumn\":99"))["error"].string());
+    }
+
     SECTION("the most frequent values of a text column and the filter of one")
     {
         client.result("startHistogram", sheetParams(id, "\"column\":4"));
@@ -560,6 +599,30 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
         applyConditions(client, id, client.result("histogramFilter", sheetParams(id, "\"bin\":0")));
         CHECK(*client.readyInfo(id)["rows"].number() == count);
         CHECK(client.call("histogramFilter", sheetParams(id, "\"bin\":99"))["error"].string());
+    }
+
+    SECTION("a scatter plot coloured by a column and the filter of a colour")
+    {
+        client.result("startScatter", sheetParams(id, "\"x\":3,\"y\":6,\"colorColumn\":5"));
+        const JsonValue plot = waitDone(client, "scatterState", sheetParams(id, "\"points\":true"));
+        CHECK(plot["colorColumn"].number() == 5);
+        const auto &colors = *plot["colors"].array();
+        REQUIRE(colors.size() > 1);
+        const auto &pairs = *plot["colorPairs"].array();
+        REQUIRE(pairs.size() == colors.size());
+        size_t total = 0;
+        for (const JsonValue &count : pairs)
+            total += static_cast<size_t>(*count.number());
+        CHECK(total == static_cast<size_t>(*plot["pairs"].number()));
+        const auto &point_colors = *plot["pointColors"].array();
+        CHECK(point_colors.size() == total);
+        size_t first = 0;
+        for (const JsonValue &color : point_colors)
+            first += *color.number() == 0 ? 1 : 0;
+        CHECK(first == static_cast<size_t>(*pairs[0].number()));
+        applyConditions(client, id, client.result("scatterFilter", sheetParams(id, "\"color\":0")));
+        CHECK(*client.readyInfo(id)["rows"].number() >= static_cast<double>(first));
+        CHECK(client.call("scatterFilter", sheetParams(id, "\"color\":99"))["error"].string());
     }
 
     SECTION("a scatter plot, a cell's filter and a categorical X")
@@ -637,6 +700,49 @@ TEST_CASE("WebSession computes statistics, histograms and scatter plots")
         CHECK(plot["points"].array()->empty()); // not asked for
         CHECK(plot["fit"].isNull()); // categories have no line
     }
+}
+
+TEST_CASE("WebSession chart group filters preserve exact strings")
+{
+    const bool reversed = GENERATE(false, true);
+    const std::string selected = GENERATE(std::string("1"), std::string("01"));
+    const std::filesystem::path file = std::filesystem::temp_directory_path() / "chart-groups.csv";
+    std::ofstream(file) << "x,y,kind\n" << (reversed ? "10,20,01\n10,20,1\n" : "10,20,1\n10,20,01\n");
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    client.result("open", "{\"path\":\"" + jsonPath(file.string()) + "\",\"header\":\"yes\"}");
+    const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"chart-groups.csv\"}")["sheet"].number());
+    REQUIRE(*client.readyInfo(id)["rows"].number() == 2);
+    // Numerically equal strings can tie in the ranking. Their group indices
+    // need not be the same across standard libraries or insertion orders.
+    const auto groupIndex = [&](const JsonValue &names)
+    {
+        const auto &groups = *names.array();
+        REQUIRE(groups.size() == 2);
+        const auto it = std::find_if(groups.begin(), groups.end(), [&](const JsonValue &name)
+                                     { return name.string() && *name.string() == selected; });
+        REQUIRE(it != groups.end());
+        return static_cast<size_t>(it - groups.begin());
+    };
+    SECTION("stacked histogram")
+    {
+        client.result("startHistogram", sheetParams(id, "\"column\":0,\"groupColumn\":2"));
+        const JsonValue state = waitDone(client, "histogramState", sheetParams(id));
+        const size_t group = groupIndex(state["histogram"]["groups"]);
+        CHECK(*(*(*state["histogram"]["bins"].array())[0]["groups"].array())[group].number() == 1);
+        applyConditions(client, id, client.result("histogramFilter", sheetParams(id, "\"bin\":0,\"group\":" + std::to_string(group))));
+    }
+    SECTION("scatter legend")
+    {
+        client.result("startScatter", sheetParams(id, "\"x\":0,\"y\":1,\"colorColumn\":2"));
+        const JsonValue state = waitDone(client, "scatterState", sheetParams(id));
+        const size_t group = groupIndex(state["colors"]);
+        CHECK(*(*state["colorPairs"].array())[group].number() == 1);
+        applyConditions(client, id, client.result("scatterFilter", sheetParams(id, "\"color\":" + std::to_string(group))));
+    }
+    CHECK(*client.readyInfo(id)["rows"].number() == 1);
+    CHECK(cell(client.rows(id, 0, 0), 0, 2) == selected);
+    std::filesystem::remove(file);
 }
 
 TEST_CASE("WebSession exports a view and groups it as jobs")

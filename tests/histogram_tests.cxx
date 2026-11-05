@@ -24,9 +24,10 @@ namespace
         return (static_cast<int64_t>(day.time_since_epoch().count()) * 24 + hours) * 3600 * 1000000;
     }
 
-    HistogramState waitForHistogram(TableModel &model, size_t column)
+    HistogramState waitForHistogram(TableModel &model, size_t column,
+                                    std::optional<size_t> group_column = std::nullopt)
     {
-        model.startHistogram(column);
+        model.startHistogram(column, 30, group_column);
         HistogramState state;
         REQUIRE(waitFor([&]
                         { state = model.histogramState(); return state.done; }));
@@ -576,5 +577,172 @@ TEST_CASE("a bin's filter keeps the rows counted in it")
         REQUIRE(waitFor([&]
                         { return model->view() == spec; }));
         CHECK(model->rowCount().value == histogram.counts[bin]);
+    }
+}
+
+TEST_CASE("a grouped histogram splits each bin by the other column's values")
+{
+    HistogramRange range({}, true);
+    const std::vector<std::pair<CellValue, CellValue>> rows = {
+        {int64_t{1}, std::string("a")}, {int64_t{1}, std::string("b")}, {int64_t{2}, std::string("a")},
+        {int64_t{2}, std::string("a")}, {int64_t{3}, std::string("c")}, {int64_t{3}, CellValue{}},
+        {CellValue{}, std::string("a")}, {std::string("x"), std::string("b")},
+    };
+    for (const auto &[value, group] : rows)
+    {
+        range.add(value);
+        range.addGroup(group);
+    }
+    const Histogram layout = range.layout(30, 2);
+    REQUIRE(layout.binCount() == 3);
+    REQUIRE(layout.grouped);
+    CHECK(layout.groups.values == std::vector<CellValue>{std::string("a"), std::string("b")});
+    CHECK(layout.groups.other);
+    CHECK(layout.groups.empty);
+    REQUIRE(layout.groupCount() == 4);
+    CHECK(layout.isOtherGroup(2));
+    CHECK(layout.isEmptyGroup(3));
+    CHECK(histogramGroupText(layout, 0) == "a");
+    CHECK(histogramGroupText(layout, 2) == "(other)");
+    CHECK(histogramGroupText(layout, 3) == "(empty)");
+
+    HistogramCounter counter(layout);
+    for (const auto &[value, group] : rows)
+        counter.addGrouped(value, group);
+    const Histogram &hg = counter.result();
+    CHECK(hg.counts == std::vector<size_t>{2, 2, 2});
+    CHECK(hg.group_counts == std::vector<size_t>{1, 1, 0, 0, /**/ 2, 0, 0, 0, /**/ 0, 0, 1, 1});
+    CHECK(hg.values == 6);
+    CHECK(hg.empty == 1);
+    CHECK(hg.others == 1);
+    CHECK(histogramSegmentText(hg, 1, 0) == "a: 2 rows (100% of the bin)");
+
+    // A group the layout does not have, without "(other)": no fit.
+    HistogramRange two({}, true);
+    two.add(int64_t{1});
+    two.addGroup(std::string("a"));
+    HistogramCounter narrow(two.layout(30));
+    CHECK(narrow.fits(int64_t{1}, std::string("a")));
+    CHECK_FALSE(narrow.fits(int64_t{1}, std::string("z")));
+    CHECK_FALSE(narrow.fits(int64_t{1}, CellValue{}));
+    CHECK(narrow.fits(std::string("text"), std::string("z"))); // in no bin
+
+    // Columns of neither numbers nor times are not grouped.
+    HistogramRange text({}, true);
+    text.add(std::string("a"));
+    text.addGroup(std::string("b"));
+    CHECK_FALSE(text.layout(30).grouped);
+}
+
+TEST_CASE("TableModel::startHistogram: grouped by a column, scans and GROUP BY agree")
+{
+    const size_t column = GENERATE(3, 7); // Age, Birthday
+    INFO("column " << column);
+    std::vector<std::shared_ptr<TableBook>> books;
+    auto csv = openFirst(books, kDemoData / "normal.csv");
+    auto parquet = openFirst(books, kDemoData / "normal.parquet");
+    const HistogramState scanned = waitForHistogram(*csv, column, 4); // by City
+    const HistogramState grouped = waitForHistogram(*parquet, column, 4);
+    const Histogram &a = scanned.histogram;
+    const Histogram &b = grouped.histogram;
+    CHECK(scanned.group_column == std::optional<size_t>(4));
+    REQUIRE(a.grouped);
+    CHECK(a.groups.values.size() == MAX_VALUE_GROUPS);
+    CHECK(a.groups.other);
+    CHECK(a.groups.empty);
+    CHECK(a.groups == b.groups);
+    CHECK(a.counts == b.counts);
+    CHECK(a.group_counts == b.group_counts);
+    for (size_t bin = 0; bin < a.binCount(); ++bin)
+    {
+        size_t sum = 0;
+        for (size_t group = 0; group < a.groupCount(); ++group)
+            sum += a.groupCount(bin, group);
+        CHECK(sum == a.counts[bin]);
+    }
+    // The counts are those of the histogram without groups.
+    const HistogramState plain = waitForHistogram(*csv, column);
+    CHECK_FALSE(plain.histogram.grouped);
+    CHECK(plain.histogram.counts == a.counts);
+}
+
+TEST_CASE("a group's filter keeps the rows counted in its part of the bin")
+{
+    std::vector<std::shared_ptr<TableBook>> books;
+    auto model = openFirst(books, kDemoData / "normal.csv");
+    const Histogram histogram = waitForHistogram(*model, 3, 4).histogram;
+    REQUIRE(histogram.grouped);
+    for (size_t bin = 0; bin < histogram.binCount(); ++bin)
+    {
+        for (size_t group = 0; group < histogram.groupCount(); ++group)
+        {
+            INFO(histogramBinRange(histogram, bin) << " " << histogramGroupText(histogram, group));
+            auto conditions = histogramBinConditions(histogram, 3, bin);
+            for (FilterCondition &condition : histogramGroupConditions(histogram, 4, group))
+                conditions.push_back(std::move(condition));
+            const ViewSpec spec{.filter = Filter{Filter::Combine::And, conditions}};
+            model->setView(spec);
+            REQUIRE(waitFor([&]
+                            { return model->view() == spec; }));
+            CHECK(model->rowCount().value == histogram.groupCount(bin, group));
+        }
+    }
+}
+
+TEST_CASE("value groups and their filters use exact cell text")
+{
+    const std::vector<CellValue> values = {
+        std::string("1"), std::string("01"), std::string("1.0"),
+        std::string("A"), std::string("a"), std::string("a.b"), std::string("axb"),
+        std::string("line\nbreak"), std::string("line\nbreak\n"),
+        std::string("2024-01-01"), std::string("2024-01-01 00:00:00"),
+        std::string("\\E[日本]"), CellValue{}, std::string(),
+    };
+    const size_t max_groups = GENERATE(2, 20);
+    HistogramRange range({}, true);
+    for (const CellValue &value : values)
+    {
+        range.add(int64_t{1});
+        range.addGroup(value);
+    }
+    HistogramCounter counter(range.layout(30, max_groups));
+    for (const CellValue &value : values)
+        counter.addGrouped(int64_t{1}, value);
+    const Histogram &histogram = counter.result();
+    REQUIRE(histogram.values == values.size());
+    for (size_t group = 0; group < histogram.groupCount(); ++group)
+    {
+        INFO(histogramGroupText(histogram, group));
+        const auto conditions = histogramGroupConditions(histogram, 1, group);
+        REQUIRE_FALSE(filterError(Filter{Filter::Combine::And, conditions}));
+        size_t kept = 0;
+        for (const CellValue &value : values)
+            kept += std::all_of(conditions.begin(), conditions.end(), [&](const FilterCondition &condition)
+                                { return cellMatchesCondition(value, condition); });
+        CHECK(kept == histogram.groupCount(0, group));
+    }
+}
+
+TEST_CASE("value groups combine typed cells with the same exact text")
+{
+    ValueGroupAccumulator stats;
+    const std::vector<CellValue> values{int64_t{1}, 1.0, std::string("1"), std::string("01"), true};
+    for (const CellValue &value : values)
+        stats.add(value);
+    const ValueGroups groups = ValueGroups::fromStats(stats.result(), MAX_VALUE_GROUPS);
+    REQUIRE(groups.values.size() == 3);
+    CHECK_FALSE(groups.other);
+    CHECK(groups.groupOf(values[0]) == groups.groupOf(values[1]));
+    CHECK(groups.groupOf(values[0]) == groups.groupOf(values[2]));
+    CHECK(groups.groupOf(values[0]) != groups.groupOf(values[3]));
+    for (size_t group = 0; group < groups.count(); ++group)
+    {
+        const auto conditions = valueGroupConditions(groups, 0, group);
+        for (const CellValue &value : values)
+        {
+            const bool kept = std::all_of(conditions.begin(), conditions.end(), [&](const FilterCondition &condition)
+                                         { return cellMatchesCondition(value, condition); });
+            CHECK(kept == (groups.groupOf(value) == group));
+        }
     }
 }

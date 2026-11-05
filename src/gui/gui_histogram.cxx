@@ -17,10 +17,10 @@
 namespace
 {
     const int WINDOW_WIDTH = 720;
-    const int WINDOW_HEIGHT = 420;
+    const int WINDOW_HEIGHT = 450;
     const int MARGIN = 8;
     const int LINE_HEIGHT = 25;
-    const int CHOICE_LABEL_WIDTH = 60;
+    const int CHOICE_LABEL_WIDTH = 72;
     const int CHOICE_WIDTH = 240;
     const int SAVE_WIDTH = 100;
     const int FONT_SIZE = 12;
@@ -44,6 +44,11 @@ namespace
         return 10 * magnitude;
     }
 
+    Fl_Color groupColor(const Histogram &histogram, size_t group)
+    {
+        return valueGroupColor(histogram.groups, group);
+    }
+
     void setActive(Fl_Widget *widget, bool active)
     {
         if (active)
@@ -64,6 +69,8 @@ private:
     size_t bars_ = 0;
     bool rows_ = false; // horizontal bars, one per row
     int row_height_ = 0;
+    // Stacked bars: the top of each part (bars_ × groups, from the bottom).
+    std::vector<int> segment_tops_;
 
     const Histogram &histogram() const { return owner_->state_.histogram; }
 
@@ -83,6 +90,24 @@ private:
         if (index >= bars_)
             return std::nullopt;
         return index;
+    }
+
+    // The part of the stacked bar `bar` at height `my`.
+    std::optional<size_t> groupAt(size_t bar, int my) const
+    {
+        const Histogram &hg = histogram();
+        const size_t groups = hg.groupCount();
+        if (groups == 0 || segment_tops_.size() != bars_ * groups)
+            return std::nullopt;
+        int below = plot_y_ + plot_h_;
+        for (size_t group = 0; group < groups; ++group)
+        {
+            const int top = segment_tops_[bar * groups + group];
+            if (top < below && my >= top && my <= below)
+                return group;
+            below = std::min(below, top);
+        }
+        return std::nullopt;
     }
 
     Fl_Color barColor(size_t index) const
@@ -108,10 +133,11 @@ private:
         const int axis_width = static_cast<int>(fl_width(std::to_string(static_cast<size_t>(top)).c_str())) + TICK_GAP;
 
         plot_x_ = x() + MARGIN + axis_width;
-        plot_y_ = y() + MARGIN + text_height / 2;
         plot_w_ = std::max(1, w() - 2 * MARGIN - axis_width);
+        const int legend_height = hg.grouped ? drawLegend(plot_x_, y() + MARGIN, plot_w_) : 0;
+        plot_y_ = y() + MARGIN + legend_height + text_height / 2;
         // Edge labels, then the column's name.
-        plot_h_ = std::max(1, h() - 2 * MARGIN - text_height / 2 - 2 * text_height - 2 * TICK_GAP);
+        plot_h_ = std::max(1, h() - 2 * MARGIN - legend_height - text_height / 2 - 2 * text_height - 2 * TICK_GAP);
         bars_ = bins;
         rows_ = false;
         const int bottom = plot_y_ + plot_h_;
@@ -136,6 +162,11 @@ private:
             const int x1 = plot_x_ + static_cast<int>(std::lround(static_cast<double>(i + 1) * width));
             const int gap = x1 - x0 > 4 ? 1 : 0;
             const int height = static_cast<int>(std::lround(static_cast<double>(hg.counts[i]) / top * plot_h_));
+            if (hg.grouped)
+            {
+                drawStack(i, x0 + gap, std::max(1, x1 - x0 - 2 * gap), bottom, top);
+                continue;
+            }
             if (height <= 0)
                 continue;
             fl_color(barColor(i));
@@ -175,6 +206,69 @@ private:
             fl_draw(title.c_str(), plot_x_, bottom + 2 * TICK_GAP + text_height, plot_w_, text_height,
                     FL_ALIGN_CENTER | FL_ALIGN_CLIP, nullptr, 0);
         }
+    }
+
+    // The parts of a stacked bar, from the rounded running totals so that
+    // the bar keeps its height, a line of the background between them.
+    void drawStack(size_t bin, int left, int width, int bottom, double top)
+    {
+        const Histogram &hg = histogram();
+        const size_t groups = hg.groupCount();
+        size_t sum = 0;
+        int below = bottom;
+        for (size_t group = 0; group < groups; ++group)
+        {
+            sum += hg.groupCount(bin, group);
+            const int part_top = bottom - static_cast<int>(std::lround(static_cast<double>(sum) / top * plot_h_));
+            segment_tops_[bin * groups + group] = part_top;
+            if (part_top >= below)
+                continue;
+            const bool hovered = owner_->hovered_ == bin && owner_->hovered_group_ == group;
+            const Fl_Color color = groupColor(hg, group);
+            fl_color(hovered ? fl_color_average(color, FL_FOREGROUND_COLOR, 0.6f) : color);
+            // A gap above each part but the top one, when the part is tall enough.
+            const int gap = below - part_top > 3 && below != bottom ? 1 : 0;
+            fl_rectf(left, part_top, width, below - part_top - gap);
+            below = part_top;
+        }
+        if (owner_->hovered_ == bin && !owner_->hovered_group_ && below < bottom)
+        {
+            fl_color(FL_FOREGROUND_COLOR);
+            fl_rect(left, below, width, bottom - below);
+        }
+    }
+
+    // A swatch and the name of each group, in as many lines as it takes;
+    // returns the height used.
+    int drawLegend(int left, int top_y, int width)
+    {
+        const Histogram &hg = histogram();
+        const int text_height = fl_height();
+        const int swatch = text_height - 4;
+        int xx = left;
+        int yy = top_y;
+        for (size_t group = 0; group < hg.groupCount(); ++group)
+        {
+            // A group without a row in a bin needs no entry.
+            size_t rows = 0;
+            for (size_t bin = 0; bin < hg.binCount(); ++bin)
+                rows += hg.groupCount(bin, group);
+            if (rows == 0 && hg.binCount() > 0)
+                continue;
+            const std::string label = cellDisplayText(histogramGroupText(hg, group), 24);
+            const int entry = swatch + 4 + static_cast<int>(fl_width(label.c_str())) + 2 * TICK_GAP;
+            if (xx > left && xx + entry > left + width)
+            {
+                xx = left;
+                yy += text_height;
+            }
+            fl_color(groupColor(hg, group));
+            fl_rectf(xx, yy + 2, swatch, swatch);
+            fl_color(FL_FOREGROUND_COLOR);
+            fl_draw(label.c_str(), static_cast<int>(label.size()), xx + swatch + 4, yy + text_height - fl_descent());
+            xx += entry;
+        }
+        return yy - top_y + text_height + TICK_GAP;
     }
 
     void drawValues()
@@ -227,6 +321,7 @@ public:
         fl_rectf(x(), y(), w(), h());
         fl_font(FL_HELVETICA, FONT_SIZE);
         bars_ = 0;
+        segment_tops_.assign(owner_->state_.histogram.binCount() * owner_->state_.histogram.groupCount(), 0);
         const HistogramState &state = owner_->state_;
         const Histogram &hg = state.histogram;
         if (!state.active)
@@ -252,9 +347,11 @@ public:
         case FL_LEAVE:
         {
             const auto bar = event == FL_MOVE ? barAt(Fl::event_x(), Fl::event_y()) : std::nullopt;
-            if (bar != owner_->hovered_)
+            const auto group = bar && !rows_ ? groupAt(*bar, Fl::event_y()) : std::nullopt;
+            if (bar != owner_->hovered_ || group != owner_->hovered_group_)
             {
                 owner_->hovered_ = bar;
+                owner_->hovered_group_ = group;
                 owner_->showDetail();
                 redraw();
             }
@@ -264,7 +361,7 @@ public:
             if (Fl::event_button() == FL_LEFT_MOUSE && Fl::event_clicks() > 0)
             {
                 if (const auto bar = barAt(Fl::event_x(), Fl::event_y()))
-                    owner_->filterBy(*bar);
+                    owner_->filterBy(*bar, rows_ ? std::nullopt : groupAt(*bar, Fl::event_y()));
             }
             return 1;
         default:
@@ -284,7 +381,11 @@ HistogramWindow::HistogramWindow()
     status_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
     save_button_ = new Fl_Button(save_x, MARGIN, SAVE_WIDTH, LINE_HEIGHT, "Save Image...");
     save_button_->callback(saveCallback, this);
-    const int chart_y = 2 * MARGIN + LINE_HEIGHT;
+    group_choice_ = new Fl_Choice(MARGIN + CHOICE_LABEL_WIDTH, 2 * MARGIN + LINE_HEIGHT, CHOICE_WIDTH, LINE_HEIGHT,
+                                  "Stack by:");
+    group_choice_->callback(groupCallback, this);
+    group_choice_->tooltip("Split each bar by the values of another column, in a color per value");
+    const int chart_y = 3 * MARGIN + 2 * LINE_HEIGHT;
     const int detail_y = WINDOW_HEIGHT - MARGIN - LINE_HEIGHT;
     chart_ = new Chart(MARGIN, chart_y, WINDOW_WIDTH - 2 * MARGIN, detail_y - MARGIN - chart_y, this);
     chart_->box(FL_DOWN_FRAME);
@@ -312,7 +413,8 @@ void HistogramWindow::show(std::shared_ptr<TableModel> model, const std::string 
     model_ = std::move(model);
     setTitle(sheet_name);
     window_->show();
-    start(column);
+    // A column of its own is not stacked by itself.
+    start(column, group_column_ == column ? std::nullopt : group_column_);
 }
 
 void HistogramWindow::setModel(std::shared_ptr<TableModel> model, const std::string &sheet_name)
@@ -325,7 +427,7 @@ void HistogramWindow::setModel(std::shared_ptr<TableModel> model, const std::str
     setTitle(sheet_name);
     if (window_->shown() && model_)
     {
-        start(column_);
+        start(column_, group_column_);
         // The sheet switched to may not have that column.
         check_column_ = true;
     }
@@ -344,12 +446,14 @@ void HistogramWindow::setTitle(const std::string &sheet_name)
     window_->copy_label(title_.c_str());
 }
 
-void HistogramWindow::start(size_t column)
+void HistogramWindow::start(size_t column, std::optional<size_t> group_column)
 {
     column_ = column;
+    group_column_ = group_column;
     hovered_.reset();
+    hovered_group_.reset();
     if (model_)
-        model_->startHistogram(column);
+        model_->startHistogram(column, 30, group_column);
     update();
 }
 
@@ -369,13 +473,22 @@ void HistogramWindow::update()
     }
     HistogramState state = model_ ? model_->histogramState() : HistogramState{};
     if (state.generation != state_.generation)
+    {
         hovered_.reset();
+        hovered_group_.reset();
+    }
     state_ = std::move(state);
 
     rebuildColumnMenu();
     if (check_column_ && model_ && model_->state() != ModelState::Opening)
     {
         check_column_ = false;
+        if (state_.active && state_.group_column && *state_.group_column >= column_labels_.size())
+        {
+            // Without the stacking column, which the sheet does not have.
+            start(state_.column, std::nullopt);
+            state_ = model_->histogramState();
+        }
         if (state_.active && state_.column >= column_labels_.size())
         {
             model_->cancelHistogram(); // "Choose a column." instead of an empty histogram
@@ -385,6 +498,9 @@ void HistogramWindow::update()
     const bool shown = state_.active && state_.column < column_labels_.size();
     column_choice_->value(shown ? static_cast<int>(state_.column) : -1);
     setActive(column_choice_, model_ && !column_labels_.empty());
+    const bool grouped = shown && state_.group_column && *state_.group_column < column_labels_.size();
+    group_choice_->value(grouped ? static_cast<int>(*state_.group_column) + 1 : 0);
+    setActive(group_choice_, shown);
 
     std::string text;
     if (!model_ || model_->state() == ModelState::Error)
@@ -412,8 +528,11 @@ void HistogramWindow::showDetail()
     if (hovered_ && hg.binCount() > 0 && *hovered_ < hg.binCount())
     {
         const size_t count = hg.counts[*hovered_];
-        text = histogramBinRange(hg, *hovered_) + ": " + std::to_string(count) + " (" +
-               percentText(count, hg.values) + ")" + (state_.done ? "  Double-click to filter." : "");
+        text = histogramBinRange(hg, *hovered_) + ": " + std::to_string(count) + " (" + percentText(count, hg.values) + ")";
+        if (hovered_group_ && *hovered_group_ < hg.groupCount())
+            text += "; " + cellDisplayText(histogramSegmentText(hg, *hovered_, *hovered_group_), VALUE_LABEL_BYTES * 2);
+        if (state_.done)
+            text += "  Double-click to filter.";
     }
     else if (hovered_ && hg.binCount() == 0 && *hovered_ < hg.top.size())
     {
@@ -431,7 +550,7 @@ void HistogramWindow::showDetail()
     }
 }
 
-void HistogramWindow::filterBy(size_t index)
+void HistogramWindow::filterBy(size_t index, std::optional<size_t> group)
 {
     if (!model_ || !state_.done || !model_->viewCapabilities().filter)
         return;
@@ -441,7 +560,13 @@ void HistogramWindow::filterBy(size_t index)
     {
         if (index >= hg.binCount())
             return;
-        addNarrowingConditions(spec, histogramBinConditions(hg, state_.column, index));
+        auto conditions = histogramBinConditions(hg, state_.column, index);
+        if (group && state_.group_column && *group < hg.groupCount())
+        {
+            for (FilterCondition &condition : histogramGroupConditions(hg, *state_.group_column, *group))
+                conditions.push_back(std::move(condition));
+        }
+        addNarrowingConditions(spec, std::move(conditions));
     }
     else
     {
@@ -473,6 +598,12 @@ void HistogramWindow::rebuildColumnMenu()
         column_menu_.push_back({label.c_str(), 0, nullptr, nullptr, 0});
     column_menu_.push_back({nullptr});
     column_choice_->menu(column_menu_.data());
+    group_menu_.clear();
+    group_menu_.push_back({"(none)", 0, nullptr, nullptr, 0});
+    for (const std::string &label : column_labels_)
+        group_menu_.push_back({label.c_str(), 0, nullptr, nullptr, 0});
+    group_menu_.push_back({nullptr});
+    group_choice_->menu(group_menu_.data());
 }
 
 void HistogramWindow::columnCallback(Fl_Widget *, void *data)
@@ -480,7 +611,19 @@ void HistogramWindow::columnCallback(Fl_Widget *, void *data)
     auto *self = static_cast<HistogramWindow *>(data);
     const int value = self->column_choice_->value();
     if (value >= 0)
-        self->start(static_cast<size_t>(value));
+    {
+        const auto column = static_cast<size_t>(value);
+        self->start(column, self->group_column_ == column ? std::nullopt : self->group_column_);
+    }
+}
+
+void HistogramWindow::groupCallback(Fl_Widget *, void *data)
+{
+    auto *self = static_cast<HistogramWindow *>(data);
+    const int value = self->group_choice_->value();
+    if (value >= 0 && self->model_ && self->state_.active)
+        self->start(self->state_.column,
+                    value == 0 ? std::nullopt : std::optional<size_t>(static_cast<size_t>(value - 1)));
 }
 
 void HistogramWindow::saveCallback(Fl_Widget *, void *data)

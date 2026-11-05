@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { TableSkimClient } from '../client';
 import type { ChartImage } from '../charts/image';
 import { ScatterChart, type ScatterMode, type ScatterPick } from '../charts/ScatterChart';
-import { errorText, usePolled } from '../hooks';
+import { columnLabel, errorText, usePolled } from '../hooks';
 import { type Condition, Events, type ScatterState, type SheetInfo } from '../protocol';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
@@ -36,6 +36,8 @@ export function ScatterDialog({
 }: ScatterDialogProps) {
     const [axes, setAxes] = useState<{ x: number; y: number } | null>(null);
     const [mode, setMode] = useState<ScatterMode>('points');
+    // The column the points are coloured by.
+    const [colorColumn, setColorColumn] = useState<number | null>(null);
     const [fit, setFit] = useState(true);
     const [state, setState] = useState<ScatterState | null>(null);
     const [error, setError] = useState('');
@@ -57,7 +59,7 @@ export function ScatterDialog({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const start = axes ? `${sheet}:${axes.x}:${axes.y}` : '';
+    const start = axes ? `${sheet}:${axes.x}:${axes.y}:${colorColumn}` : '';
     usePolled(
         client,
         sheet,
@@ -67,7 +69,7 @@ export function ScatterDialog({
             try {
                 if (started.current !== start) {
                     started.current = start;
-                    await client.call('startScatter', { sheet, x: axes.x, y: axes.y, points: true });
+                    await client.call('startScatter', { sheet, x: axes.x, y: axes.y, points: true, colorColumn });
                 }
                 let next = await client.call('scatterState', { sheet });
                 // The points are many: fetched once the plot is done.
@@ -93,7 +95,9 @@ export function ScatterDialog({
                     ? { xBin: picked.xBin, yBin: picked.yBin }
                     : picked.kind === 'category'
                       ? { category: picked.category }
-                      : { xLow: picked.xLow, xHigh: picked.xHigh, yLow: picked.yLow, yHigh: picked.yHigh };
+                      : picked.kind === 'color'
+                        ? { color: picked.color }
+                        : { xLow: picked.xLow, xHigh: picked.xHigh, yLow: picked.yLow, yHigh: picked.yHigh };
             const reply = await client.call('scatterFilter', { sheet, ...where });
             // The model starts the plot over on the rows left.
             onFilter(reply.conditions);
@@ -102,7 +106,8 @@ export function ScatterDialog({
         }
     };
 
-    const shown = state && axes && state.x === axes.x && state.y === axes.y ? state : null;
+    const shown =
+        state && axes && state.x === axes.x && state.y === axes.y && state.colorColumn === colorColumn ? state : null;
     const categorical = !!shown && shown.categories.length > 0;
     const shownMode: ScatterMode = mode === 'boxes' && !categorical ? 'points' : mode;
     const progress =
@@ -111,7 +116,9 @@ export function ScatterDialog({
             : `${state.counting ? 'Plotting' : 'Scanning'}… ${state.scannedRows.toLocaleString()} rows`;
     const hint =
         shownMode === 'points'
-            ? 'Click a point to go to its row' + (categorical ? '.' : '; drag a rectangle to filter to it.')
+            ? 'Click a point to go to its row' +
+              (categorical ? '' : '; drag a rectangle to filter to it') +
+              (shown?.colors.length ? '; click a colour to filter to it.' : '.')
             : shownMode === 'density'
               ? 'Click a cell to filter to its rows' + (categorical ? '.' : '; drag a rectangle to filter to it.')
               : 'Click a box to filter to its category.';
@@ -141,6 +148,25 @@ export function ScatterDialog({
                         <button type="button" className="control" onClick={() => setAxes({ x: axes.y, y: axes.x })}>
                             Swap
                         </button>
+                        <label className="flex items-center gap-1">
+                            Color by
+                            <select
+                                id="scatter-color"
+                                className="control max-w-64"
+                                title="Colour the points by the values of another column"
+                                value={colorColumn ?? ''}
+                                onChange={(event) =>
+                                    setColorColumn(event.target.value === '' ? null : Number(event.target.value))
+                                }
+                            >
+                                <option value="">(none)</option>
+                                {info.columns.map((_, c) => (
+                                    <option key={c} value={c}>
+                                        {columnLabel(info, c)}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
                     </>
                 )}
                 <span className="flex" role="group" aria-label="Show">
