@@ -1,3 +1,5 @@
+option(TABLESKIM_ENABLE_LTO "Enable link-time optimization in Release configurations" OFF)
+
 # Single-config Debug builds compile dependencies as Release internally. Keep
 # those builds out of this policy; multi-config generators select IPO per config.
 string(TOUPPER "${CMAKE_BUILD_TYPE};${CMAKE_CONFIGURATION_TYPES}" tableskim_configurations)
@@ -5,28 +7,32 @@ if(NOT "RELEASE" IN_LIST tableskim_configurations)
     return()
 endif()
 
-include(CheckIPOSupported)
-function(tableskim_check_release_ipo)
-    # CheckIPOSupported uses a Debug try-compile with CMP0138 NEW. Check the
-    # Release flags instead: MSVC's Debug /RTC1 is incompatible with /GL.
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_RELEASE}")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_RELEASE}")
-    if(MSVC)
-        # CMake 4 adds /RTC1 via a target property as well as flag strings.
-        # Forward an empty value into the probe without changing real targets.
-        set(CMAKE_MSVC_RUNTIME_CHECKS "")
-        list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_MSVC_RUNTIME_CHECKS)
-    endif()
-    check_ipo_supported(RESULT supported OUTPUT error LANGUAGES C CXX)
-    if(NOT supported)
-        message(FATAL_ERROR "Release builds require link-time optimization: ${error}")
-    endif()
-endfunction()
-tableskim_check_release_ipo()
+if(TABLESKIM_ENABLE_LTO)
+    include(CheckIPOSupported)
+    function(tableskim_check_release_ipo)
+        # CheckIPOSupported uses a Debug try-compile with CMP0138 NEW. Check the
+        # Release flags instead: MSVC's Debug /RTC1 is incompatible with /GL.
+        set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_RELEASE}")
+        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_RELEASE}")
+        if(MSVC)
+            # CMake 4 adds /RTC1 via a target property as well as flag strings.
+            # Forward an empty value into the probe without changing real targets.
+            set(CMAKE_MSVC_RUNTIME_CHECKS "")
+            list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_MSVC_RUNTIME_CHECKS)
+        endif()
+        check_ipo_supported(RESULT supported OUTPUT error LANGUAGES C CXX)
+        if(NOT supported)
+            message(FATAL_ERROR "Release LTO is not supported: ${error}")
+        endif()
+    endfunction()
+    tableskim_check_release_ipo()
 
-# Older dependencies (miniz) predate CMP0069 and would otherwise ignore IPO.
-set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    # Older dependencies (miniz) predate CMP0069 and would otherwise ignore IPO.
+    set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+else()
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)
+endif()
 
 # Keep the compiler's Release speed optimizations, and discard unused functions
 # and data at link time. Each platform's linker uses its own spelling.
@@ -43,4 +49,4 @@ else()
     add_link_options("$<$<CONFIG:Release>:-Wl,--gc-sections>")
 endif()
 
-message(STATUS "Release builds: link-time optimization and unused-code elimination enabled")
+message(STATUS "Release builds: unused-code elimination enabled; LTO ${TABLESKIM_ENABLE_LTO}")
