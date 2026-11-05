@@ -76,7 +76,11 @@ ctest --preset debug -j 8            # test cases in parallel
   GUI too). Only CI's runs on main save the caches;
   pull requests and the release workflow just read them, and CI's
   `prune-caches` job then deletes all but the newest ccache of each key
-  prefix, as the repository's caches are limited to 10 GB. On Windows only,
+  prefix, as the repository's caches are limited to 10 GB. On Windows and
+  macOS, ccache checks the compiler by its version (`CCACHE_COMPILERCHECK`,
+  set alike in both workflows), as each runner image update changes the
+  compiler's file time; Windows's cache holds 1.5 GB, as a whole MSVC
+  build is larger than 1 GB. On Windows only,
   CI also keeps the FetchContent sources (`build/<preset>/_deps/*-src` and
   `*-subbuild`, about 580 MB) under a key of the CMake version and the hash
   of `cmake/Dependencies.cmake` and `cmake/patches/`, restored on an exact

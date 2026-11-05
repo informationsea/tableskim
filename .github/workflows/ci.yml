@@ -32,7 +32,9 @@ jobs:
     env:
       PRESET: ${{ matrix.os == 'windows-latest' && 'msvc-release' || 'release' }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 1G
+      # A whole build with MSVC takes more than 1 GB, which would evict part
+      # of it while it is being written. The release workflow uses the same.
+      CCACHE_MAXSIZE: ${{ matrix.os == 'windows-latest' && '1.5G' || '1G' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies (Linux)
@@ -54,6 +56,20 @@ jobs:
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja ccache
+      # ccache checks the compiler by its file time by default, which every
+      # new runner image changes even when the compiler is the same version,
+      # so the whole cache missed after each image update. Windows and macOS
+      # check it by its version instead; Linux packages keep their file
+      # times. The release workflow must do the same to read these caches.
+      - name: Check the compiler by its version in ccache
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            echo "CCACHE_COMPILERCHECK=string:msvc-$VCToolsVersion" >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_COMPILERCHECK=string:$(c++ --version | head -n 1)" >> "$GITHUB_ENV"
+          fi
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
