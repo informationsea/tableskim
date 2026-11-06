@@ -45,3 +45,5 @@ except editing and following a file (see [Using the Web App](web.md)).
    in edit mode, and saving them
 11. [Keyboard Shortcuts](keyboard-shortcuts.md): a quick reference for both
     interfaces and the web app
+
+[Example datasets](examples.md): the public data, units, reproducible steps, sources and licenses.

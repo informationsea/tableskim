@@ -6,13 +6,14 @@ then draws pyte's screen as a dark terminal would, with DejaVu Sans Mono
 (and IPAGothic for wide characters). Needs pyte and Pillow:
 
     python3 tests/tui/screenshots.py --tableskim build/debug/tableskim \\
-        [--demo-data demo/data] [--out docs/images] [names ...]
+        [--examples demo/examples] [--out docs/images] [names ...]
 
 Look at each image before committing it.
 """
 
 import argparse
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -31,7 +32,10 @@ PAD_X, PAD_Y = 8, 10
 FONT_SIZE = 16
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 BOLD_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
-WIDE_FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
+WIDE_FONT = next((p for p in [
+    "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+] if os.path.exists(p)), FONT)
 
 BACKGROUND = (0x1e, 0x1e, 0x1e)
 FOREGROUND = (0xd4, 0xd4, 0xd4)
@@ -149,34 +153,36 @@ def shots():
     def keys(*names):
         return list(names)
 
+    iris = [W("150 rows")]
     return {
-        # Salary, the 600000 - 650000 bar selected.
-        "tui-histogram.png": ("normal.csv", [
-            W("54 rows"), keys(*["l"] * 6, "B"), W("53 numbers in 30 bins"),
-            keys(*["down"] * 12), W("[600000, 650000)"),
-        ]),
-        "tui-histogram-dates.png": ("normal.csv", [
-            W("54 rows"), keys(*["l"] * 7, "B"), W("53 dates in 23 bins"),
-        ]),
-        # Age stacked by City, the Sendai part of the 34 - 36 bar selected.
-        "tui-histogram-stacked.png": ("normal.csv", [
-            W("54 rows"), keys("l", "l", "l", "B"), W("53 numbers"),
-            keys("g", "g", "g", "g"), W("by City"), W("Fukuoka"),
-            keys(*["down"] * 7), W("[34, 36)"),
-            keys("tab", "tab", "tab", "tab"), W("Sendai: 3 rows"),
-        ]),
-        "tui-density.png": ("large.parquet", [
-            W("10000 rows"), keys("l", "l", "l", "l", "M"), W("10000 rows plotted"),
-        ]),
-        "tui-density-categories.png": ("large.parquet", [
-            W("10000 rows"), keys("l", "l", "v", "l", "l", "M"), W("Box plot: Category × Score"),
-            keys("b"), W("Density: Category × Score"),
-        ]),
-        # Age and Salary coloured by City.
-        "tui-density-colored.png": ("normal.csv", [
-            W("54 rows"), keys("l", "l", "l", "v", "l", "l", "l", "M"), W("Density: Age × Salary"),
-            keys("c", "c", "c", "c"), W("by City"), W("Fukuoka"),
-        ]),
+        "tui-main.png": ("iris.csv", iris),
+        "tui-help.png": ("iris.csv", iris + [keys("?"), W("Esc: close")]),
+        "tui-search.png": ("iris.csv", iris + [keys("/", "setosa", "enter"), W("1/50")]),
+        "tui-stats.png": ("iris.csv", iris + [keys("l", "l", "S"), W("Mean")]),
+        "tui-histogram.png": ("iris.csv", iris + [keys("l", "l", "B"), W("150 numbers in 30 bins"),
+            keys("down", "down"), W("[1.4, 1.6)")]),
+        "tui-histogram-dates.png": ("hour.csv.xz", [W("dteday"), keys("l", "B"), W("17379 dates")]),
+        "tui-histogram-stacked.png": ("iris.csv", iris + [keys("l", "l", "B"), W("150 numbers"),
+            keys("g", "g", "g", "g"), W("by species"), keys("down", "down", "tab"), W("setosa")]),
+        "tui-density.png": ("hour.csv.xz", [W("dteday"), keys(*["l"] * 10, "v", *["l"] * 6, "M"),
+            W("17379 rows plotted")]),
+        "tui-density-categories.png": ("penguins.csv", [W("species"), keys("v", *["l"] * 5, "M"),
+            W("Box plot: species × body_mass_g"), keys("b"), W("Density: species × body_mass_g")]),
+        "tui-boxplot.png": ("penguins.csv", [W("species"), keys("v", *["l"] * 5, "M"),
+            W("Box plot: species × body_mass_g")]),
+        "tui-density-colored.png": ("iris.csv", iris + [keys("l", "l", "v", "l", "M"),
+            W("Density: petal_length × petal_width"), keys(*["c"] * 3), W("by species")]),
+        "tui-filter.png": ("iris.csv", iris + [keys(*["l"] * 4, "=", "f"), W("setosa")]),
+        "tui-filtered.png": ("iris.csv", iris + [keys(*["l"] * 4, "="), W("50 rows of 150")]),
+        "tui-group-by.png": ("iris.csv", iris + [keys(*["l"] * 4, "A"), W("Enter: group")]),
+        "tui-group-by-result.png": ("iris.csv", iris + [keys(*["l"] * 4, "A"), W("Enter: group"),
+            keys("enter"), W("3 groups"), keys("l", "o", "o"), W("50")]),
+        "tui-format.png": ("iris.csv", iris + [keys("l", "l", "%"), W("Decimal places")]),
+        "tui-sql-prompt.png": ("iris.parquet", iris + [keys(":"), W("Enter: run"),
+            keys("SELECT * FROM iris")]),
+        "tui-sql-result.png": ("iris.parquet", iris + [keys(":"), W("Enter: run"),
+            keys("SELECT species, count(*) AS flowers, round(avg(petal_length), 3) AS mean_petal_length FROM iris GROUP BY species ORDER BY species", "enter"),
+            W("3 rows")]),
     }
 
 
@@ -184,7 +190,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--tableskim", required=True)
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-    parser.add_argument("--demo-data", default=os.path.join(root, "demo", "data"))
+    parser.add_argument("--examples", default=os.path.join(root, "demo", "examples"))
     parser.add_argument("--out", default=os.path.join(root, "docs", "images"))
     parser.add_argument("names", nargs="*")
     args = parser.parse_args()
@@ -192,8 +198,19 @@ def main():
         if args.names and name not in args.names:
             continue
         with tempfile.TemporaryDirectory() as home:
-            with Tui(os.path.abspath(args.tableskim), os.path.join(args.demo_data, file), home=home,
-                     columns=COLUMNS, lines=LINES, env={"COLORTERM": "truecolor"}, screen=DimScreen) as tui:
+            source = os.path.join(args.examples, file)
+            if file == "iris.parquet":
+                # Convert a copy, as the manual explains, without adding files to examples/.
+                csv_path = os.path.join(home, "iris.csv")
+                shutil.copyfile(os.path.join(args.examples, "iris.csv"), csv_path)
+                with Tui(os.path.abspath(args.tableskim), csv_path, home=home) as convert:
+                    convert.wait_text("150 rows")
+                    convert.send("P")
+                    convert.wait_text("iris.parquet")
+                    convert.wait_text("150 rows")
+                source = os.path.join(home, "iris.parquet")
+            with Tui(os.path.abspath(args.tableskim), source, home=home,
+                     columns=COLUMNS, lines=LINES, env={"COLORTERM": "truecolor", "NO_COLOR": ""}, screen=DimScreen) as tui:
                 for step in steps:
                     if isinstance(step, str):
                         tui.wait_text(step)

@@ -27,6 +27,8 @@
 
 On macOS, use `Cmd` wherever this manual says `Ctrl`.
 
+The basic examples use `iris.csv` from [Example datasets](examples.md). Date and density examples use `hour.csv.xz`; and SQL uses the converted `iris.parquet`.
+
 ## The window
 
 ![The main window](../images/gui-main-window.png)
@@ -91,7 +93,7 @@ message says how many rows were copied.
 
 - a row number, such as `120`;
 - a cell, as `B12` or `R12C2`;
-- a column, by its letter (`AB`) or by its name (`Salary`). A column name
+- a column, by its letter (`AB`) or by its name (`petal_length`). A column name
   is matched exactly first, then ignoring upper and lower case, and wins
   over a column letter.
 
@@ -117,7 +119,7 @@ in descending order, and the third restores the file order. The arrow in the
 header shows the current direction. Sorting by one column replaces any
 other sort.
 
-![Sorted by Age, descending](../images/gui-sorted.png)
+![Sorted by petal_length, descending](../images/gui-sorted.png)
 
 Right-click a column header for the column menu, which has **Sort
 Ascending**, **Sort Descending** and **No Sort** as well as filtering,
@@ -157,7 +159,7 @@ column or cell menu, opens the Filter pane.
   **×** button removes the condition.
 - **+ Add condition** adds another condition.
 - **Apply** (or `Enter` in a value field) applies the filter. The line
-  below shows the result, for example "4 rows of 54".
+  below shows the result, for example "11 rows of 150".
 - **Clear** removes all conditions.
 
 ![The filter operators](../images/gui-filter-ops.png)
@@ -177,7 +179,7 @@ removes the filter.
 **Edit → Find...** (`Ctrl+F`) opens the Search pane. Type the text and
 press `Enter` or **Search**.
 
-![Searching for "watanabe"](../images/gui-search-pane.png)
+![Searching for "setosa"](../images/gui-search-pane.png)
 
 - Matching cells are highlighted in the table, and the list shows the row,
   column and value of every hit. Click a hit to jump to it.
@@ -193,7 +195,7 @@ press `Enter` or **Search**.
 a column or cell menu, opens the Statistics pane for the current column.
 Choose another column from the list at the top.
 
-![Statistics of the Salary column](../images/gui-stats-pane.png)
+![Statistics of petal_length (cm) in Iris](../images/gui-stats-pane.png)
 
 - The summary shows the number of **rows**, **empty** cells, **distinct**
   values and, for numeric columns, **numbers**, **min**, **max**, **sum**,
@@ -214,10 +216,9 @@ and how to read it.
 **Edit → Histogram...** (`Ctrl+Shift+H`), or **Histogram** in a column or
 cell menu, opens a histogram of the current column in a window of its own.
 Choose another column from the **Column** list at the top; the line next to
-it summarizes what was counted, for example "53 numbers in 30 bins, 1
-empty".
+it summarizes what was counted, for example "150 numbers in 30 bins".
 
-![Histogram of the Salary column](../images/gui-histogram.png)
+![Histogram of petal_length (cm) in Iris](../images/gui-histogram.png)
 
 - **Numbers** are counted into about 30 bins of round widths, such as
   50000 or 0.2. Integer columns whose values span at most about 30
@@ -227,19 +228,19 @@ empty".
 - **Other columns** (text) show their most frequent values as horizontal
   bars instead.
 - **Point at a bar** to see its range and count below the chart, for
-  example `[600000, 650000): 4 (7.5%)`. A range includes its lower bound
+  example `[1.4, 1.6): 26 (17.3%)`. A range includes its lower bound
   and excludes its upper bound (`[` and `)`), except the last bar of
-  numbers, which includes both (`[1450000, 1500000]`).
+  numbers, which includes both (`[6.8, 7]`).
 - **Double-click a bar** to filter the sheet to the rows of that bar. The
   histogram is then recomputed for the remaining rows, so you can drill
   down step by step. **Edit → Clear Filter** goes back to all rows.
 
-![Histogram of a date column, in two-year bins](../images/gui-histogram-dates.png)
+![Histogram of dteday in hour.csv.xz, in monthly bins](../images/gui-histogram-dates.png)
 
 The histogram always follows the current view of the sheet: changing the
 filter, in the Filter pane or anywhere else, recomputes it, and the summary
-says "(filtered rows)". Below, the 1994–1995 bar was double-clicked: the
-sheet now shows those six rows and the histogram shows them in monthly bins.
+says "(filtered rows)". Below, the January 2011 bar in `hour.csv.xz` was double-clicked:
+the sheet shows only that month's hourly records, and the histogram uses daily bins.
 
 ![After double-clicking a bar: the filtered sheet and its histogram](../images/gui-histogram-filtered.png)
 
@@ -250,15 +251,15 @@ sheet to that value.
 
 **Stack by** splits each bar of numbers or dates by the values of another
 column, in a colour for each value, with a legend above the chart: a
-histogram of ages stacked by City shows how many people of each age live
-in each city. The 8 most frequent values get a colour of their own; the
+histogram of `petal_length` stacked by `species` shows the flowers of
+each species in each range of lengths. The 8 most frequent values get a colour of their own; the
 others are counted together as **(other)** (gray), and empty cells as
 **(empty)** (light gray). Pointing at a part of a bar shows its group and
 count as well, and double-clicking it filters the sheet to the rows of
 that bar *and* that group. Choose **(none)** to go back to plain bars; the
 choice is kept when you choose another column.
 
-![Age stacked by City, the Sendai part of a bar pointed at](../images/gui-histogram-stacked.png)
+![Petal length stacked by species, pointing at setosa](../images/gui-histogram-stacked.png)
 
 How bins are chosen is described in [Sorting, Filtering, Searching and
 Statistics](filtering.md#histograms).
@@ -296,7 +297,7 @@ value is empty or of another kind are left out and counted as "skipped"
 in the summary.
 
 The line under the summary shows how closely the columns are related, for
-example `r = 0.0945, R² = 0.0089, y = 2641.23 x + 744351`: Pearson's
+example `r = 0.9629, R² = 0.9271, y = 0.415755 x − 0.363076`: Pearson's
 correlation coefficient *r* (from −1 to 1), its square *R²*, and the
 least-squares line. They are computed over every row plotted, not only the
 sample of points. **Regression line** draws that line on the plot. The
@@ -319,9 +320,9 @@ microseconds.
   that value. The choice is kept when you choose other columns; the
   density and the box plots are not coloured.
 
-![Age against Salary, coloured by City](../images/gui-scatter-colored.png)
+![Petal length against petal width, coloured by species](../images/gui-scatter-colored.png)
 
-![2D density of the same columns](../images/gui-density.png)
+![Density of temp against cnt in hour.csv.xz](../images/gui-density.png)
 
 Like the histogram, the plot follows the current view of the sheet, so
 after filtering it is drawn again for the rows left. **Edit → Clear
@@ -335,7 +336,7 @@ values is a category with a column of its own: the 30 most frequent values,
 most frequent first, and **(other)** for the rest. **Show** then switches to
 **Box Plot** (it is available only then):
 
-![Box plots of Age by City](../images/gui-boxplot.png)
+![Box plots of Iris petal length by species](../images/gui-boxplot.png)
 
 - Each **box** spans the first to the third quartile of the category's Y
   values, with the **median** as a thick line and the **mean** as a red
@@ -383,10 +384,10 @@ sheet named **Group By**.
 
 The result has one row per group, in sort order of the group's values: the
 group columns, **count** (the rows of the group), and a column such as
-`Salary sum` for each aggregated column and function. It covers the rows of
+`petal_length mean` for each aggregated column and function. It covers the rows of
 the current view, so it follows the filter.
 
-![Rows counted by City, with the sum and mean of Salary](../images/gui-group-by-result.png)
+![Flowers counted by species, with mean, minimum and maximum petal length](../images/gui-group-by-result.png)
 
 The **Group By** sheet can be sorted, filtered, exported and grouped again
 like any other. Grouping again replaces it. It is a snapshot: it does not

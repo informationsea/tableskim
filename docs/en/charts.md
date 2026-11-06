@@ -6,8 +6,9 @@ TableSkim draws charts of the rows you are looking at and summarizes them
 in tables, without a spreadsheet or a script. This page shows, with
 examples, which tool answers which question, how to read the result, and
 how to go from a chart to the rows behind it. The examples use the demo
-files `normal.csv` (54 people; its first row is taken as the header) and
-`large.parquet` (10,000 rows).
+files in `demo/examples/`: `iris.csv` (150 flowers), `penguins.csv`
+(344 penguins), and `hour.csv.xz` (17,379 hourly bike rental records).
+See [Example datasets](examples.md) for sources, units and how to open them.
 
 - [Which tool for which question](#which-tool-for-which-question)
 - [How one column is distributed: histograms](#how-one-column-is-distributed-histograms)
@@ -38,22 +39,21 @@ A histogram counts how many values fall into each range ("bin") of a
 column. Put the current cell in the column and choose **Edit →
 Histogram...** (`Ctrl+Shift+H`).
 
-![Histogram of the Score column of large.parquet](../images/chart-histogram.png)
+![Histogram of petal_length in iris.csv (cm)](../images/chart-histogram.png)
 
 How to read it:
 
-- The **shape** tells how the values are spread. Here the scores form a
-  bell around 50: most rows score 35 to 65, and very low or very high
-  scores are rare.
-- The **summary** at the top says what was counted: "10000 numbers in 23
-  bins". Empty cells and values of another kind are counted apart.
-- **Point at a bar** for its exact range and count, such as `[45, 50):
-  1298 (13%)`: 1298 rows, 13% of them, have a score of at least 45 and
-  less than 50.
+- The **shape** tells how the values are spread. Here the petal lengths form separate
+  clusters: the short petals belong to setosa. Choose **Stack by → species**
+  to see which species contributes to each bar.
+- The **summary** at the top says what was counted: "150 numbers in 30
+  bins". All 150 flowers have a petal length; there are no empty values.
+- **Point at a bar** for its exact range and count, such as `[1.4, 1.6):
+  26 (17.3%)`: 26 flowers have petals at least 1.4 cm and less than 1.6 cm long.
 
 Dates are counted into whole days, months or years; a column of text shows
 its most frequent values instead, longest bar first. **Stack by** another
-column (Region, say) splits each bar by that column's values, in a colour
+column (`species`, say) splits each bar by that column's values, in a colour
 for each, so that you can see what each range is made of. See
 [Histograms](gui.md#histograms) for every option and
 [How bins are chosen](filtering.md#how-bins-are-chosen) for the details.
@@ -66,40 +66,45 @@ two columns first to plot exactly those (the first one is X); otherwise
 TableSkim picks number or date columns near the current cell, and you can
 change them in the **X** and **Y** lists.
 
-![Age against Salary, with the regression line](../images/chart-scatter-fit.png)
+![petal_length against petal_width in iris.csv, with the regression line](../images/chart-scatter-fit.png)
 
 How to read it:
 
 - The line above the plot measures the relation. **r** (Pearson's
   correlation coefficient) runs from −1 to 1: near 1, Y rises with X; near
   −1, Y falls as X rises; near 0, there is no straight-line relation. Here
-  `r = 0.0945`: age says almost nothing about salary.
-- **R²** is the share of Y's variation that the line explains (here less
-  than 1%), and `y = 2641 x + 744393` is the line itself, drawn in red: on
-  average, a year of age goes with 2641 more salary.
+  `r ≈ 0.9629`: longer petals tend to be wider.
+- **R²** is the share of Y's variation that the line explains (about
+  92.7% here). The red line is approximately `y = 0.4158 x − 0.3631`,
+  with both lengths in cm. This describes an association, not causation.
 - **Point at a point** to see its values and row; **click it** to jump to
   that row in the sheet.
-- **Color by** a third column (City, say) gives each of its values a
+- **Color by** a third column (`species`, say) gives each of its values a
   colour, with a legend above the plot, so that you can see whether the
   groups lie apart. Click an entry of the legend to filter to its rows.
+
+The overall Iris correlation also reflects differences between species;
+filter to one species to study the relationship within it.
 
 With many rows, points pile up on each other. **Show → Density** counts
 the rows in a grid instead, and colours each cell from dark (few rows) to
 yellow (many):
 
-![Density of Value against Score: 10,000 rows](../images/gui-density.png)
+![Density of temp against cnt in hour.csv.xz: 17,379 rows](../images/gui-density.png)
 
-The yellow band shows where most rows lie (scores around 50, whatever the
-value). **Log color scale** keeps cells with a handful of rows visible next
+This example uses Bike Sharing: **X → temp**, **Y → cnt**. Temperature is
+normalized, not in degrees Celsius; `cnt` counts rentals in an hour.
+Demand also changes with hour, season and working day, so temperature alone
+does not explain it. **Log color scale** keeps cells with a handful of rows visible next
 to the busiest ones; turn it off to compare counts linearly.
 
 ## How groups differ: box plots
 
-When X is a column of text, such as a department, each of its values
+When X is a column of text, such as `species`, each of its values
 becomes a group with a column of its own, and the plot shows a **box plot**
-per group. Here: salaries by department.
+per group. Here: **X → species**, **Y → petal_length** in Iris.
 
-![Box plots of Salary by Department](../images/chart-boxplot.png)
+![Petal length (cm) by species in iris.csv](../images/chart-boxplot.png)
 
 How to read a box:
 
@@ -111,12 +116,14 @@ How to read a box:
   from the median, a few very high or low values pull it.
 - The **whiskers** reach the lowest and highest values that are not
   unusual (within 1.5 box heights of the box). **Rings** beyond them are
-  **outliers**: here one engineer earns far less than the others.
+  **outliers**. These are unusual measurements within a species, not
+  necessarily errors.
 - **Point at a box** to read its numbers below the plot: count, minimum,
   quartiles, maximum and mean.
 
-Engineering has the highest median, 人事部 the widest spread; departments
-with one person (`研究開発部`) show only a line. Up to 30 groups are shown,
+Setosa has the shortest petals (median 1.5 cm), versicolor lies between
+(median 4.35 cm), and virginica has the longest (median 5.55 cm). Each
+species has 50 flowers. Up to 30 groups are shown,
 the largest first; the rest are drawn together as **(other)**.
 
 For a group with more than 1,048,576 values, the box statistics are estimated
@@ -126,15 +133,16 @@ the box's numbers. Minimum, maximum and outlier counts also describe the
 sample. Density counts use all rows. The sample is the same whether points
 are retained or only the density is calculated.
 
-When groups do not differ, the boxes look alike, as for the five
-categories of `large.parquet`, which were generated the same way:
+For another example, open `penguins.csv`, with **X → species**,
+**Y → body_mass_g**. Gentoo penguins are generally heavier than Adelie
+and Chinstrap. Two rows have no body mass and are skipped; 342 are plotted.
 
-![Box plots of Score by Category: five alike groups](../images/chart-boxplot-categories.png)
+![Body mass (g) by penguin species](../images/chart-boxplot-categories.png)
 
 **Show → Density** shows each group's histogram as a column of coloured
 cells, which tells more about the shape than a box (two peaks, say):
 
-![Score by Category as a density](../images/chart-density-categories.png)
+![Body mass by penguin species as a density](../images/chart-density-categories.png)
 
 ## Summarizing in a table: Group By
 
@@ -142,7 +150,7 @@ Charts show patterns; **Group By** gives the numbers. **Edit → Group
 By...** (`Ctrl+Shift+G`) asks which columns to group by and which to
 summarize, and puts the result in a new sheet named **Group By**.
 
-![The Group By dialog: Salary by Department](../images/chart-group-by-dialog.png)
+![The Group By dialog: petal_length by species](../images/chart-group-by-dialog.png)
 
 ### Counting rows per group
 
@@ -150,38 +158,37 @@ Check only a column to group by and press **Group**: the result has one row
 per value with its **count**. Sort the **count** column (click its sort
 button twice) to see the largest groups first:
 
-![People per department, largest first](../images/chart-group-by-count.png)
+![Flowers per species: 50 in each group](../images/chart-group-by-count.png)
 
-The empty last row counts the rows without a department.
+The result has three rows: setosa, versicolor and virginica, each with
+`count = 50`. There is no empty species in Iris.
 
 ### Means, minimums and maximums per group
 
 Check columns under **Aggregate** and the functions below: **count**
 (values that are not empty), **distinct** (different values), **sum**,
 **mean**, **min**, **max** and **std dev** (standard deviation). Each
-aggregated column and function gives a column such as `Salary mean`. Means
+aggregated column and function gives a column such as `petal_length mean`. Means
 often have many decimals; **Format** in the column header menu shows them
-rounded, with thousands separators:
+rounded, for example to three decimal places:
 
-![Formatting the Salary mean column](../images/chart-group-by-format.png)
+![Mean, minimum and maximum petal length (cm) by species](../images/chart-group-by-mean.png)
 
-![Salary by department, the mean rounded and separated](../images/chart-group-by-salary.png)
-
-The `Says "hello"` row shows how text is handled: its salary is the text
-`500000.0`, which counts as a number for the mean but is kept as written
-for **min** and **max**.
+The means are 1.462 cm (setosa), 4.260 cm (versicolor) and 5.552 cm
+(virginica). These numbers summarize the differences shown in the boxes.
 
 ### Totals of the whole sheet
 
 Leave every **Group by** column unchecked: all rows form one group, and the
 result is one row of totals:
 
-![Totals: the count, sum, mean, min, max and standard deviation of Age](../images/chart-group-by-totals.png)
+![Totals: the count, sum, mean, min, max and standard deviation of petal_length](../images/chart-group-by-totals.png)
 
 ### Grouping by several columns
 
 Check two or more **Group by** columns to count each combination, for
-example City and Department: a row for each department in each city.
+example `species` and `island` in `penguins.csv`: a row for each
+species–island combination.
 
 ### Working with the result
 
@@ -203,9 +210,9 @@ Charts and filters work together, so you can drill down step by step:
   further.
 - **Edit → Clear Filter** goes back to all rows.
 
-Double-clicking the Engineering box above leaves the seven engineers:
+Double-clicking the setosa box above leaves its 50 flowers:
 
-![The sheet filtered to Engineering, from the box plot](../images/chart-boxplot-filtered.png)
+![The Iris sheet filtered to setosa, from the box plot](../images/chart-boxplot-filtered.png)
 
 ## Saving charts as images
 
@@ -238,11 +245,11 @@ The terminal UI has the same tools, drawn with characters:
 - `A` opens the Group By dialog; the result is a sheet, which `o` sorts.
 - `%` formats the current column, as **Format** does in the GUI.
 
-![Score by Category as a density in the terminal](../images/tui-density-categories.png)
+![Body mass by penguin species as a density in the terminal](../images/tui-density-categories.png)
 
 ![The Group By sheet sorted by count](../images/tui-group-by-result.png)
 
-![The Format dialog for the Salary mean column](../images/tui-format.png)
+![The Format dialog for the petal_length column](../images/tui-format.png)
 
 See [Using the Terminal UI](tui.md) for all keys. Saving charts as images
 is available in the GUI only.

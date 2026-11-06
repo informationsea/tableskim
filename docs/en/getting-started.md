@@ -2,6 +2,8 @@
 
 [← Contents](README.md)
 
+To follow the manual, open `demo/examples/iris.csv` from [Example datasets](examples.md).
+
 ## Installing
 
 TableSkim is distributed as native packages with all libraries built in, so

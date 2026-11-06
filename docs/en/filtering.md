@@ -60,9 +60,9 @@ condition tests one column.
 The comparison depends on the cell and on the value you type:
 
 - **Numbers**: if both the cell and the value are numbers (numeric text
-  included), they are compared numerically. `Age ≥ 45` keeps 45, 50 and
-  `"60"`. A cell that is not a number is compared as text (see below), so
-  `"abc"` matches too, as it sorts after `"45"`; add `is a number` to keep
+  included), they are compared numerically. `petal_length ≥ 6` keeps 6, 6.5 and
+  `"6.9"`. A cell that is not a number is compared as text (see below), so
+  `"abc"` matches too, as it sorts after `"6"`; add `is a number` to keep
   numbers only.
 - **Dates**: a date or date-time cell (or ISO date text) compared with a
   date or date-time value is compared in time. A **date value means the
@@ -78,19 +78,19 @@ The comparison depends on the cell and on the value you type:
 `matches` and `not matches` use [RE2 syntax](https://github.com/google/re2/wiki/Syntax),
 ignoring upper and lower case. The pattern may match anywhere in the cell;
 anchor it with `^` and `$` to match the whole cell, for example
-`^(Tokyo|Osaka)$`. An invalid pattern is reported and the filter is not
+`^(setosa|versicolor)$`. An invalid pattern is reported and the filter is not
 applied.
 
 ### Examples
 
 | Goal                                         | Condition(s)                                 |
 | -------------------------------------------- | -------------------------------------------- |
-| People in Tokyo aged 45 or older             | `City = Tokyo` **and** `Age ≥ 45` (Match: All) |
-| Rows from January 2024                       | `Date ≥ 2024-01-01` **and** `Date < 2024-02-01` |
-| Rows on a given day, whatever the time       | `Timestamp = 2024-01-31`                     |
-| E-mail addresses at example.com or .org      | `Email matches @example\.(com\|org)$`         |
-| Rows with a missing value                    | `Salary is empty`                            |
-| Tokyo or Osaka                               | `City = Tokyo`, `City = Osaka` (Match: Any)  |
+| Virginica petals at least 6 cm long             | `species = virginica` **and** `petal_length ≥ 6` (Match: All) |
+| Hourly records in January 2011                       | `dteday ≥ 2011-01-01` **and** `dteday < 2011-02-01` |
+| Hourly records on one day       | `dteday = 2011-01-31`                     |
+| Species selected by a regular expression      | `species matches ^(setosa\|versicolor)$`         |
+| Rows with a missing value                    | `body_mass_g is empty`                            |
+| Setosa or versicolor                               | `species = setosa`, `species = versicolor` (Match: Any)  |
 
 ### Quick filters
 
@@ -175,7 +175,7 @@ the rows counted in that bar. The first one leaves out the "other values":
 without it, text such as `15 kg` would still pass `≥ 10` and `< 20` as
 text. For a
 bin of years, months or days the edges are dates, such as
-`≥ 1994-01-01` and `< 1996-01-01`. For a text column, the bar's value is added as an `=` condition. You can see and
+`≥ 2011-01-01` and `< 2011-02-01`. For a text column, the bar's value is added as an `=` condition. You can see and
 edit these conditions in the Filter pane (`f` in the TUI).
 
 For Parquet, JSON and DuckDB files the values are counted inside the

@@ -27,11 +27,14 @@ TableSkim は **DuckDB**、**SQLite**、**Parquet**、**JSON** ファイルに S
 SQL を入力し、GUI では **Run**（`Ctrl+Enter`）、ターミナル UI では `Enter`
 を押します。
 
+この例では `demo/examples/iris.csv` を **File → Convert to Parquet / DuckDB...**（TUI は `P`）で変換し、生成された `iris.parquet` を開きます。CSV のままでは SQL を実行できません。結果は各品種 50 個体、花びらの長さの平均が 1.462、4.260、5.552 cm の 3 行です。
+
 ```sql
-SELECT City, count(*) AS people, round(avg(Age), 1) AS avg_age
-FROM normal
-GROUP BY City
-ORDER BY people DESC
+SELECT species, count(*) AS flowers,
+       round(avg(petal_length), 3) AS mean_petal_length
+FROM iris
+GROUP BY species
+ORDER BY species
 ```
 
 - 単一のクエリ（`SELECT`、`WITH`、`VALUES` など）の結果は **SQL Result**
@@ -45,7 +48,7 @@ ORDER BY people DESC
 ファイルは読み取り専用で開くので、SQL でデータベースやファイルを変更することはできません。SQL では問い合わせと一時テーブル・一時ビューの操作を許可しています。一時テーブルや一時ビューは作成・更新・削除でき、ウィンドウを閉じると消えます。
 
 ```sql
-CREATE TEMP TABLE adults AS SELECT * FROM normal WHERE Age >= 20;
+CREATE TEMP TABLE setosa AS SELECT * FROM iris WHERE species = 'setosa';
 ```
 
 SQL による外部ファイルへの書き込み（`COPY ... TO`、`EXPORT`、`VACUUM INTO`）、別のデータベースの接続、拡張機能の読み込み、エンジン設定の変更は拒否します。クエリの結果を保存するには **Export View...**（ターミナル UI では `w`）を使ってください。
@@ -74,8 +77,8 @@ Microsoft Store 版は専用のフォルダー
 
 `Tab` でカーソル直前の単語を補完します。対象はテーブル名・ビュー名、列名、
 SQL のキーワードです。`名前.` の後ではそのテーブルの列を候補にし、`FROM` や
-`JOIN` で付けた別名も理解します。たとえば `SELECT n. FROM normal AS n` の
-`SELECT n.` では `normal` の列を補完します。
+`JOIN` で付けた別名も理解します。たとえば `SELECT i. FROM iris AS i` の
+`SELECT i.` では `iris` の列を補完します。
 
 ## ヒント
 

@@ -31,3 +31,5 @@ TableSkim は 1 つのプログラムに 2 つの画面を備えています。
    Parquet / DuckDB への変換
 10. [セルの編集](editing.md)：編集モードでの CSV / TSV・Excel ファイルのセルの変更と保存
 11. [キーボードショートカット](keyboard-shortcuts.md)：両方の画面と Web アプリの早見表
+
+[サンプルデータ](examples.md)：使用する公開データ、単位、再現手順、出典とライセンス。
