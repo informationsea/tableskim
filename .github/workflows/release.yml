@@ -266,8 +266,29 @@ jobs:
       CCACHE_MAXSIZE: 1.5G
     steps:
       - uses: actions/checkout@v4
+      # The Chocolatey feed sometimes fails (e.g. 504 Gateway Timeout) and
+      # choco still exits with 0 when another package was installed, so a
+      # missing NSIS surfaced only at CPack, after the whole build. Each
+      # program is checked and its install retried, failing here instead.
       - name: Install NSIS, Ninja and ccache
-        run: choco install nsis ninja ccache -y --no-progress
+        shell: pwsh
+        run: |
+          $programs = [ordered]@{
+            nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+            ninja = "ninja"
+            ccache = "ccache"
+          }
+          foreach ($package in $programs.Keys) {
+            $program = $programs[$package]
+            for ($attempt = 1; $attempt -le 4; $attempt++) {
+              choco install $package -y --no-progress
+              if (Get-Command $program -ErrorAction SilentlyContinue) { break }
+              if ($attempt -eq 4) { throw "$package was not installed" }
+              Write-Host "Retrying the install of $package"
+              Start-Sleep -Seconds (15 * $attempt)
+            }
+          }
+          $global:LASTEXITCODE = 0
       - name: Set up the MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
