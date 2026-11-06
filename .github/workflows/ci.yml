@@ -105,7 +105,7 @@ jobs:
       - name: Configure
         # The terminal UI's (tests/tui/) and the GUI's (tests/gui/, under
         # Xvfb) tests run on Linux only.
-        run: cmake --preset ${{ env.PRESET }} ${{ runner.os == 'Linux' && '-DTABLESKIM_TUI_TESTS=ON -DTABLESKIM_GUI_TESTS=ON' || '' }}
+        run: cmake --preset ${{ env.PRESET }} -DTABLESKIM_ENABLE_LTO=OFF ${{ runner.os == 'Linux' && '-DTABLESKIM_TUI_TESTS=ON -DTABLESKIM_GUI_TESTS=ON' || '' }}
       - name: Save dependency sources
         if: runner.os == 'Windows' && github.event_name != 'pull_request' && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -128,7 +128,7 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.os }}-${{ github.sha }}-${{ github.run_id }}
       - name: Test
-        run: ctest --preset ${{ env.PRESET }}
+        run: ctest --preset ${{ env.PRESET }} --parallel 4
       - name: Package (ZIP)
         if: runner.os != 'Linux'
         shell: bash
@@ -254,7 +254,7 @@ jobs:
             /opt/tui-venv/bin/pip install -r tests/tui/requirements.txt
             tui_tests="-DPython3_EXECUTABLE=/opt/tui-venv/bin/python -DTABLESKIM_TUI_TESTS=ON"
           fi
-          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui || 'ON' }} \
+          cmake --preset release -DTABLESKIM_ENABLE_LTO=OFF -DTABLESKIM_BUILD_GUI=${{ matrix.gui || 'ON' }} \
             -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }} $tui_tests
       - name: Build and test
         shell: bash
@@ -265,7 +265,7 @@ jobs:
           ccache --zero-stats
           cmake --build --preset release
           ccache --show-stats
-          ctest --preset release
+          ctest --preset release --parallel 4
       - name: Save ccache
         if: github.event_name != 'pull_request' && matrix.save_cache
         uses: actions/cache/save@v4
@@ -360,7 +360,7 @@ jobs:
         run: |
           export EMSDK="${EMSDK:-$(dirname "$(dirname "$(dirname "$(command -v emcc)")")")}"
           echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
-          cmake --preset wasm-release -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
+          cmake --preset wasm-release -DTABLESKIM_ENABLE_LTO=OFF -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
       - name: Build
         run: cmake --build --preset wasm-release
       - name: Show ccache statistics

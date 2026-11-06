@@ -62,7 +62,7 @@ jobs:
         run: ccache --zero-stats
       - name: Build, test and package
         run: |
-          cmake --preset release
+          cmake --preset release -DTABLESKIM_ENABLE_LTO=ON
           ./package.sh deb
       - name: Show ccache statistics
         run: ccache --show-stats
@@ -106,7 +106,7 @@ jobs:
         run: ccache --zero-stats
       - name: Build, test and package
         run: |
-          cmake --preset release
+          cmake --preset release -DTABLESKIM_ENABLE_LTO=ON
           ./package.sh rpm
       - name: Show ccache statistics
         run: ccache --show-stats
@@ -176,7 +176,7 @@ jobs:
         shell: bash
         run: |
           source /opt/rh/gcc-toolset-14/enable
-          cmake --preset release -DTABLESKIM_BUILD_GUI=${{ matrix.gui }} -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
+          cmake --preset release -DTABLESKIM_ENABLE_LTO=ON -DTABLESKIM_BUILD_GUI=${{ matrix.gui }} -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }}
           ./package.sh zip
       - name: Show ccache statistics
         run: ccache --show-stats
@@ -228,7 +228,7 @@ jobs:
         run: softwareupdate --install-rosetta --agree-to-license
       - name: Build, test and package
         run: |
-          cmake --preset release ${{ matrix.cmake_args }}
+          cmake --preset release -DTABLESKIM_ENABLE_LTO=ON ${{ matrix.cmake_args }}
           ./package.sh all
       - name: Show ccache statistics
         run: ccache --show-stats
@@ -307,7 +307,9 @@ jobs:
         run: ccache --zero-stats
       - name: Build and package
         shell: cmd
-        run: package.bat all
+        run: |
+          cmake --preset %TABLESKIM_PRESET% -DTABLESKIM_ENABLE_LTO=ON || exit /b 1
+          package.bat all
       - name: Show ccache statistics
         run: ccache --show-stats
       - name: Run tests
@@ -411,7 +413,7 @@ jobs:
       - name: Build, test and pack
         run: |
           export EMSDK="${EMSDK:-$(dirname "$(dirname "$(dirname "$(command -v emcc)")")")}"
-          cmake --preset wasm-release -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
+          cmake --preset wasm-release -DTABLESKIM_ENABLE_LTO=ON -DTABLESKIM_WEB_APP=ON -DTABLESKIM_WEB_TESTS=ON
           cmake --build --preset wasm-release
           ctest --preset wasm-release -j 2
           cmake --build --preset wasm-release --target tableskim-web-zip

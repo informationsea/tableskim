@@ -229,10 +229,13 @@ cmake --build --preset release
 ctest --preset release
 ```
 
-Release builds enable link-time optimization (LTO/IPO) and remove unused code
-in the application and bundled dependencies. This also applies to CI,
-release packages and WebAssembly builds; the compiler and linker must support
-LTO. Debug and sanitizer builds keep their usual compilation settings.
+Release builds remove unused code in the application and bundled dependencies.
+Link-time optimization (LTO/IPO) is opt-in: the release workflow enables it
+with `-DTABLESKIM_ENABLE_LTO=ON` on every platform, including WebAssembly,
+while ordinary CI explicitly disables it. To reproduce a release build
+locally, configure with `cmake --preset release -DTABLESKIM_ENABLE_LTO=ON`.
+LTO requires compiler and linker support. Debug and sanitizer builds keep
+their usual compilation settings.
 
 The `asan` preset builds and tests a Debug build with AddressSanitizer and
 UndefinedBehaviorSanitizer (`cmake --preset asan`, `cmake --build --preset
