@@ -258,7 +258,7 @@ FetchContent_Declare(
   csv-parser
   SYSTEM
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser.git
-  GIT_TAG v5.5.0
+  GIT_TAG v5.7.1
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(csv-parser)
