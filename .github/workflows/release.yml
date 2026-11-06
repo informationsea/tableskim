@@ -239,11 +239,29 @@ jobs:
             build/release/*.dmg
             build/release/*.zip
 
+  # x64 on windows-latest, and ARM64 natively on a Windows on Arm runner
+  # (cross-compiling would leave FLTK's fluid and the tests unable to run).
+  # CI saves the ccache and the dependency sources for x64 only, so the
+  # ARM64 build starts from nothing. The Microsoft Store package is x64
+  # only (packaging/windows/make-msix.ps1).
   windows:
+    name: windows (${{ matrix.arch }})
     needs: check-version
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            preset: msvc-release
+            msvc_arch: x64
+          - arch: arm64
+            runner: windows-11-arm
+            preset: msvc-arm64-release
+            msvc_arch: arm64
+    runs-on: ${{ matrix.runner }}
     env:
-      TABLESKIM_PRESET: msvc-release
+      TABLESKIM_PRESET: ${{ matrix.preset }}
       CCACHE_DIR: ${{ github.workspace }}\.ccache
       CCACHE_MAXSIZE: 1.5G
     steps:
@@ -252,6 +270,8 @@ jobs:
         run: choco install nsis ninja ccache -y --no-progress
       - name: Set up the MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
       # As in ci.yml, so that its cache is found after a runner image update.
       - name: Check the compiler by its version in ccache
         shell: bash
@@ -264,15 +284,17 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-windows-latest-${{ github.sha }}-${{ github.run_id }}
-          restore-keys: ccache-windows-latest-
+          key: ccache-${{ matrix.runner }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: ccache-${{ matrix.runner }}-
       # The FetchContent sources CI saved on Windows (see ci.yml), read
       # only: the key must match CI's exactly.
       - name: Find the CMake version
+        if: matrix.arch == 'x64'
         id: cmake
         shell: bash
         run: echo "version=$(cmake --version | sed -n '1s/.* //p')" >> "$GITHUB_OUTPUT"
       - name: Restore dependency sources
+        if: matrix.arch == 'x64'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -290,14 +312,14 @@ jobs:
         run: ccache --show-stats
       - name: Run tests
         shell: cmd
-        run: ctest --preset msvc-release
+        run: ctest --preset ${{ matrix.preset }}
       # The Microsoft Store package, once the repository variables hold the
       # identity Partner Center gives (Product management > Product
       # identity). It is unsigned, as the Store signs it on submission, so it
       # is kept as an artifact of the run for uploading to Partner Center,
       # not attached to the release.
       - name: Package for the Microsoft Store
-        if: vars.MSIX_IDENTITY_NAME != ''
+        if: vars.MSIX_IDENTITY_NAME != '' && matrix.arch == 'x64'
         shell: cmd
         env:
           MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
@@ -305,7 +327,7 @@ jobs:
           MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
         run: package.bat msix
       - name: Upload the Microsoft Store package
-        if: vars.MSIX_IDENTITY_NAME != ''
+        if: vars.MSIX_IDENTITY_NAME != '' && matrix.arch == 'x64'
         uses: actions/upload-artifact@v4
         with:
           name: microsoft-store
@@ -313,12 +335,13 @@ jobs:
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: windows-${{ matrix.arch }}
           # Only the packages (tableskim-<version>-Windows-<arch>), not the
           # programs built next to them.
           path: |
-            build/msvc-release/*-Windows-*.exe
-            build/msvc-release/*-Windows-*.zip
+            build/${{ matrix.preset }}/*-Windows-*.exe
+            build/${{ matrix.preset }}/*-Windows-*.zip
+          if-no-files-found: error
 
   # The web app (src/wasm/README.md), built and tested as in CI's wasm job,
   # as a ZIP to put on any web server (tableskim-<version>-web.zip).

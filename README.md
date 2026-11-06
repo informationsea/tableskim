@@ -297,6 +297,10 @@ cmake --preset msvc-release
 cmake --build --preset msvc-release
 ```
 
+For Windows on ARM, use `msvc-arm64-release` (or `msvc-arm64-debug`) from an
+ARM64 Developer Command Prompt (`vcvarsall.bat arm64`) on an ARM64 machine;
+the build runs FLTK's `fluid` and the tests, so it is not cross-compiled.
+
 ## Packaging
 
 ```sh
@@ -313,7 +317,7 @@ them to a GitHub release:
   distributions: the GUI with Wayland, the GUI for X11 only (`-x11`), and
   the terminal UI only (`tableskim-tui`)
 - macOS: `.dmg` and `.zip`
-- Windows: installer (`.exe`) and `.zip`
+- Windows: installer (`.exe`) and `.zip`, for x64 (`AMD64`) and ARM64
 
 `package.bat msix` makes the Microsoft Store package
 (`packaging/windows/make-msix.ps1`). It needs the identity Partner Center

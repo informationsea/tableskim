@@ -143,6 +143,24 @@
             }
         },
         {
+            "name": "msvc-arm64",
+            "hidden": true,
+            "architecture": {
+                "value": "arm64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "msvc-arm64-debug",
+            "displayName": "Debug for ARM64 (Ninja / MSVC, from an ARM64 Developer Command Prompt)",
+            "inherits": ["msvc-arm64", "msvc-debug"]
+        },
+        {
+            "name": "msvc-arm64-release",
+            "displayName": "Release for ARM64 (Ninja / MSVC, from an ARM64 Developer Command Prompt)",
+            "inherits": ["msvc-arm64", "msvc-release"]
+        },
+        {
             "name": "vs-debug",
             "displayName": "Debug (Visual Studio / MSVC)",
             "inherits": "vs-base",
@@ -218,6 +236,14 @@
         {
             "name": "msvc-release",
             "configurePreset": "msvc-release"
+        },
+        {
+            "name": "msvc-arm64-debug",
+            "configurePreset": "msvc-arm64-debug"
+        },
+        {
+            "name": "msvc-arm64-release",
+            "configurePreset": "msvc-arm64-release"
         },
         {
             "name": "vs-debug",
@@ -296,6 +322,16 @@
             "name": "msvc-release",
             "inherits": "test-base",
             "configurePreset": "msvc-release"
+        },
+        {
+            "name": "msvc-arm64-debug",
+            "inherits": "test-base",
+            "configurePreset": "msvc-arm64-debug"
+        },
+        {
+            "name": "msvc-arm64-release",
+            "inherits": "test-base",
+            "configurePreset": "msvc-arm64-release"
         },
         {
             "name": "vs-debug",

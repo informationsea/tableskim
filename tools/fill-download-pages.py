@@ -20,8 +20,10 @@ from pathlib import Path
 
 # Asset names as cmake/Packaging.cmake makes them, and the web app's.
 PATTERNS = {
-    "windows-installer": r"tableskim-[\d.]+-Windows-[^-]+\.exe",
-    "windows-zip": r"tableskim-[\d.]+-Windows-[^-]+\.zip",
+    "windows-installer": r"tableskim-[\d.]+-Windows-AMD64\.exe",
+    "windows-zip": r"tableskim-[\d.]+-Windows-AMD64\.zip",
+    "windows-arm64-installer": r"tableskim-[\d.]+-Windows-ARM64\.exe",
+    "windows-arm64-zip": r"tableskim-[\d.]+-Windows-ARM64\.zip",
     "macos-dmg": r"tableskim-[\d.]+-Darwin-arm64\.dmg",
     "macos-zip": r"tableskim-[\d.]+-Darwin-arm64\.zip",
     "macos-intel-dmg": r"tableskim-[\d.]+-Darwin-x86_64\.dmg",

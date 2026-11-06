@@ -49,8 +49,10 @@
     }
 
     // `architecture` is "x86" or "arm" where the browser tells it
-    // (Chromium), null elsewhere. Windows and Linux builds are for x86-64
-    // only; a Mac is taken for Apple silicon unless it is said to be Intel.
+    // (Chromium), null elsewhere. Windows comes for x64 and ARM64, taken for
+    // x64 unless it is said to be ARM (x64 runs on ARM by emulation); Linux
+    // builds are for x86-64 only; a Mac is taken for Apple silicon unless it
+    // is said to be Intel.
     function recommend(key, architecture) {
         var note = null;
         if (key === "macos-dmg") {
@@ -59,8 +61,15 @@
             } else if (architecture !== "arm") {
                 note = "arch-note-mac";
             }
+        } else if (key === "windows-installer") {
+            // A release made before the ARM64 build has no such card filled
+            // in (tools/fill-download-pages.py marks it "missing").
+            var arm = document.querySelector('[data-asset="windows-arm64-installer"]');
+            if (architecture === "arm" && arm && !arm.classList.contains("missing")) {
+                key = "windows-arm64-installer";
+            }
         } else if (key && architecture === "arm") {
-            note = key === "windows-installer" ? "arch-note-arm-windows" : "arch-note-arm-linux";
+            note = "arch-note-arm-linux";
         }
         showRecommendation(key);
         var element = note && document.getElementById(note);

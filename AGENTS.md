@@ -106,9 +106,13 @@ ctest --preset debug -j 8            # test cases in parallel
   `cmake/patches/openxlsx.cmake`) instead of adding them there.
 - Windows uses the `vs-debug` / `vs-release` presets (Visual Studio 2026, MSVC)
   or, from a Developer Command Prompt, `msvc-debug` / `msvc-release` (Ninja,
-  MSVC). CI and the release workflow use `msvc-release` so that ccache works
+  MSVC; `msvc-arm64-debug` / `msvc-arm64-release` for ARM64, from an ARM64
+  prompt on an ARM64 machine, as the build runs `fluid` and the tests).
+  CI and the release workflow use `msvc-release` so that ccache works
   (Visual Studio generators ignore compiler launchers); `package.bat` follows
-  `TABLESKIM_PRESET`.
+  `TABLESKIM_PRESET`. The release also builds `msvc-arm64-release` on a
+  `windows-11-arm` runner (no MSIX for it yet); Windows packages are named
+  after the compiler's target (`AMD64`, `ARM64`).
 - macOS builds target macOS 12 (`CMAKE_OSX_DEPLOYMENT_TARGET`, set before
   `project()` in `CMakeLists.txt`), so APIs newer than that are unavailable
   there: floating-point `std::from_chars` / `std::to_chars` need macOS 26 /
