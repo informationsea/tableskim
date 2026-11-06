@@ -182,6 +182,15 @@ set(_tableskim_arch "${CMAKE_SYSTEM_PROCESSOR}")
 if(APPLE AND CMAKE_OSX_ARCHITECTURES)
     string(REPLACE ";" "-" _tableskim_arch "${CMAKE_OSX_ARCHITECTURES}")
 endif()
+# MSVC builds for the architecture of the Developer Command Prompt (e.g. ARM64
+# from an x64 host), which CMAKE_SYSTEM_PROCESSOR does not follow: name the
+# package after the compiler's target, keeping AMD64 for x64 as before.
+if(MSVC AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+    string(TOUPPER "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" _tableskim_arch)
+    if(_tableskim_arch STREQUAL "X64")
+        set(_tableskim_arch "AMD64")
+    endif()
+endif()
 set(CPACK_PACKAGE_FILE_NAME
     "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}${_tableskim_variant}-${_tableskim_arch}")
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)

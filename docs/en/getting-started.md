@@ -11,7 +11,7 @@ nothing else needs to be installed.
 | -------- | ---------------------------------------------------------------------- |
 | Linux    | `.deb` (Ubuntu 24.04 or later), `.rpm` (RHEL 10 and its rebuilds), or a `.zip` for any distribution |
 | macOS    | `.dmg` disk image or `.zip` containing `TableSkim.app`                 |
-| Windows  | Installer (`.exe`) or `.zip`                                           |
+| Windows  | Installer (`.exe`) or `.zip`, for x64 (`AMD64`) or ARM64               |
 
 The `.deb` and `.rpm` packages are built on Ubuntu 24.04 and Rocky Linux 10
 and install only on distributions at least as new. For other or older

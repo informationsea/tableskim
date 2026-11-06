@@ -39,8 +39,6 @@
     <div class="recommended-card"></div>
     <p class="arch-note" id="arch-note-mac" hidden>This is for Macs with Apple silicon (M1 and later).
       On a Mac with an Intel processor, choose the <a href="#macos-intel">Intel disk image</a> instead.</p>
-    <p class="arch-note" id="arch-note-arm-windows" hidden>This PC seems to have an ARM processor.
-      The Windows build is for x64; Windows 11 on ARM runs it by emulation.</p>
     <p class="arch-note" id="arch-note-arm-linux" hidden>This computer seems to have an ARM processor.
       The Linux builds are for x86-64 only; on ARM,
       <a href="https://github.com/informationsea/tableskim#building">build TableSkim from source</a>.</p>
@@ -52,8 +50,9 @@
 <section class="alt" id="windows">
   <div class="wrap">
     <h2>Windows</h2>
-    <p class="lead">For 64-bit Windows (x64). Both contain <code>TableSkim.exe</code>, the GUI, and
-      <code>tableskim-tui.exe</code>, the terminal UI.</p>
+    <p class="lead">For 64-bit Windows, on x64 (Intel and AMD) or ARM64 processors. Each contains
+      <code>TableSkim.exe</code>, the GUI, and <code>tableskim-tui.exe</code>, the terminal UI.</p>
+    <h3 class="group">x64 (Intel and AMD)</h3>
     <div class="files">
       <article class="file" data-asset="windows-installer">
         <div class="file-head"><h3>Installer</h3><span class="badge">Recommended</span></div>
@@ -68,6 +67,24 @@
           <span class="file-size"></span></p>
         <p>Needs no installation or administrator rights: unpack it anywhere and run
           <code>TableSkim.exe</code>.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+    </div>
+    <h3 class="group" id="windows-arm64">ARM64</h3>
+    <div class="files">
+      <article class="file" data-asset="windows-arm64-installer">
+        <div class="file-head"><h3>Installer</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-ARM64.exe</code>
+          <span class="file-size"></span></p>
+        <p>For Windows 11 on ARM (Snapdragon and other ARM processors). Installs TableSkim with
+          Start menu entries, including the user manual.</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
+      </article>
+      <article class="file" data-asset="windows-arm64-zip">
+        <div class="file-head"><h3>Portable ZIP</h3><span class="badge">Recommended</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-ARM64.zip</code>
+          <span class="file-size"></span></p>
+        <p>The ARM64 <code>TableSkim.exe</code> and manual in a ZIP, without installation.</p>
         <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">Download</a>
       </article>
     </div>

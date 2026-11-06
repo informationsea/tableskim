@@ -39,8 +39,6 @@
     <div class="recommended-card"></div>
     <p class="arch-note" id="arch-note-mac" hidden>これは Apple シリコン（M1 以降）の Mac 用です。
       Intel プロセッサの Mac では、<a href="#macos-intel">Intel 用のディスクイメージ</a>を選んでください。</p>
-    <p class="arch-note" id="arch-note-arm-windows" hidden>この PC は ARM プロセッサのようです。
-      Windows 版は x64 用ですが、ARM 版 Windows 11 ではエミュレーションで動きます。</p>
     <p class="arch-note" id="arch-note-arm-linux" hidden>このコンピュータは ARM プロセッサのようです。
       Linux 版は x86-64 専用です。ARM では
       <a href="https://github.com/informationsea/tableskim#building">ソースからビルド</a>してください。</p>
@@ -52,8 +50,9 @@
 <section class="alt" id="windows">
   <div class="wrap">
     <h2>Windows</h2>
-    <p class="lead">64 ビット版 Windows（x64）用です。どちらにも GUI の <code>TableSkim.exe</code> と、
+    <p class="lead">64 ビット版 Windows（x64 または ARM64 プロセッサ）用です。どれにも GUI の <code>TableSkim.exe</code> と、
       ターミナル UI の <code>tableskim-tui.exe</code> が含まれます。</p>
+    <h3 class="group">x64（Intel、AMD）</h3>
     <div class="files">
       <article class="file" data-asset="windows-installer">
         <div class="file-head"><h3>インストーラー</h3><span class="badge">おすすめ</span></div>
@@ -67,6 +66,23 @@
         <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-AMD64.zip</code>
           <span class="file-size"></span></p>
         <p>インストールも管理者権限も不要です。好きな場所に展開して <code>TableSkim.exe</code> を実行します。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+    </div>
+    <h3 class="group" id="windows-arm64">ARM64</h3>
+    <div class="files">
+      <article class="file" data-asset="windows-arm64-installer">
+        <div class="file-head"><h3>インストーラー</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-ARM64.exe</code>
+          <span class="file-size"></span></p>
+        <p>ARM 版 Windows 11（Snapdragon などの ARM プロセッサ）用です。ユーザーマニュアルを含むスタートメニューの項目とともに TableSkim をインストールします。</p>
+        <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
+      </article>
+      <article class="file" data-asset="windows-arm64-zip">
+        <div class="file-head"><h3>ポータブル ZIP</h3><span class="badge">おすすめ</span></div>
+        <p class="file-meta"><code class="file-name">tableskim-&lt;version&gt;-Windows-ARM64.zip</code>
+          <span class="file-size"></span></p>
+        <p>ARM64 版の <code>TableSkim.exe</code> とマニュアルを ZIP にしたものです。インストールは不要です。</p>
         <a class="button primary" href="https://github.com/informationsea/tableskim/releases/latest">ダウンロード</a>
       </article>
     </div>
