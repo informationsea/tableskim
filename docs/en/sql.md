@@ -31,11 +31,14 @@ with double quotes, for example `SELECT * FROM "多言語サンプル"`.
 Type the SQL and press **Run** (`Ctrl+Enter`) in the GUI, or `Enter` in the
 terminal UI.
 
+For this example, convert `demo/examples/iris.csv` with **File → Convert to Parquet / DuckDB...** (`P` in the TUI), then open `iris.parquet`. SQL is unavailable on the original CSV. The result has three species, each with 50 flowers and mean petal lengths of 1.462, 4.260 and 5.552 cm.
+
 ```sql
-SELECT City, count(*) AS people, round(avg(Age), 1) AS avg_age
-FROM normal
-GROUP BY City
-ORDER BY people DESC
+SELECT species, count(*) AS flowers,
+       round(avg(petal_length), 3) AS mean_petal_length
+FROM iris
+GROUP BY species
+ORDER BY species
 ```
 
 - A single query (`SELECT`, `WITH`, `VALUES`, ...) is shown in the **SQL
@@ -56,7 +59,7 @@ update and drop temporary tables and views, which disappear when the
 window is closed:
 
 ```sql
-CREATE TEMP TABLE adults AS SELECT * FROM normal WHERE Age >= 20;
+CREATE TEMP TABLE setosa AS SELECT * FROM iris WHERE species = 'setosa';
 ```
 
 Writing external files (`COPY ... TO`, `EXPORT`, `VACUUM INTO`), attaching
@@ -90,8 +93,8 @@ which Windows removes when the app is uninstalled.
 Press `Tab` to complete the word before the cursor: table and view names,
 column names, and SQL keywords. After `name.` it offers the columns of that
 table, and it knows aliases given in `FROM` and `JOIN`, so
-`SELECT n.` completes the columns of `normal` in
-`SELECT n. FROM normal AS n`.
+`SELECT i.` completes the columns of `iris` in
+`SELECT i. FROM iris AS i`.
 
 ## Tips
 

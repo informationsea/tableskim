@@ -6,6 +6,7 @@
 // serve.mjs (default build/wasm-release, or TABLESKIM_WASM_BUILD); the
 // output directory defaults to docs/images. Look at each image before
 // committing it.
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { chromium } = require('playwright');
@@ -13,7 +14,7 @@ const { chromium } = require('playwright');
 const root = path.join(__dirname, '..');
 const buildDir = path.resolve(root, process.argv[2] ?? process.env.TABLESKIM_WASM_BUILD ?? 'build/wasm-release');
 const outDir = path.resolve(root, process.argv[3] ?? 'docs/images');
-const demo = (name) => path.join(root, 'demo', 'data', name);
+const demo = (name) => path.join(root, 'demo', 'examples', name);
 const VIEWPORT = { width: 1244, height: 746 };
 
 const cell = (page, row, column) => page.locator(`.cell[data-row="${row}"][data-column="${column}"]`);
@@ -32,31 +33,31 @@ async function startServer() {
 const SHOTS = {
     // The main view: the Content pane with the cursor's cell.
     'web-main.png': async (open) => {
-        const page = await open('normal.csv');
-        await cell(page, 2, 2).dblclick();
+        const page = await open('iris.csv');
+        await cell(page, 2, 4).dblclick();
         await page.locator('#sidebar').waitFor();
         return page;
     },
     // The Search pane, a hit selected.
     'web-search-pane.png': async (open) => {
-        const page = await open('normal.csv');
+        const page = await open('iris.csv');
         await page.keyboard.press('Control+f');
         await page.locator('#search-text').waitFor();
-        await page.keyboard.type('watanabe');
+        await page.keyboard.type('setosa');
         await page.keyboard.press('Enter');
-        await page.locator('#search-status').filter({ hasText: '20 hits' }).waitFor();
-        await page.locator('.search-hit').nth(3).filter({ hasText: 'Taro' }).waitFor();
+        await page.locator('#search-status').filter({ hasText: '50 hits' }).waitFor();
+        await page.locator('.search-hit').nth(3).filter({ hasText: 'setosa' }).waitFor();
         await page.locator('.search-hit').nth(3).click();
         return page;
     },
-    // The Filter pane with two conditions: City = Tokyo and Age ≥ 45.
+    // The Filter pane: virginica flowers with petals at least 6 cm long.
     'web-filter-pane.png': async (open) => {
-        const page = await open('normal.csv');
+        const page = await open('iris.csv');
         await cell(page, 2, 2).click();
         await page.locator('#filter-toggle').click();
         for (const [index, column, op, value] of [
-            [0, '4', '=', 'Tokyo'],
-            [1, '3', '≥', '45'],
+            [0, '4', '=', 'virginica'],
+            [1, '2', '≥', '6'],
         ]) {
             await page.locator('#filter-add').click();
             await page.locator('.filter-column').nth(index).selectOption(column);
@@ -64,14 +65,14 @@ const SHOTS = {
             await page.locator('.filter-value').nth(index).fill(value);
         }
         await page.locator('#filter-apply').click();
-        await page.locator('#status-rows').filter({ hasText: '4 rows of 54' }).waitFor();
+        await page.locator('#status-rows').filter({ hasText: '11 rows of 150' }).waitFor();
         await cell(page, 2, 2).click();
         return page;
     },
-    // A histogram of Salary in 30 bins.
+    // A histogram of Iris petal length in 30 bins.
     'web-histogram.png': async (open) => {
-        const page = await open('normal.csv');
-        await cell(page, 0, 6).click();
+        const page = await open('iris.csv');
+        await cell(page, 0, 2).click();
         await page.locator('#histogram-button').click();
         await page.locator('#histogram-dialog').waitFor();
         await page.fill('#histogram-bins', '30');
@@ -80,44 +81,55 @@ const SHOTS = {
         await page.locator('#histogram-bins').blur();
         return page;
     },
-    // A histogram of Age stacked by City.
+    // Iris petal length stacked by species.
     'web-histogram-stacked.png': async (open) => {
-        const page = await open('normal.csv');
-        await cell(page, 0, 3).click();
+        const page = await open('iris.csv');
+        await cell(page, 0, 2).click();
         await page.locator('#histogram-button').click();
-        await page.locator('#histogram-summary').filter({ hasText: '53 numbers' }).waitFor();
+        await page.locator('#histogram-summary').filter({ hasText: '150 numbers' }).waitFor();
         await page.selectOption('#histogram-group', '4');
-        await page.locator('#histogram-legend').filter({ hasText: '(other)' }).waitFor();
+        await page.locator('#histogram-legend').filter({ hasText: 'setosa' }).waitFor();
         return page;
     },
-    // Age against Salary, the points coloured by City.
+    // Iris petal length against width, coloured by species.
     'web-scatter-colored.png': async (open) => {
-        const page = await open('normal.csv');
-        await cell(page, 0, 6).click();
+        const page = await open('iris.csv');
+        await cell(page, 0, 2).click();
         await page.locator('#scatter-button').click();
-        await page.locator('#scatter-summary').filter({ hasText: '53 rows plotted' }).waitFor();
-        await page.selectOption('#scatter-x', '3');
-        await page.selectOption('#scatter-y', '6');
+        await page.locator('#scatter-summary').filter({ hasText: '150 rows plotted' }).waitFor();
+        await page.selectOption('#scatter-x', '2');
+        await page.selectOption('#scatter-y', '3');
         await page.selectOption('#scatter-color', '4');
         await page.locator('#scatter-summary').filter({ hasText: 'click a colour' }).waitFor();
         return page;
     },
-    // SQL on a DuckDB file, its result shown as a sheet.
+    // Convert the Iris CSV to Parquet as the manual explains, then run SQL.
     'web-sql.png': async (open) => {
-        const page = await open('demo.duckdb');
+        const page = await open('iris.csv');
+        await page.locator('#convert-button').click();
+        const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#convert-start').click()]);
+        const data = fs.readFileSync(await download.path());
+        await page.locator('#convert-dialog').getByRole('button', { name: 'Close', exact: true }).last().click();
+        await page.setInputFiles('#file-input', {
+            name: 'iris.parquet',
+            mimeType: 'application/octet-stream',
+            buffer: data,
+        });
+        await page.locator('#status-rows').filter({ hasText: '150 rows' }).waitFor();
         await page.locator('#sql-toggle').click();
         await page
             .locator('#sql-editor')
             .fill(
-                'SELECT City, count(*) AS people, round(avg(Salary)) AS salary\n' +
-                    'FROM normal\nGROUP BY City\nORDER BY people DESC, City',
+                'SELECT species, count(*) AS flowers,\n' +
+                    '       round(avg(petal_length), 3) AS mean_petal_length\n' +
+                    'FROM iris\nGROUP BY species\nORDER BY species',
             );
         await page.locator('#sql-run').click();
         await page.locator('#tabs button[aria-selected=true]').filter({ hasText: 'SQL Result' }).waitFor();
-        await page.locator('#status-rows').filter({ hasText: '12 rows' }).waitFor();
+        await page.locator('#status-rows').filter({ hasText: '3 rows' }).waitFor();
         await page.waitForSelector('.cell:not(.k-l)');
         await cell(page, 0, 0).click();
-        await page.locator('#status-cell').filter({ hasText: 'City' }).waitFor();
+        await page.locator('#status-cell').filter({ hasText: 'species' }).waitFor();
         return page;
     },
 };

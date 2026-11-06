@@ -28,6 +28,8 @@ histograms; of the scatter plot, it shows the 2D density.
 - [Other settings](#other-settings)
 - [Key reference](#key-reference)
 
+The basic examples use `iris.csv` from [Example datasets](examples.md). Date and density examples use `hour.csv.xz`; the box plot uses `penguins.csv`, and SQL uses the converted `iris.parquet`.
+
 ## Starting
 
 ```sh
@@ -89,7 +91,7 @@ switch sheets.
   go back to the cell.
 - `s` shows or hides the sidebar.
 
-![Statistics of the City column in the sidebar](../images/tui-stats.png)
+![Statistics of petal_length in the sidebar](../images/tui-stats.png)
 
 ## Histograms
 
@@ -100,7 +102,7 @@ charts and the Group By results.
 line summarizes what was counted, and each line is one bar with its range,
 count and percentage.
 
-![Histogram of the Salary column](../images/tui-histogram.png)
+![Histogram of petal_length (cm) in Iris](../images/tui-histogram.png)
 
 | Key                  | Action                                                   |
 | -------------------- | -------------------------------------------------------- |
@@ -125,7 +127,7 @@ group's count in the selected bar. `Tab` picks one of those groups, whose
 count is shown at the bottom; `Enter` then filters to the rows of that
 part of the bar.
 
-![Age stacked by City, the Sendai part of a bar selected](../images/tui-histogram-stacked.png)
+![Petal length stacked by species, with setosa selected](../images/tui-histogram-stacked.png)
 
 ![Histogram of a date column](../images/tui-histogram-dates.png)
 
@@ -166,7 +168,7 @@ the line at the bottom says how many of the cell's rows have it. `Tab`
 selects a colour: cells without its rows turn gray, the bottom line counts
 it instead, and `Enter` filters to the rows of the cell with that value.
 
-![Age against Salary, coloured by City](../images/tui-density-colored.png)
+![Petal length against petal width, coloured by species](../images/tui-density-colored.png)
 
 Y must hold numbers or dates, as for the GUI's [scatter
 plot](gui.md#scatter-plots-and-2d-density). The colours need a terminal
@@ -178,7 +180,7 @@ the whiskers `├──┤`, the box `███` from the first to the third qua
 the median `┃` and outliers `∘`, on a common scale. The line at the bottom
 shows the numbers of the selected category.
 
-![Box plots of Salary by City](../images/tui-boxplot.png)
+![Box plots of penguin body mass by species](../images/tui-boxplot.png)
 
 | Key (box plot)       | Action                                                   |
 | -------------------- | -------------------------------------------------------- |
@@ -259,7 +261,7 @@ Filtering, Searching and Statistics](filtering.md).
 `/` opens the search prompt at the bottom. Type the text and press `Enter`.
 `Ctrl+R` in the prompt toggles regular expression search. `n` / `N` move to
 the next / previous hit; the status bar shows the query and the hit number
-(`/watanabe 1/20`). An empty search clears the search.
+(`/setosa 1/50`). An empty search clears the search.
 
 ![Search hits highlighted](../images/tui-search.png)
 

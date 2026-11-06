@@ -26,6 +26,8 @@
 
 On macOS, use `Cmd` wherever this page says `Ctrl`.
 
+The basic examples use `iris.csv` from [Example datasets](examples.md). SQL uses the converted `iris.parquet`.
+
 ## What the web app is
 
 The web app is TableSkim running in a web browser. The same core as the GUI
@@ -87,7 +89,7 @@ It, too, reads the files in your browser only.
 - **Sidebar** on the right (hidden at first): the Content, Search, Filter
   and Statistics panes.
 - **Status bar** at the bottom: the file and its text encoding, the row
-  count (`4 rows of 54` when filtered), the filter, and the cursor's row
+  count (`11 rows of 150` when filtered), the filter, and the cursor's row
   and column.
 
 The page follows the light or dark appearance of the system.
@@ -169,7 +171,7 @@ sidebar, laid out like the GUI's.
 - **+ Add condition** adds a condition for the cursor's column.
 - **Apply** (or `Enter` in a value field) applies the filter; until then
   the line below says "Press Apply (or Enter) to filter." It then shows
-  the result, for example "4 rows of 54", or why the filter cannot be
+  the result, for example "11 rows of 150", or why the filter cannot be
   applied (an invalid regular expression, for one).
 - **Clear** removes all conditions.
 
@@ -193,7 +195,7 @@ The operators and how values compare are explained in
 The **Search** button (`Ctrl+F`) opens the Search pane of the sidebar,
 laid out like the GUI's. Type the text and press `Enter` or **Search**.
 
-![The Search pane: the hits of "watanabe"](../images/web-search-pane.png)
+![The Search pane: the hits of "setosa"](../images/web-search-pane.png)
 
 - Matching cells are highlighted in the grid, and the list shows the row,
   column and value of every hit. Click a hit to jump to it; the arrow keys
@@ -225,7 +227,7 @@ follows the cursor from column to column. See
 
   ![A histogram](../images/web-histogram.png)
 
-  ![A histogram stacked by City](../images/web-histogram-stacked.png)
+  ![Petal length stacked by species](../images/web-histogram-stacked.png)
 
 - **Scatter** plots two columns against each other: **Points**,
   **Density** or, when X holds text, **Box plots** of each category, with
@@ -235,7 +237,7 @@ follows the cursor from column to column. See
   values of another column (the 8 most frequent, then "(other)" and
   "(empty)"); click a colour of the legend to narrow the rows to it.
 
-  ![Age against Salary, coloured by City](../images/web-scatter-colored.png)
+  ![Petal length against petal width, coloured by species](../images/web-scatter-colored.png)
 
 **Save PNG** and **Save SVG** save the chart as shown; the browser saves
 the file into its downloads. PNG is drawn at twice the size of the page,
