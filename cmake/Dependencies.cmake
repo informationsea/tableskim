@@ -53,6 +53,10 @@ elseif(TABLESKIM_BUILD_GUI)
     set(FLTK_BUILD_FORMS OFF)
     set(FLTK_BUILD_EXAMPLES OFF)
     set(FLTK_BUILD_SHARED_LIBS OFF)
+    # fltk-options (and fltk-options-cmd on Windows) is a settings tool for
+    # FLTK users, of no use to TableSkim; only fluid is needed, for
+    # fltk_wrap_ui().
+    set(FLTK_BUILD_FLTK_OPTIONS OFF)
     if(TABLESKIM_X11_ONLY)
         # For older distributions: no libwayland, libxkbcommon, libdecor or
         # D-Bus at run time. Cairo (with Pango) still draws, as in the X11
@@ -61,7 +65,15 @@ elseif(TABLESKIM_BUILD_GUI)
         set(FLTK_GRAPHICS_CAIRO ON)
     endif()
 
+    # No LTO for FLTK (TABLESKIM_ENABLE_LTO): with its libraries compiled
+    # for LTO, fluid (fluid and fluid-cmd on Windows), which only runs at
+    # build time, would be linked with LTO too, and MSVC's /LTCG links are
+    # slow. The GUI toolkit gains little from it; the release programs still
+    # drop its unused code (ReleaseOptimizations.cmake).
+    set(_tableskim_ipo_release "${CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE}")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)
     FetchContent_MakeAvailable(fltk)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE "${_tableskim_ipo_release}")
 endif()
 
 FetchContent_Declare(
