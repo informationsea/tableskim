@@ -256,16 +256,25 @@ jobs:
           fi
           cmake --preset release -DTABLESKIM_ENABLE_LTO=OFF -DTABLESKIM_BUILD_GUI=${{ matrix.gui || 'ON' }} \
             -DTABLESKIM_X11_ONLY=${{ matrix.x11_only }} $tui_tests
-      - name: Build and test
+      # The statistics are kept in the cache, so they are reset for this
+      # run's hit rate (as in the build job).
+      - name: Reset ccache statistics
+        run: ccache --zero-stats
+      - name: Build
         shell: bash
         run: |
           if [ -f /opt/rh/gcc-toolset-14/enable ]; then
             source /opt/rh/gcc-toolset-14/enable
           fi
-          ccache --zero-stats
           cmake --build --preset release
-          ccache --show-stats
-          ctest --preset release --parallel 4
+      # A step of its own, as in the other jobs, so that the statistics are
+      # not lost in the build's output and are shown after a failed build.
+      - name: Show ccache statistics
+        if: ${{ !cancelled() }}
+        run: ccache --show-stats
+      - name: Test
+        shell: bash
+        run: ctest --preset release --parallel 4
       - name: Save ccache
         if: github.event_name != 'pull_request' && matrix.save_cache
         uses: actions/cache/save@v4
