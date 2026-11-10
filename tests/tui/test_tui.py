@@ -295,6 +295,26 @@ class EditingTest(TuiTestCase):
         with open(path, encoding="utf-8", newline="") as saved:
             self.assertEqual(saved.read(), "a,b\n42,x\n2,y\n")
 
+    def test_a_change_on_disk_keeps_the_cell_being_typed(self):
+        path = self.temp_file("t.csv", "a,b\n1,x\n2,y\n")
+        tui = self.run_tui(path, "--header", "no")
+        tui.wait_text("3 rows")
+        tui.send("I")
+        tui.wait_text("EDIT")
+        tui.send("j", "i")
+        tui.wait_text("Edit R2C1")
+        # Auto Revert must not reopen the file under the prompt: the keys
+        # typed next would run as commands.
+        with open(path, "w", encoding="utf-8", newline="") as out:
+            out.write("a,b\n1,x\n2,y\n3,z\n")
+        tui.send("ctrl+u")
+        tui.type("42")
+        tui.send("enter")
+        tui.wait_text("*t.csv")
+        tui.wait_text("(changed on disk)")
+        self.assertIn("42", tui.text())
+        self.assertIn("3 rows", tui.text())
+
     def test_confirming_reload_discards_unsaved_edits(self):
         path = self.temp_file("t.csv", "a,b\n1,x\n2,y\n")
         tui = self.run_tui(path, "--header", "no")

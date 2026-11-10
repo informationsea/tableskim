@@ -662,6 +662,10 @@ void TuiApp::revertIfChanged()
     // until it has content again.
     if (!readFileStamp(utf8Path(path_), mtime, size) || size == 0 || (mtime == file_mtime_ && size == file_size_))
         return;
+    // A reopen closes the prompt of a cell being edited, and the keys typed
+    // next would run as commands. The next poll asks again.
+    if (edit_prompt_)
+        return;
     if (saving_ || (book_ && book_->modified()))
     {
         // Reopening would lose the edits; the status bar tells, and saving fails.
@@ -860,11 +864,13 @@ void TuiApp::startConversion()
             }
             else if (!rows)
                 setStatus("Conversion canceled");
-            else if (saving_ || (book_ && book_->modified()))
+            else if (saving_ || edit_prompt_ || (book_ && book_->modified()))
             {
-                // Opening the result would close the file with the edits.
+                // Opening the result would close the file with the edits,
+                // or the prompt of a cell being edited.
                 setStatus("Converted " + std::to_string(*rows) + " rows to " + utf8String(target.filename()) +
-                          " (not opened: there are unsaved changes)");
+                          (edit_prompt_ && !saving_ && !book_->modified() ? " (not opened: a cell is being edited)"
+                                                                          : " (not opened: there are unsaved changes)"));
             }
             else if (open(utf8String(target)))
                 setStatus("Converted " + std::to_string(*rows) + " rows to " + utf8String(target.filename()));
