@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <utility>
 
 #include "cell_format.hxx"
 #include "gui_theme.hxx"
@@ -201,8 +202,9 @@ void GuiFilterPane::setModel(std::shared_ptr<TableModel> model)
         return;
     }
     model_ = std::move(model);
+    keep_ = std::exchange(keep_next_, false) && model_ != nullptr;
     // Through update(), which waits while a menu is open.
-    reload_ = true;
+    reload_ = !keep_;
     update();
 }
 
@@ -230,7 +232,11 @@ void GuiFilterPane::update()
     if (model_ || reload_)
     {
         const Filter current = model_ ? filterOf(model_->requestedView()) : Filter{};
-        if (reload_ || !sameFilter(current, synced_))
+        // Kept over a reopen: the new model has no filter until the old
+        // one's is restored, which is synced_ already.
+        if (keep_ && (sameFilter(current, synced_) || !current.empty()))
+            keep_ = false;
+        if (reload_ || (!keep_ && !sameFilter(current, synced_)))
         {
             reload_ = false;
             synced_ = current;
@@ -396,6 +402,7 @@ void GuiFilterPane::apply()
             return;
         }
         refused_.reset();
+        keep_ = false;
         ViewSpec spec = model_->requestedView();
         synced_ = filter;
         if (filter.empty())

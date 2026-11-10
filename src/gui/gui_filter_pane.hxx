@@ -40,6 +40,11 @@ private:
     std::vector<FilterCondition> narrowing_;
     // The model was replaced: the next update() loads its filter.
     bool reload_ = false;
+    // The file is being reopened on this sheet: the next model takes over
+    // the conditions as they are, typed ones included (keep_next_), and the
+    // filter the reopen restores comes to it only later (keep_).
+    bool keep_next_ = false;
+    bool keep_ = false;
     // A filter that Apply refused (an invalid regular expression), and why.
     std::optional<Filter> refused_;
     std::string refused_error_;
@@ -81,6 +86,11 @@ public:
     // The sheet whose filter is edited; null for none.
     void setModel(std::shared_ptr<TableModel> model);
     const std::shared_ptr<TableModel> &model() const { return model_; }
+    // Before setModel() with the model a reopen made for the same sheet:
+    // the conditions stay as they are rather than following that model,
+    // whose filter is restored once it is ready. Reopening must not drop
+    // what is being typed (Auto Revert does it unasked).
+    void keepConditionsForNextModel() { keep_next_ = true; }
     // Called after model events: picks up filters set elsewhere and refreshes
     // the status line.
     void update();
