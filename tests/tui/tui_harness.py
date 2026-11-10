@@ -26,6 +26,40 @@ class TuiTimeout(AssertionError):
     pass
 
 
+class TerminalStream(pyte.ByteStream):
+    """Keep DCS queries out of the screen; pyte does not parse them."""
+
+    def __init__(self, screen):
+        super().__init__(screen)
+        self._escape = False
+        self._in_dcs = False
+
+    def feed(self, data):
+        visible = bytearray()
+        for byte in data:
+            if self._in_dcs:
+                if (self._escape and byte == ord("\\")) or byte in (0x18, 0x1a):
+                    self._in_dcs = False
+                    self._escape = False
+                else:
+                    self._escape = byte == 0x1b
+            elif self._escape:
+                self._escape = False
+                if byte == ord("P"):
+                    self._in_dcs = True
+                else:
+                    visible.append(0x1b)
+                    if byte == 0x1b:
+                        self._escape = True
+                    else:
+                        visible.append(byte)
+            elif byte == 0x1b:
+                self._escape = True
+            else:
+                visible.append(byte)
+        super().feed(bytes(visible))
+
+
 class Tui:
     """One run of the TUI on a file. Use as a context manager."""
 
@@ -56,7 +90,7 @@ class Tui:
         self.extra_env = dict(env or {})
         # `screen`: a pyte.Screen class of the caller's (screenshots.py keeps dim text).
         self.screen = (screen or pyte.Screen)(columns, lines)
-        self.stream = pyte.ByteStream(self.screen)
+        self.stream = TerminalStream(self.screen)
         self.pid = None
         self.fd = None
         self.exit_status = None
