@@ -270,6 +270,10 @@ public:
     // Message of a sort/filter that the source failed to run since the last
     // call; the model then went back to the unsorted, unfiltered table.
     std::optional<std::string> takeViewError();
+    // Message of a failure to read a sequential source past the rows it had
+    // given, since the last call; the table then ends at those rows
+    // (readingStopped()).
+    std::optional<std::string> takeReadError();
     RowCount rowCount() const; // rows in the current view
     // Rows before filtering; rowCount() while no filter is applied. Not exact
     // if a pushed-down filter was applied before the rows were counted.
@@ -325,7 +329,8 @@ public:
     void continueReading();
     // Ends the table at the rows read so far, as if the file ended there.
     void stopReading();
-    // Whether stopReading() cut the table short.
+    // Whether stopReading(), or a failure to read on (takeReadError()), cut
+    // the table short.
     bool readingStopped() const;
 
     // A histogram of one column over the rows of the view, computed in the
@@ -493,6 +498,7 @@ private:
     ModelState state_ = ModelState::Opening;
     std::string error_message_;
     std::optional<std::string> view_error_;
+    std::optional<std::string> read_error_;
     SourceCapabilities capabilities_;
     std::map<size_t, CachedBlock> blocks_; // block index -> block
     size_t cache_bytes_ = 0;

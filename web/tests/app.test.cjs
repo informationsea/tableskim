@@ -105,7 +105,8 @@ async function regressionPage() {
                     filterText: '',
                     ...(this.viewError ? { viewError: this.viewError, viewErrorId: this.viewErrorId } : {}),
                     checkpoint: this.checkpoint ?? null,
-                    readingStopped: false,
+                    readingStopped: Boolean(this.readError),
+                    ...(this.readError ? { readError: this.readError } : {}),
                 };
             }
             releaseSql() {
@@ -1142,6 +1143,20 @@ describe('frontend regressions', () => {
             ];
             return view.filter && header?.classList.contains('name') && header.classList.contains('text-accent');
         });
+        await page.context().close();
+    });
+
+    test('says why a file was not read to its end', async () => {
+        const page = await regressionPage();
+        await page.evaluate(() => {
+            const worker = window.regressionWorker;
+            worker.readError = 'corrupt data';
+            worker.onmessage({ data: { type: 'events', json: JSON.stringify({ [worker.sheet]: 34 }) } });
+        });
+        await waitForText(
+            page.locator('#message'),
+            'The file could not be read to its end, so the table ends at the rows read: corrupt data',
+        );
         await page.context().close();
     });
 

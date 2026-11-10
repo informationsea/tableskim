@@ -482,9 +482,10 @@ namespace
     }
 
     // view_error is the last failure of a sort or filter, numbered so that
-    // the page shows it once.
+    // the page shows it once; read_error is why the table ends at the rows
+    // read, if reading on failed.
     void writeInfo(JsonWriter &json, int id, const std::string &name, TableModel &model, const ColumnFormats &formats,
-                   const std::string &view_error, unsigned view_error_id)
+                   const std::string &view_error, unsigned view_error_id, const std::string &read_error)
     {
         const ModelState state = model.state();
         // The view before the rows: a view applied in between then shows
@@ -558,6 +559,8 @@ namespace
         else
             json.null();
         json.key("readingStopped").value(model.readingStopped());
+        if (!read_error.empty())
+            json.key("readError").value(read_error);
         json.endObject();
     }
 
@@ -980,7 +983,11 @@ void WebSession::writeSheetInfo(JsonWriter &result, Sheet &sheet)
         sheet.view_error = error->empty() ? "unknown error" : std::move(*error);
         ++sheet.view_error_id;
     }
-    writeInfo(result, sheet.id, sheet.name, *sheet.model, sheet.formats, sheet.view_error, sheet.view_error_id);
+    // Kept for good: the table stays cut short.
+    if (auto error = sheet.model->takeReadError())
+        sheet.read_error = error->empty() ? "unknown error" : std::move(*error);
+    writeInfo(result, sheet.id, sheet.name, *sheet.model, sheet.formats, sheet.view_error, sheet.view_error_id,
+              sheet.read_error);
 }
 
 void WebSession::rows(const Params &params, JsonWriter &result)

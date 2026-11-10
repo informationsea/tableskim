@@ -99,6 +99,7 @@ export interface SheetInfo {
     viewErrorId?: number; // to show each failure once
     checkpoint: { bytes: number; rows: number } | null;
     readingStopped: boolean;
+    readError?: string; // why reading stopped before the end, if it failed
 }
 
 /**

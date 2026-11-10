@@ -72,6 +72,7 @@ private:
         ColumnFormats formats;
         std::string view_error; // the last failed view, until another is asked for
         unsigned view_error_id = 0;
+        std::string read_error; // why reading stopped before the end, if it failed
         Subscription subscription; // declared last: reset before the model goes
     };
 

@@ -358,6 +358,14 @@ void GuiTableView::syncWithModel()
         fl_alert("Could not sort or filter %s, so the sort and filter were cleared:\n%s",
                  escapeLabel(model_->name()).c_str(), escapeLabel(*view_error).c_str());
     }
+    if (const auto read_error = model_->takeReadError())
+    {
+        spdlog::error("Failed to read on in {}: {}", model_->name(), *read_error);
+        NestedLoopGuard guard;
+        fl_alert("Could not read all of %s, so the table ends at the rows read:\n%s",
+                 escapeLabel(model_->name()).c_str(), escapeLabel(*read_error).c_str());
+    }
+
     askToContinueReading();
     applyPendingView();
     const ViewSpec view = model_->view();
