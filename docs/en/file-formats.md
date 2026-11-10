@@ -73,6 +73,10 @@ whether to continue:
 - **Stop Reading** shows only the rows read so far, as if the file ended
   there.
 
+If a text or Excel file cannot be read to its end (a truncated compressed
+file, for example), TableSkim says why and shows the rows read up to
+there, marked as partly read like a file you stopped reading.
+
 If you need to work with very large text files often, convert them to
 Parquet or DuckDB once (see [Exporting and Converting](exporting.md)): those
 formats are sorted and filtered inside the database, without loading every

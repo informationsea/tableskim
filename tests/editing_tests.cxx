@@ -319,6 +319,13 @@ TEST_CASE("Editing: ragged rows get longer and back")
     CHECK(model->peek(1, 4).state == CellState::Empty);
     CHECK(model->peek(1, 3).state == CellState::Empty);
     CHECK_FALSE(model->modified());
+    // Clearing the cell added, rather than undoing it, shortens the row too.
+    REQUIRE(setText(*model, 1, 4, "new"));
+    REQUIRE(setText(*model, 1, 4, ""));
+    CHECK(model->peek(1, 4).state == CellState::Empty);
+    CHECK(model->peek(1, 3).state == CellState::Empty);
+    CHECK_FALSE(model->cellModified(1, 4));
+    CHECK_FALSE(model->modified());
 }
 
 TEST_CASE("Saving without edits keeps every byte")

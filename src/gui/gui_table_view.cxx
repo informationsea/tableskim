@@ -8,6 +8,7 @@
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <algorithm>
+#include <limits>
 #include <climits>
 #include <cstdint>
 
@@ -115,6 +116,9 @@ namespace
 
     // Clearing more cells at once would take too much memory for undo.
     const size_t MAX_CLEARED_CELLS = 5000000;
+    // Copying runs on the main thread and builds one string: more freezes
+    // the window, and Fl::copy() takes the length as an int.
+    const size_t MAX_COPIED_CELLS = 5000000;
 
     const double DEFER_POLL_INTERVAL = 0.1;
     std::vector<std::function<void()>> deferred_actions;
@@ -353,6 +357,13 @@ void GuiTableView::syncWithModel()
         NestedLoopGuard guard;
         fl_alert("Could not sort or filter %s, so the sort and filter were cleared:\n%s",
                  escapeLabel(model_->name()).c_str(), escapeLabel(*view_error).c_str());
+    }
+    if (const auto read_error = model_->takeReadError())
+    {
+        spdlog::error("Failed to read on in {}: {}", model_->name(), *read_error);
+        NestedLoopGuard guard;
+        fl_alert("Could not read all of %s, so the table ends at the rows read:\n%s",
+                 escapeLabel(model_->name()).c_str(), escapeLabel(*read_error).c_str());
     }
 
     askToContinueReading();
@@ -1379,9 +1390,26 @@ void GuiTableView::setFilter(std::optional<Filter> filter)
 
 void GuiTableView::copySelection()
 {
+    int row_top, row_bottom, col_left, col_right;
+    get_selection(row_top, col_left, row_bottom, col_right);
+    if (!model_ || row_top < 0 || col_left < 0)
+        return;
+    const size_t columns = hidden_.visibleIn(static_cast<size_t>(col_left), static_cast<size_t>(col_right));
+    if (columns > 0 && static_cast<size_t>(row_bottom - row_top) >= MAX_COPIED_CELLS / columns)
+    {
+        NestedLoopGuard guard;
+        fl_alert("Too many cells to copy at once.\nFile > Export View... writes them to a file.");
+        return;
+    }
     const TsvCopyResult result = selectedCellsToTsv();
+    if (result.text.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
+    {
+        NestedLoopGuard guard;
+        fl_alert("The selected cells are too long to copy at once.\nFile > Export View... writes them to a file.");
+        return;
+    }
     if (result.copied_rows > 0)
-        Fl::copy(result.text.c_str(), result.text.length(), 2);
+        Fl::copy(result.text.c_str(), static_cast<int>(result.text.length()), 2);
     if (result.skipped_rows > 0)
     {
         NestedLoopGuard guard;

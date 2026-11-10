@@ -85,7 +85,8 @@ responsive.
 Tabs and line breaks inside a cell are replaced with spaces, and a cell
 that starts with a double quote is quoted so that it pastes back as it
 was. If some selected rows are not loaded yet, they are skipped and a
-message says how many rows were copied.
+message says how many rows were copied. Up to 5,000,000 cells are copied
+at a time; write more to a file with **File → Export View...**.
 
 ## Going to a row, cell or column
 

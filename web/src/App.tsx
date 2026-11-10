@@ -157,6 +157,7 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
         fileEpoch: 0, // SQL results belong to the file on which they were started
         lastSql: '', // run again after the file is opened again
         viewError: '', // the failure of a view shown last
+        readError: '', // the sheet whose failure to read on was shown last
     });
 
     const showInfo = useCallback((next: SheetInfo) => {
@@ -167,6 +168,11 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
         if (viewError && viewError !== flow.current.viewError) {
             flow.current.viewError = viewError;
             setMessage(`The sort or filter failed: ${next.viewError}`);
+        }
+        const readError = next.readError ? `${flow.current.fileEpoch}:${next.sheet}` : '';
+        if (readError && readError !== flow.current.readError) {
+            flow.current.readError = readError;
+            setMessage(`The file could not be read to its end, so the table ends at the rows read: ${next.readError}`);
         }
     }, []);
 

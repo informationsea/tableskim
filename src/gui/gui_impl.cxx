@@ -206,6 +206,10 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
         const auto &names = table_book->sheetNames();
         const size_t selected = static_cast<size_t>(std::find(names.begin(), names.end(), selected_sheet) - names.begin());
         tab->value(gui_table_views[selected < gui_table_views.size() ? selected : 0]);
+        // Still on the sheet the filter pane shows: what is being typed
+        // there stays (Auto Revert reopens unasked).
+        if (selected < gui_table_views.size() && filter_pane->model() && filter_pane->model()->name() == selected_sheet)
+            filter_pane->keepConditionsForNextModel();
         // clear() deleted the old resizable ("No Data"), which makes Fl_Group
         // scale everything, tab bar included. All views share one geometry,
         // so using the first as resizable keeps the tab bar height fixed.

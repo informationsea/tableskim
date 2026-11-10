@@ -1127,6 +1127,12 @@ std::optional<std::string> TableModel::takeViewError()
     return std::exchange(view_error_, std::nullopt);
 }
 
+std::optional<std::string> TableModel::takeReadError()
+{
+    std::lock_guard lock(mutex_);
+    return std::exchange(read_error_, std::nullopt);
+}
+
 RowCount TableModel::rowCount() const
 {
     std::lock_guard lock(mutex_);
@@ -1646,9 +1652,9 @@ void TableModel::applyChangesLocked(const std::vector<CellChange> &changes, bool
             row.resize(change.column + 1);
         row[change.column] = forward ? change.after : change.before;
         // A ragged row lengthened by an edit gets its length back once the
-        // cells added are empty again.
+        // cells added are empty again: text sources clear a cell to "".
         const size_t original_size = original_rows_.at(change.row).size();
-        while (row.size() > original_size && std::holds_alternative<std::monostate>(row.back()))
+        while (row.size() > original_size && isEmptyCell(row.back()))
             row.pop_back();
     };
     if (forward)
@@ -2086,7 +2092,11 @@ bool TableModel::step(DataSource &data_source, std::stop_token stop)
         else if (auto block_index = nextBlockToLoad())
             worked = loadBlock(*block_index, lock, stop, events);
         else if (pending_view_)
+        {
+            // Sorting in memory may fail too (out of memory, say).
+            failed_view = *pending_view_;
             worked = stepApplyView(lock, stop, events);
+        }
         else if (scanWantsRowsLocked())
             worked = stepScan(lock, stop, events);
         else if (search_spec_ && !search_.done)
@@ -2107,8 +2117,9 @@ bool TableModel::step(DataSource &data_source, std::stop_token stop)
         if (failed_view && !failed_view->empty())
         {
             // A pushed-down sort/filter may fail only when its query runs
-            // (e.g. a cast error in SQL). Fall back to the plain table rather
-            // than breaking the sheet, so that the user can change the view.
+            // (e.g. a cast error in SQL), one in memory for lack of it. Fall
+            // back to the plain table rather than breaking the sheet, so
+            // that the user can change the view.
             // Failing again on the plain table makes the error final.
             if (!pending_view_ || *pending_view_ == *failed_view)
                 pending_view_ = ViewSpec{};
@@ -2204,14 +2215,39 @@ bool TableModel::loadBlock(size_t block_index, std::unique_lock<std::mutex> &loc
     const size_t first_row = block_index * B;
 
     lock.unlock();
-    RowBlockPtr block = source_->read(first_row, B, stop);
+    RowBlockPtr block;
+    std::vector<ColumnInfo> columns;
+    try
+    {
+        block = source_->read(first_row, B, stop);
+        columns = source_->columns();
+    }
+    catch (const std::exception &e)
+    {
+        lock.lock();
+        // A sequential source that fails past rows it gave (a truncated
+        // compressed file, bytes that cannot be decoded) keeps them: they
+        // are cached for good, and the table ends there. Failing on the
+        // first rows breaks the sheet, as does a random-access source,
+        // whose other rows may not be cached.
+        if (capabilities_.random_access || sequential_rows_ == 0 || eof_)
+            throw;
+        if (stop.stop_requested())
+            return true;
+        reading_stopped_ = true;
+        eof_ = true;
+        read_error_ = e.what();
+        source_row_count_ = {sequential_rows_, RowCount::Kind::Exact};
+        events.push_back({TableEvent::Kind::RowCountChanged});
+        events.push_back({TableEvent::Kind::Error, 0, 0, e.what()});
+        return true;
+    }
     if (!block)
     {
         auto empty = std::make_shared<RowBlock>();
         empty->first_row = first_row;
         block = std::move(empty);
     }
-    auto columns = source_->columns();
     // Counted before taking the lock; only the worker changes typed_rows_.
     std::vector<ColumnTypeCounter> type_counters;
     const size_t typed_rows = std::min(block->rows.size(), options_.type_sample_rows - std::min(typed_rows_, options_.type_sample_rows));

@@ -1058,3 +1058,74 @@ TEST_CASE("searchHitIndex finds the hit at a position")
     CHECK_FALSE(searchHitIndex(state, {9, 9}));
     CHECK_FALSE(searchHitIndex(SearchState{}, {0, 0}));
 }
+
+namespace
+{
+    // Sequential source of `rows` rows whose reads fail from row `fail_at` on.
+    class FailingSequentialData : public DataSource
+    {
+    public:
+        size_t rows = 3000;
+        size_t fail_at = 1024;
+
+        std::vector<std::string> sheetNames() override { return {"a"}; }
+        std::unique_ptr<SheetSource> openSheet(const std::string &) override
+        {
+            class Sheet : public SheetSource
+            {
+            public:
+                size_t rows_;
+                size_t fail_at_;
+                Sheet(size_t rows, size_t fail_at) : rows_(rows), fail_at_(fail_at) {}
+                SourceCapabilities capabilities() const override { return {.random_access = false, .query_pushdown = false}; }
+                std::vector<ColumnInfo> columns() override { return {{"n"}}; }
+                RowCount rowCount() override { return {}; }
+                RowBlockPtr read(size_t first_row, size_t max_rows, std::stop_token) override
+                {
+                    if (first_row >= fail_at_)
+                        throw std::runtime_error("corrupt data");
+                    auto block = std::make_shared<RowBlock>();
+                    block->first_row = first_row;
+                    for (size_t r = first_row; r < std::min(rows_, first_row + max_rows); ++r)
+                        block->rows.push_back({CellValue{static_cast<int64_t>(r)}});
+                    return block;
+                }
+            };
+            return std::make_unique<Sheet>(rows, fail_at);
+        }
+    };
+} // namespace
+
+TEST_CASE("a sequential source failing after some rows keeps the rows read", "[regression]")
+{
+    TableBook book(std::make_unique<FailingSequentialData>());
+    auto model = book.sheet("a");
+    REQUIRE(waitFor([&] { return model->state() == ModelState::Ready; }));
+    CHECK(cellText(*model, 0, 0) == "0");
+    CHECK_FALSE(model->readingStopped());
+
+    // Sorting reads every row, which fails after the first 1024.
+    const ViewSpec descending{.sort = {{.column = 0, .ascending = false}}};
+    model->setView(descending);
+    REQUIRE(waitFor([&] { return model->view() == descending; }));
+    CHECK(model->state() == ModelState::Ready);
+    CHECK(model->readingStopped());
+    CHECK(model->rowCount() == RowCount{1024, RowCount::Kind::Exact});
+    CHECK(cellText(*model, 0, 0) == "1023");
+    CHECK(model->takeReadError() == std::optional<std::string>("corrupt data"));
+    CHECK_FALSE(model->takeReadError().has_value());
+    CHECK_FALSE(model->takeViewError().has_value());
+}
+
+TEST_CASE("a sequential source failing on its first rows breaks the sheet")
+{
+    auto data = std::make_unique<FailingSequentialData>();
+    data->fail_at = 0;
+    TableBook book(std::move(data));
+    auto model = book.sheet("a");
+    REQUIRE(waitFor([&] { return model->state() != ModelState::Opening; }));
+    model->requestRange(0, 10);
+    REQUIRE(waitFor([&] { return model->state() == ModelState::Error; }));
+    CHECK(model->errorMessage() == "corrupt data");
+    CHECK_FALSE(model->takeReadError().has_value());
+}

@@ -523,6 +523,41 @@ TEST_CASE("GUI: clearing the narrowing leaves the conditions being edited", "[re
     REQUIRE(window.waitForRows(view, 0));
 }
 
+TEST_CASE("GUI: a reopen keeps the filter conditions being typed", "[regression]")
+{
+    Window window(kDemoData / "normal.csv");
+    auto *view = window.currentView();
+    const ViewSpec spec{.filter = Filter{.conditions = {{0, FilterOp::GreaterEqual, "50"}}}};
+    const auto filtered = [&]
+    {
+        GuiTableView *current = window.currentView();
+        return current && current->model() && current->model()->view() == spec && current->model()->rowCount().isExact();
+    };
+    REQUIRE(waitFor([&] { return view->model()->state() == ModelState::Ready; }));
+    view->model()->setView(spec);
+    REQUIRE(waitFor(filtered));
+    const size_t rows = view->model()->rowCount().value;
+    REQUIRE(rows > 0);
+    window->show_filter();
+    window->filter_pane->update();
+    // A condition typed but not applied, which matches no row.
+    window->filter_pane->addCondition(1);
+    auto *value = dynamic_cast<Fl_Input *>(Fl::focus());
+    REQUIRE(value);
+    value->value("no such name");
+
+    // As Auto Revert does: the applied filter is restored, and the pane
+    // still has both conditions.
+    reopen(window);
+    REQUIRE(waitFor(filtered));
+    CHECK(currentRows(window, rows));
+    window->filter_pane->update();
+    CHECK(window.currentView()->model()->requestedView() == spec);
+    REQUIRE(pressButton(*window->main_window, "Apply"));
+    REQUIRE(waitFor([&] { return currentRows(window, 0); }));
+    CHECK(window.currentView()->model()->requestedView().filter->conditions.size() == 2);
+}
+
 TEST_CASE("GUI: filter editing preserves chart narrowing and clears it separately", "[regression]")
 {
     Window window(kDemoData / "normal.parquet");

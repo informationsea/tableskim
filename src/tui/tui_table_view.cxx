@@ -125,6 +125,8 @@ void TuiTableView::sync()
     }
     if (const auto view_error = model_->takeViewError(); view_error && error_callback_)
         error_callback_("Sort and filter were cleared:\n" + *view_error);
+    if (const auto read_error = model_->takeReadError(); read_error && error_callback_)
+        error_callback_("Could not read all of the file; the table ends at the rows read:\n" + *read_error);
     applyPendingView();
     view_ = model_->view();
     autosizeColumns();
