@@ -17,8 +17,10 @@ import sys
 import tempfile
 import unittest
 
+import pyte
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tui_harness import Tui  # noqa: E402
+from tui_harness import TerminalStream, Tui  # noqa: E402
 
 TABLESKIM = None
 DEMO_DATA = None
@@ -27,6 +29,27 @@ DEMO_DATA = None
 def status(tui):
     """The status line, at the bottom of the screen."""
     return tui.line(tui.lines - 1)
+
+
+class TerminalStreamTest(unittest.TestCase):
+    def test_dcs_query_is_not_drawn_at_any_read_boundary(self):
+        # FTXUI requests the cursor style before drawing its first frame.
+        data = b"\x1bP$q q\x1b\\\x1b[31mheader\x1b[0m"
+        for split in range(len(data) + 1):
+            with self.subTest(split=split):
+                screen = pyte.Screen(30, 2)
+                stream = TerminalStream(screen)
+                stream.feed(data[:split])
+                stream.feed(data[split:])
+                self.assertEqual(screen.display[0].rstrip(), "header")
+                self.assertEqual(screen.buffer[0][0].fg, "red")
+
+    def test_dcs_query_split_into_individual_bytes_preserves_utf8(self):
+        screen = pyte.Screen(30, 2)
+        stream = TerminalStream(screen)
+        for byte in "前\x1bP$q q\x1b\\後".encode():
+            stream.feed(bytes([byte]))
+        self.assertEqual(screen.display[0].rstrip(), "前後")
 
 
 class TuiTestCase(unittest.TestCase):
