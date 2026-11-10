@@ -1652,9 +1652,9 @@ void TableModel::applyChangesLocked(const std::vector<CellChange> &changes, bool
             row.resize(change.column + 1);
         row[change.column] = forward ? change.after : change.before;
         // A ragged row lengthened by an edit gets its length back once the
-        // cells added are empty again.
+        // cells added are empty again: text sources clear a cell to "".
         const size_t original_size = original_rows_.at(change.row).size();
-        while (row.size() > original_size && std::holds_alternative<std::monostate>(row.back()))
+        while (row.size() > original_size && isEmptyCell(row.back()))
             row.pop_back();
     };
     if (forward)
