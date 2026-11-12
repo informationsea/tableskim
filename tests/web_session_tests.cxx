@@ -973,7 +973,7 @@ TEST_CASE("WebSession writes analysis code for views, charts and a Group By")
     text = *code["code"].string();
     CHECK(text.find("pl.col(\"Age\") > 40") != std::string::npos);
     CHECK(text.find("geom_histogram(bins=12)") != std::string::npos);
-    CHECK(text.find("fill=\"Active\"") != std::string::npos);
+    CHECK(text.find("fill=\"Active group\"") != std::string::npos);
 
     code = client.result("analysisCode", sheetParams(id, "\"language\":\"pandas\",\"analysis\":\"scatter\","
                                                          "\"x\":3,\"y\":6,\"color\":null"));

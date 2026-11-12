@@ -346,6 +346,17 @@ namespace
         std::string name(size_t column) const { return source_.columnName(column); }
         ColumnKind kind(size_t column) const { return source_.kind(column); }
 
+        // Generated columns must not hide a grouping key or an input used
+        // later in an R summarise(), which evaluates its arguments in order.
+        std::string unusedName(const std::string &base) const
+        {
+            std::string candidate = base;
+            for (size_t suffix = 2; std::find(source_.columns.begin(), source_.columns.end(), candidate) !=
+                                    source_.columns.end(); ++suffix)
+                candidate = base + "_" + std::to_string(suffix);
+            return candidate;
+        }
+
         std::string header() const
         {
             std::string what = "The view";
@@ -500,7 +511,7 @@ namespace
             {
                 if (isNumericAggregate(aggregate) && !numericAggregates(column))
                     continue;
-                out.emplace_back(aggregate, name(column) + " " + aggregateName(aggregate));
+                out.emplace_back(aggregate, unusedName(name(column) + " " + aggregateName(aggregate)));
             }
             return out;
         }
@@ -730,7 +741,7 @@ namespace
                     keys.push_back(col(column));
                 out += "  " + call("group_by", keys, language_, "  ") + " |>\n";
             }
-            std::vector<std::string> args = {"count = n()"};
+            std::vector<std::string> args = {rName(unusedName("count")) + " = n()"};
             for (const size_t column : spec.values)
             {
                 for (const auto &[aggregate, label] : aggregatesOf(spec, column))
@@ -780,6 +791,25 @@ namespace
         {
             if (barChart(spec))
             {
+                if (spec.group_column)
+                {
+                    const std::string count = unusedName("count");
+                    std::string keys = col(spec.column);
+                    if (*spec.group_column != spec.column)
+                        keys += ", " + col(*spec.group_column);
+                    const std::string out =
+                        "top <- df |>\n  filter(!is.na(" + col(spec.column) + ")) |>\n  count(" +
+                        col(spec.column) + ", sort = TRUE) |>\n  slice_head(n = " + std::to_string(spec.bins) +
+                        ") |>\n  select(" + col(spec.column) + ")\n" +
+                        "counts <- df |>\n  semi_join(top, by = " + literal(name(spec.column)) + ") |>\n  count(" +
+                        keys + ", name = " + literal(count) + ")\n";
+                    return out + plot("counts",
+                                      {"x = fct_reorder(as.character(" + col(spec.column) + "), " + rName(count) +
+                                           ", .fun = sum, .desc = TRUE)",
+                                       "y = " + rName(count), "fill = factor(" + col(*spec.group_column) + ")"},
+                                      {"geom_col()", "labs(x = " + literal(name(spec.column)) +
+                                                         ", y = \"rows\", fill = " + literal(name(*spec.group_column)) + ")"});
+                }
                 // The most frequent values, as TableSkim lists them.
                 std::string out = "counts <- df |>\n  filter(!is.na(" + col(spec.column) + ")) |>\n  count(" +
                                   col(spec.column) + ", sort = TRUE) |>\n  slice_head(n = " +
@@ -882,7 +912,7 @@ namespace
         std::string opener()
         {
             const std::string extension = compressionExtension(source_.path);
-            if (extension == ".gz" || extension == ".bgz")
+            if (extension == ".gz" || extension == ".gzip" || extension == ".bgz")
             {
                 imports_.insert("import gzip");
                 return "gzip.open";
@@ -1165,7 +1195,7 @@ namespace
         std::string groupBy(const GroupBySpec &spec) override
         {
             std::string out = numericAggregatesNote(spec);
-            std::vector<std::string> args = {"pl.len().alias(\"count\")"};
+            std::vector<std::string> args = {"pl.len().alias(" + literal(unusedName("count")) + ")"};
             for (const size_t column : spec.values)
             {
                 for (const auto &[aggregate, label] : aggregatesOf(spec, column))
@@ -1207,11 +1237,17 @@ namespace
         }
 
         // plotnine tells groups apart by colour only for discrete values.
+        std::string discreteName(size_t column) const
+        {
+            return isText(kind(column)) ? name(column) : unusedName(name(column) + " group");
+        }
+
         std::string discrete(size_t column) const
         {
             if (isText(kind(column)))
                 return {};
-            return "df = df.with_columns(" + expr(column) + ".cast(pl.String))\n";
+            return "df = df.with_columns(" + expr(column) + ".cast(pl.String).alias(" +
+                   literal(discreteName(column)) + "))\n";
         }
 
         std::string plot(const std::string &data, const std::vector<std::string> &aes,
@@ -1231,20 +1267,42 @@ namespace
             if (barChart(spec))
             {
                 // The most frequent values, as TableSkim lists them.
-                std::string out = "counts = df[" + col(spec.column) + "].cast(pl.String).drop_nulls().value_counts(sort=True).head(" +
+                const std::string count = unusedName("count");
+                const std::string count_arg = count == "count" ? "" : ", name=" + literal(count);
+                std::string out = "counts = df[" + col(spec.column) +
+                                  "].cast(pl.String).drop_nulls().value_counts(sort=True" + count_arg + ").head(" +
                                   std::to_string(spec.bins) + ")\n";
-                return out + plot("counts", {"x=" + col(spec.column), "y=\"count\""},
+                if (spec.group_column)
+                {
+                    std::vector<std::string> keys = {name(spec.column)};
+                    std::string casts = expr(spec.column) + ".cast(pl.String)";
+                    if (*spec.group_column != spec.column)
+                    {
+                        keys.push_back(name(*spec.group_column));
+                        casts += ", " + expr(*spec.group_column) + ".cast(pl.String)";
+                    }
+                    out += "top = counts[" + col(spec.column) + "].to_list()\n" +
+                           "counts = (\n    df.with_columns(" + casts + ")\n    .filter(" + expr(spec.column) +
+                           ".is_in(top))\n    .group_by(" + literalList(keys, language_) + ")\n    .agg(pl.len().alias(" +
+                           literal(count) + "))\n)\n";
+                    return out + plot("counts", {"x=" + col(spec.column), "y=" + literal(count),
+                                                  "fill=" + col(*spec.group_column)},
+                                      {"geom_col()", "scale_x_discrete(limits=top)", "labs(y=\"rows\")"});
+                }
+                return out + plot("counts", {"x=" + col(spec.column), "y=" + literal(count)},
                                   {"geom_col()", "scale_x_discrete(limits=counts[" + col(spec.column) + "].to_list())",
                                    "labs(y=\"rows\")"});
             }
             std::vector<std::string> aes = {"x=" + col(spec.column)};
             std::string out;
+            std::string labels = "labs(y=\"rows\")";
             if (spec.group_column)
             {
                 out += discrete(*spec.group_column);
-                aes.push_back("fill=" + col(*spec.group_column));
+                aes.push_back("fill=" + literal(discreteName(*spec.group_column)));
+                labels = "labs(y=\"rows\", fill=" + col(*spec.group_column) + ")";
             }
-            return out + plot("df", aes, {"geom_histogram(bins=" + std::to_string(spec.bins) + ")", "labs(y=\"rows\")"});
+            return out + plot("df", aes, {"geom_histogram(bins=" + std::to_string(spec.bins) + ")", labels});
         }
 
         std::string scatter(const ScatterCodeSpec &spec) override
@@ -1253,12 +1311,14 @@ namespace
             if (categoricalX(spec))
                 return plot("df", aes, {"geom_boxplot()"});
             std::string out;
+            std::vector<std::string> layers = {"geom_point(alpha=0.5)"};
             if (spec.color_column)
             {
                 out += discrete(*spec.color_column);
-                aes.push_back("color=" + col(*spec.color_column));
+                aes.push_back("color=" + literal(discreteName(*spec.color_column)));
+                layers.push_back("labs(color=" + col(*spec.color_column) + ")");
             }
-            return out + plot("df", aes, {"geom_point(alpha=0.5)"});
+            return out + plot("df", aes, layers);
         }
     };
 
@@ -1301,6 +1361,9 @@ namespace
                 }
                 if (source_.encoding != TextEncoding::Utf8 && !source_.skip_meta_lines)
                     args.push_back("encoding=" + literal(pythonEncoding()));
+                const std::string extension = compressionExtension(source_.path);
+                if (!source_.skip_meta_lines && (extension == ".bgz" || extension == ".gzip"))
+                    args.push_back("compression=\"gzip\"");
                 out += "df = " + call("pd.read_csv", args, language_) + "\n";
                 break;
             }
@@ -1479,7 +1542,7 @@ namespace
             std::string out = numericAggregatesNote(spec);
             if (spec.keys.empty())
             {
-                out += "result = pd.DataFrame(\n    {\n        \"count\": [len(df)],\n";
+                out += "result = pd.DataFrame(\n    {\n        " + literal(unusedName("count")) + ": [len(df)],\n";
                 for (const size_t column : spec.values)
                 {
                     for (const auto &[aggregate, label] : aggregatesOf(spec, column))
@@ -1492,7 +1555,7 @@ namespace
             for (const size_t column : spec.keys)
                 keys.push_back(name(column));
             out += "result = (\n    df.groupby(" + literalList(keys, language_) + ", dropna=False)\n    .agg(\n";
-            out += "        **{\n            \"count\": (" + col(spec.keys[0]) + ", \"size\"),\n";
+            out += "        **{\n            " + literal(unusedName("count")) + ": (" + col(spec.keys[0]) + ", \"size\"),\n";
             for (const size_t column : spec.values)
             {
                 for (const auto &[aggregate, label] : aggregatesOf(spec, column))
@@ -1515,6 +1578,16 @@ namespace
             const std::string bins = std::to_string(spec.bins);
             if (barChart(spec))
             {
+                if (spec.group_column)
+                {
+                    const std::vector<std::string> keys = {name(spec.column), name(*spec.group_column)};
+                    return "top = " + series(spec.column) + ".value_counts().head(" + bins + ").index\n" +
+                           "counts = (\n    df[" + series(spec.column) + ".isin(top)]\n    .groupby(" +
+                           literalList(keys, language_) + ", dropna=False)\n    .size()\n    .unstack(fill_value=0)\n"
+                           "    .reindex(top, fill_value=0)\n)\n" +
+                           figure("counts.plot.bar(stacked=True, ax=ax)\nax.legend(title=" + col(*spec.group_column) + ")\n",
+                                  col(spec.column), "\"rows\"");
+                }
                 // The most frequent values, as TableSkim lists them.
                 return "counts = " + series(spec.column) + ".value_counts().head(" + bins + ")\n" +
                        figure("counts.plot.bar(ax=ax)\n", col(spec.column), "\"rows\"");

@@ -181,6 +181,15 @@ TEST_CASE("analysisCode: reading the file")
         CHECK(contains(polars, "with lzma.open(path) as file:\n    data = file.read()\n"));
         CHECK(contains(polars, "pl.read_csv(data"));
     }
+    SECTION("BGZF is gzip even without metadata filtering")
+    {
+        spec.source.path = "/data/normal.csv.bgz";
+        CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "pd.read_csv(path, compression=\"gzip\")"));
+        spec.source.skip_meta_lines = true;
+        const std::string pandas = analysisCode(spec, CodeLanguage::Pandas);
+        CHECK(contains(pandas, "with gzip.open(path, \"rt\", encoding=\"utf-8\")"));
+        CHECK(pandas.find("compression=") == std::string::npos);
+    }
     SECTION("Excel")
     {
         spec.source.path = "/data/book.xlsx";
@@ -379,6 +388,14 @@ TEST_CASE("analysisCode: Group By")
         CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "df.select("));
         CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "\"Salary sum\": [df[\"Salary\"].sum()],\n"));
     }
+    SECTION("Count names do not overwrite keys or values")
+    {
+        spec.source.columns[CITY] = "count";
+        spec.source.columns[NAME] = "count_2";
+        CHECK(contains(analysisCode(spec, CodeLanguage::R), "count_3 = n()"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "pl.len().alias(\"count_3\")"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "\"count_3\": (\"count\", \"size\")"));
+    }
 }
 
 TEST_CASE("analysisCode: histograms and scatter plots")
@@ -396,8 +413,8 @@ TEST_CASE("analysisCode: histograms and scatter plots")
         CHECK(contains(r, "labs(y = \"rows\", fill = \"Active\")"));
         const std::string polars = analysisCode(spec, CodeLanguage::Polars);
         CHECK(contains(polars, "from plotnine import aes, geom_histogram, ggplot, labs\n"));
-        CHECK(contains(polars, "df = df.with_columns(pl.col(\"Active\").cast(pl.String))\n"));
-        CHECK(contains(polars, "ggplot(df, aes(x=\"Salary\", fill=\"Active\"))\n    + geom_histogram(bins=20)"));
+        CHECK(contains(polars, "df = df.with_columns(pl.col(\"Active\").cast(pl.String).alias(\"Active group\"))\n"));
+        CHECK(contains(polars, "ggplot(df, aes(x=\"Salary\", fill=\"Active group\"))\n    + geom_histogram(bins=20)"));
         CHECK(contains(polars, "p.show()\n"));
         const std::string pandas = analysisCode(spec, CodeLanguage::Pandas);
         CHECK(contains(pandas, "import matplotlib.pyplot as plt\nimport pandas as pd\n"));
@@ -411,6 +428,32 @@ TEST_CASE("analysisCode: histograms and scatter plots")
         CHECK(contains(analysisCode(spec, CodeLanguage::R), "count(City, sort = TRUE) |>\n  slice_head(n = 30)\n"));
         CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "value_counts(sort=True).head(30)"));
         CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "counts.plot.bar(ax=ax)"));
+    }
+    SECTION("Categorical histograms retain their stack column")
+    {
+        for (const size_t column : {CITY, ACTIVE})
+        {
+            spec.analysis = HistogramCodeSpec{.column = column, .group_column = column == CITY ? ACTIVE : CITY, .bins = 2};
+            CHECK(contains(analysisCode(spec, CodeLanguage::R), "semi_join(top, by = "));
+            CHECK(contains(analysisCode(spec, CodeLanguage::R), "fill = factor("));
+            CHECK(contains(analysisCode(spec, CodeLanguage::Polars), ".agg(pl.len().alias(\"count\"))"));
+            CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "fill="));
+            CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), ".unstack(fill_value=0)"));
+            CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "counts.plot.bar(stacked=True, ax=ax)"));
+        }
+    }
+    SECTION("Polars colours do not replace an axis, even with an existing helper name")
+    {
+        spec.source.columns[NAME] = "Age group";
+        spec.analysis = HistogramCodeSpec{.column = AGE, .group_column = AGE};
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars),
+                       "pl.col(\"Age\").cast(pl.String).alias(\"Age group_2\")"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "aes(x=\"Age\", fill=\"Age group_2\")"));
+        spec.analysis = ScatterCodeSpec{.x_column = AGE, .y_column = SALARY, .color_column = AGE};
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars),
+                       "aes(x=\"Age\", y=\"Salary\", color=\"Age group_2\")"));
+        std::get<ScatterCodeSpec>(spec.analysis).color_column = SALARY;
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "color=\"Salary group\""));
     }
     SECTION("Scatter plot coloured by a column")
     {
@@ -470,6 +513,62 @@ TEST_CASE("analysisCode: file names and languages")
     CHECK_FALSE(codeLanguageFromFileName("x.py"));
     CHECK_FALSE(codeLanguageFromFileName("x.txt"));
     CHECK_FALSE(parseCodeLanguage("python"));
+}
+
+// Run these files with analysis_code_runtime_tests.py (R, polars, plotnine,
+// pandas and matplotlib installed). The ordinary tests need no R or Python.
+TEST_CASE("analysisCode: write regression examples", "[.analysis-code-regressions]")
+{
+    const char *dir = std::getenv("TABLESKIM_CODE_DIR");
+    REQUIRE(dir);
+    const auto out = std::filesystem::absolute(utf8Path(dir));
+    std::filesystem::create_directories(out);
+    std::ofstream(out / "counts.csv") << "count,count_2,count group,value\n1,9,99,10\n1,9,99,20\n2,9,99,30\n";
+    std::ofstream(out / "numeric.csv") << "count,count_2,count group,value\n10,9,99,3\n20,9,99,5\n100,9,99,7\n";
+    std::ofstream(out / "categories.csv") << "City,Active\nA,true\nA,false\nB,true\nB,false\nC,false\n";
+
+    AnalysisCodeSpec spec;
+    spec.source.path = utf8String(out / "counts.csv");
+    spec.source.delimiter = ',';
+    spec.source.columns = {"count", "count_2", "count group", "value"};
+    spec.source.kinds.assign(4, ColumnKind::Number);
+    const auto write = [&](const std::string &name)
+    {
+        for (const CodeLanguage language : CODE_LANGUAGES)
+        {
+            std::ofstream file(out / (name + "-" + codeLanguageId(language) + codeLanguageExtension(language)));
+            file << analysisCode(spec, language);
+            REQUIRE(file.good());
+        }
+    };
+    spec.analysis = GroupBySpec{.keys = {0}, .values = {3}, .aggregates = {Aggregate::Sum}};
+    write("group-key");
+    spec.analysis = GroupBySpec{.keys = {1}, .values = {0}, .aggregates = {Aggregate::Sum}};
+    write("group-value");
+    spec.analysis = {};
+    spec.source.path = utf8String(out / "counts.csv.bgz"); // the Python runner compresses the fixture
+    write("bgz");
+    spec.source.skip_meta_lines = true;
+    write("bgz-meta");
+    spec.source.skip_meta_lines = false;
+    spec.source.path = utf8String(out / "numeric.csv");
+    spec.analysis = HistogramCodeSpec{.column = 0, .group_column = 0, .bins = 3};
+    write("numeric-histogram");
+    for (const size_t color : {0u, 3u})
+    {
+        spec.analysis = ScatterCodeSpec{.x_column = 0, .y_column = 3, .color_column = color};
+        write("scatter-" + std::to_string(color));
+    }
+    spec.source.path = utf8String(out / "categories.csv");
+    spec.source.columns = {"City", "Active"};
+    spec.source.kinds = {ColumnKind::Text, ColumnKind::Boolean};
+    for (const size_t column : {0u, 1u})
+    {
+        spec.analysis = HistogramCodeSpec{.column = column, .group_column = 1 - column, .bins = 2};
+        write("stack-" + std::to_string(column));
+        std::get<HistogramCodeSpec>(spec.analysis).group_column = column;
+        write("self-stack-" + std::to_string(column));
+    }
 }
 
 // Writes the code for the demo data to TABLESKIM_CODE_DIR, to run it with R
