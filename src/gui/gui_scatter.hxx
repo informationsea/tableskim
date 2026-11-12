@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "gui_code_export.hxx"
 #include "table.hxx"
 
 class Fl_Box;
@@ -28,7 +29,7 @@ class Fl_Widget;
 // plot (double-click to filter to it), the density, or its points spread
 // sideways. "Color by" colours the points by a third column's values; a
 // click on the legend filters to one. "Save Image..." writes the plot as
-// PNG or SVG. Like
+// PNG or SVG, "Save Code..." R or Python code that draws it. Like
 // HistogramWindow it does not subscribe to the model: the owner calls
 // update() after events, and setModel() when the sheet changes.
 class ScatterWindow
@@ -50,6 +51,8 @@ public:
     // Picks up the model's progress.
     void update();
     void setRowCallback(RowCallback callback) { row_callback_ = std::move(callback); }
+    // "Save Code..." asks the owner to write the code of the plot.
+    void setCodeCallback(CodeCallback callback) { code_callback_ = std::move(callback); }
 
 private:
     class Chart;
@@ -64,6 +67,7 @@ private:
     Fl_Box *stats_ = nullptr;
     Fl_Check_Button *fit_button_ = nullptr;
     Fl_Button *save_button_ = nullptr;
+    Fl_Button *code_button_ = nullptr;
     Chart *chart_ = nullptr;
     Fl_Box *detail_ = nullptr;
     std::shared_ptr<TableModel> model_;
@@ -85,6 +89,7 @@ private:
     std::optional<size_t> hovered_color_;                // an entry of the legend
     std::string title_;
     RowCallback row_callback_;
+    CodeCallback code_callback_;
     // Shared by the column choices; the labels must outlive the items.
     std::vector<std::string> column_labels_;
     std::vector<Fl_Menu_Item> column_menu_;
@@ -107,6 +112,7 @@ private:
     static void modeCallback(Fl_Widget *, void *data);
     static void colorCallback(Fl_Widget *, void *data);
     static void saveCallback(Fl_Widget *, void *data);
+    static void codeCallback(Fl_Widget *, void *data);
     static void closeCallback(Fl_Widget *, void *data);
 };
 

@@ -5,6 +5,7 @@ import { groupColor } from '../charts/groups';
 import type { ChartImage } from '../charts/image';
 import { columnLabel, errorText, usePolled } from '../hooks';
 import { type Condition, Events, type HistogramState, type SheetInfo } from '../protocol';
+import { CodeDialog } from './CodeDialog';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
 import { SaveImageButtons } from './SaveImageButtons';
@@ -39,6 +40,7 @@ export function HistogramDialog({
     const [state, setState] = useState<HistogramState | null>(null);
     const [error, setError] = useState('');
     const [table, setTable] = useState(false);
+    const [code, setCode] = useState(false);
     const chart = useRef<ChartImage>(null);
     const sheet = info.sheet;
 
@@ -136,6 +138,15 @@ export function HistogramDialog({
                     enabled={!!histogram && items.length > 0 && !table}
                     onError={setError}
                 />
+                <button
+                    type="button"
+                    id="histogram-code"
+                    className="control"
+                    title="R or Python code that draws this histogram"
+                    onClick={() => setCode(true)}
+                >
+                    Code…
+                </button>
                 <span id="histogram-progress" className="text-muted">
                     {progress}
                 </span>
@@ -192,6 +203,15 @@ export function HistogramDialog({
                         />
                     )}
                 </>
+            )}
+            {code && (
+                <CodeDialog
+                    client={client}
+                    sheet={sheet}
+                    hidden={[]}
+                    analysis={{ analysis: 'histogram', column, groupColumn, bins }}
+                    onClose={() => setCode(false)}
+                />
             )}
         </Dialog>
     );

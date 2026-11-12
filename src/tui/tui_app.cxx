@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <fstream>
+#include <iterator>
 #include <mutex>
 #include <sstream>
 #include <string_view>
@@ -65,6 +67,7 @@ namespace
         {"B", "Histogram of the cursor's column (Enter: filter to a bar; g / G: stack by a column; Esc: back)"},
         {"M", "2D density of the selected two columns, else of number or date columns near the cursor (c / C: colour by a column)"},
         {"A", "Group By: rows per value of columns, with sums, means, ..., in a sheet"},
+        {"K", "Write R (tidyverse) or Python (polars / pandas) code for the view, histogram, density or Group By shown"},
         {"%", "Format the column(s): thousands separator, decimal places, date format"},
         {"< / >", "Narrow / widen the column"},
         {"x / X", "Hide the column (or the selected ones) / show all columns"},
@@ -386,6 +389,7 @@ bool TuiApp::open(const std::string &path, std::string *error)
         sql_sheet_.clear();
         group_result_.reset();
         group_sheet_.clear();
+        group_code_.reset();
         group_draft_ = {};
         editing_ = false;
     }
@@ -986,6 +990,141 @@ void TuiApp::startExport()
             else
                 setStatus("Exported " + std::to_string(*rows) + " rows to " + utf8String(target.filename()));
         }); });
+}
+
+// The code of a sheet of the file: SQL results and Group By sheets have no
+// file to read.
+std::optional<AnalysisCodeSpec> TuiApp::codeSpec(const std::shared_ptr<TableModel> &model,
+                                                 const CodeAnalysis &analysis)
+{
+    if (!book_ || !model || path_.empty() || model->name() == sql_sheet_ || model->name() == group_sheet_)
+        return std::nullopt;
+    AnalysisCodeSpec spec;
+    spec.source = codeSourceOf(utf8Path(path_), *book_, *model);
+    spec.view = model->view();
+    const HiddenColumns &hidden = hiddenColumnsOf(model);
+    for (size_t column = 0; column < model->columnCount(); ++column)
+    {
+        if (hidden.contains(column))
+            spec.hidden.push_back(column);
+    }
+    spec.analysis = analysis;
+    return spec;
+}
+
+// What is shown: the histogram or density plot, else the sheet's view, or
+// the Group By that made the Group By sheet.
+void TuiApp::openCodePrompt()
+{
+    std::optional<AnalysisCodeSpec> spec;
+    if (histogram_model_)
+    {
+        const HistogramState state = histogram_model_->histogramState();
+        if (state.active)
+            spec = codeSpec(histogram_model_, HistogramCodeSpec{.column = state.column,
+                                                                .group_column = state.group_column,
+                                                                .bins = state.target_bins});
+    }
+    else if (density_model_)
+    {
+        const ScatterState state = density_model_->scatterState();
+        if (state.active)
+            spec = codeSpec(density_model_, ScatterCodeSpec{.x_column = state.x_column,
+                                                            .y_column = state.y_column,
+                                                            .color_column = state.color_column});
+    }
+    else if (TuiTableView *view = currentView(); view && view->model())
+    {
+        if (!group_sheet_.empty() && view->model()->name() == group_sheet_)
+            spec = group_code_;
+        else
+            spec = codeSpec(view->model(), std::monostate{});
+    }
+    else
+        return;
+    if (!spec)
+    {
+        setStatus("No code for SQL results: only for the file's own sheets", true);
+        return;
+    }
+    code_spec_ = std::move(spec);
+    code_input_ = utf8String(utf8Path(path_).parent_path() / utf8Path(analysisCodeFileName(*code_spec_, code_language_)));
+    code_prompt_ = true;
+}
+
+bool TuiApp::handleCodePromptEvent(Event event)
+{
+    if (event == Event::Return)
+    {
+        code_prompt_ = false;
+        codeTo(code_input_);
+    }
+    else if (event == Event::Escape)
+    {
+        code_prompt_ = false;
+        code_spec_.reset();
+    }
+    else if (event == Event::Tab || event == Event::TabReverse)
+    {
+        // The next language; a file name still as suggested follows it.
+        const std::string old_name = analysisCodeFileName(*code_spec_, code_language_);
+        const auto index = static_cast<size_t>(std::find(std::begin(CODE_LANGUAGES), std::end(CODE_LANGUAGES),
+                                                         code_language_) - std::begin(CODE_LANGUAGES));
+        const size_t count = std::size(CODE_LANGUAGES);
+        code_language_ = CODE_LANGUAGES[(index + (event == Event::Tab ? 1 : count - 1)) % count];
+        if (code_input_.ends_with(old_name))
+            code_input_ = code_input_.substr(0, code_input_.size() - old_name.size()) +
+                          analysisCodeFileName(*code_spec_, code_language_);
+    }
+    else if (event == Event::Backspace)
+        eraseLastCharacter(code_input_);
+    else if (event == Event::CtrlU)
+        code_input_.clear();
+    else if (event.is_character())
+        code_input_ += event.character();
+    return true;
+}
+
+// The language's extension is added if the name lacks it; an existing
+// file is replaced only after asking.
+void TuiApp::codeTo(const std::string &text)
+{
+    const size_t begin = text.find_first_not_of(' ');
+    if (begin == std::string::npos)
+    {
+        code_spec_.reset();
+        return;
+    }
+    std::filesystem::path target = utf8Path(text.substr(begin, text.find_last_not_of(' ') - begin + 1));
+    if (lowerExtension(target) != (code_language_ == CodeLanguage::R ? ".r" : ".py"))
+        target += codeLanguageExtension(code_language_);
+    code_target_ = target;
+    std::error_code ec;
+    if (std::filesystem::exists(target, ec))
+    {
+        confirm_overwrite_ = Overwrite::Code;
+        setStatus(utf8String(target.filename()) + " exists. Overwrite? (y/n)");
+        return;
+    }
+    writeCode();
+}
+
+void TuiApp::writeCode()
+{
+    const std::optional<AnalysisCodeSpec> spec = std::exchange(code_spec_, std::nullopt);
+    if (!spec)
+        return;
+    std::ofstream out(code_target_, std::ios::binary);
+    out << analysisCode(*spec, code_language_);
+    out.close();
+    if (!out)
+    {
+        const std::string message = "Cannot write " + utf8String(code_target_);
+        spdlog::error("{}", message);
+        setStatus(message, true);
+        return;
+    }
+    setStatus("Wrote " + utf8String(code_target_.filename()));
 }
 
 void TuiApp::copySelection()
@@ -1638,7 +1777,7 @@ bool TuiApp::typingText() const
         return filter_line_ >= 1 && filter_line_ <= conditions.size() &&
                filterOpTakesValue(conditions[filter_line_ - 1].op);
     }
-    return search_prompt_ || goto_prompt_ || export_prompt_ || sql_prompt_ || edit_prompt_;
+    return search_prompt_ || goto_prompt_ || export_prompt_ || sql_prompt_ || edit_prompt_ || code_prompt_;
 }
 
 bool TuiApp::handleEvent(Event event)
@@ -1657,9 +1796,25 @@ bool TuiApp::handleEvent(Event event)
     // The question can appear while a prompt is open: the keys stay with the
     // prompt (an "n" typed into a search must not stop the reading), and the
     // question is asked once the prompt is closed.
-    const bool text_prompt_open = search_prompt_ || goto_prompt_ || export_prompt_ || sql_prompt_;
+    const bool text_prompt_open = search_prompt_ || goto_prompt_ || export_prompt_ || sql_prompt_ || code_prompt_;
     if (memory_prompt_model_ && !text_prompt_open && !event.is_mouse())
         return handleMemoryPromptEvent(event);
+    if (code_prompt_ && !event.is_mouse())
+        return handleCodePromptEvent(event);
+    if (confirm_overwrite_ == Overwrite::Code && !event.is_mouse() && (histogram_model_ || density_model_))
+    {
+        // The chart views take their keys before the question below.
+        confirm_overwrite_ = Overwrite::None;
+        status_message_.clear();
+        if (event == Event::y || event == Event::Y)
+            writeCode();
+        else
+        {
+            code_spec_.reset();
+            setStatus("Not written");
+        }
+        return true;
+    }
     if (histogram_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_)
         return handleHistogramEvent(event);
     if (density_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_)
@@ -1700,6 +1855,16 @@ bool TuiApp::handleEvent(Event event)
         const bool yes = event == Event::y || event == Event::Y;
         if (action == Overwrite::Convert)
             yes ? startConversion() : setStatus("Not converted");
+        else if (action == Overwrite::Code)
+        {
+            if (yes)
+                writeCode();
+            else
+            {
+                code_spec_.reset();
+                setStatus("Not written");
+            }
+        }
         else if (yes)
             startExport();
         else
@@ -1735,6 +1900,11 @@ bool TuiApp::handleEvent(Event event)
             setStatus("Another export or conversion is running (Esc: cancel it)", true);
         else
             openExportPrompt();
+        return true;
+    }
+    if (event == Event::K)
+    {
+        openCodePrompt();
         return true;
     }
     if (event == Event::P)
@@ -2083,6 +2253,7 @@ Element TuiApp::renderMain()
                     : sql_prompt_  ? renderSqlPrompt()
                     : goto_prompt_ ? renderGoToPrompt()
                     : export_prompt_ ? renderExportPrompt()
+                    : code_prompt_ ? renderCodePrompt()
                     : memory_prompt_model_ ? renderMemoryPrompt()
                                    : renderStatusBar());
     return vbox(std::move(parts));
@@ -2156,6 +2327,8 @@ bool TuiApp::handleHistogramEvent(Event event)
     const size_t columns = histogram_model_->columnCount();
     if (event == Event::Escape || event == Event::B || event == Event::q)
         closeHistogram();
+    else if (event == Event::K)
+        openCodePrompt();
     else if ((event == Event::ArrowUp || event == Event::k) && histogram_selected_ > 0)
         --histogram_selected_;
     else if ((event == Event::ArrowDown || event == Event::j) && histogram_selected_ + 1 < bars)
@@ -2362,9 +2535,9 @@ Element TuiApp::renderHistogram()
     else
         rows.push_back(text(state.done ? " No values" : " Reading the column…") | dim);
 
-    std::string hint = stacked ? " ↑↓: bar  Tab: part  ←→: column  g/G: stack by  Enter: filter  F: clear filter  Esc: back"
+    std::string hint = stacked ? " ↑↓: bar  Tab: part  ←→: column  g/G: stack by  Enter: filter  F: clear filter  K: code  Esc: back"
                                : " ↑↓: bar  ←→: column  g/G: stack by a column  Enter: filter to the bar  F: clear the "
-                                 "filter  Esc: back";
+                                 "filter  K: code  Esc: back";
     if (!labels.empty() && hg.binCount() > 0)
     {
         std::string selected = histogramBinRange(hg, histogram_selected_);
@@ -2425,6 +2598,8 @@ bool TuiApp::handleDensityEvent(Event event)
     const bool boxes = density_box_ && plot.categorical();
     if (event == Event::Escape || event == Event::M || event == Event::q)
         closeDensity();
+    else if (event == Event::K)
+        openCodePrompt();
     else if (event == Event::b && plot.categorical())
         density_box_ = !density_box_;
     else if (boxes && (event == Event::ArrowUp || event == Event::k))
@@ -2593,7 +2768,7 @@ Element TuiApp::renderDensity()
         title += "by " + singleLine(model->columnName(*state.color_column)) + "  ";
     std::string hint = std::string(" ↑↓←→: cell  ") + (plot.categorical() ? "b: box plot  " : "") +
                        "x/X y/Y: columns  t: swap  c/C: colour by" + (colored ? "  Tab: colour" : "") +
-                       "  L: log scale  Enter: filter  F: clear filter  Esc: back";
+                       "  L: log scale  Enter: filter  F: clear filter  K: code  Esc: back";
 
     Elements lines;
     const size_t x_bins = plot.xBinCount();
@@ -2816,7 +2991,7 @@ Elements TuiApp::renderBoxPlot(const ScatterPlot &plot, int width, int height, s
     }
     lines.push_back(text(axis) | dim);
     hint = " " + boxPlotText(plot, box_selected_) +
-           "   ↑↓: category  b: density  x/X y/Y: columns  t: swap  Enter: filter  F: clear filter  Esc: back";
+           "   ↑↓: category  b: density  x/X y/Y: columns  t: swap  Enter: filter  F: clear filter  K: code  Esc: back";
     return lines;
 }
 
@@ -3079,6 +3254,27 @@ Element TuiApp::renderExportPrompt()
     }
     return hbox({
         text(label + (start > 0 ? "…" : "") + export_input_.substr(start)),
+        text(" ") | inverted, // cursor
+        filler(),
+        text(hint) | dim,
+    });
+}
+
+Element TuiApp::renderCodePrompt()
+{
+    const std::string hint = std::string("  Tab: ") + codeLanguageName(code_language_) + "  Enter: write  Esc: cancel ";
+    const std::string label = "Write code to: ";
+    // The end of a long path, where the typing is.
+    const int width = std::max(Terminal::Size().dimx - static_cast<int>(string_width(hint) + label.size()) - 2, 10);
+    size_t start = 0;
+    while (start < code_input_.size() && string_width(code_input_.substr(start)) > width)
+    {
+        ++start;
+        while (start < code_input_.size() && (static_cast<unsigned char>(code_input_[start]) & 0xC0) == 0x80)
+            ++start;
+    }
+    return hbox({
+        text(label + (start > 0 ? "…" : "") + code_input_.substr(start)),
         text(" ") | inverted, // cursor
         filler(),
         text(hint) | dim,
@@ -3412,10 +3608,12 @@ void TuiApp::startGroupBy()
         return;
     const std::shared_ptr<TableModel> model = view->model();
     const GroupBySpec spec = group_draft_;
+    // Taken now: the view may change before the code is asked for.
+    std::optional<AnalysisCodeSpec> code = codeSpec(model, spec);
     converting_ = true;
     convert_label_ = "grouping";
     convert_rows_ = 0;
-    convert_thread_ = std::jthread([this, model, spec, book = std::weak_ptr<TableBook>(book_), post = poster()](std::stop_token stop)
+    convert_thread_ = std::jthread([this, model, spec, code, book = std::weak_ptr<TableBook>(book_), post = poster()](std::stop_token stop)
                                    {
         // Shared: posted closures are copied.
         auto sheet = std::make_shared<std::optional<ResultSheet>>();
@@ -3429,7 +3627,7 @@ void TuiApp::startGroupBy()
         {
             error = e.what();
         }
-        post([this, sheet, book, error]
+        post([this, sheet, book, code, error]
              {
             converting_ = false;
             if (!error.empty())
@@ -3449,6 +3647,7 @@ void TuiApp::startGroupBy()
             const size_t groups = (*sheet)->rows.size();
             group_result_ = ResultRows::make(std::move(**sheet));
             group_sheet_ = book_->addResultSheet(GROUP_BY_SHEET, group_result_);
+            group_code_ = code;
             showResultSheet(group_sheet_);
             setStatus(std::to_string(groups) + " groups in the sheet \"" + group_sheet_ + "\"");
         }); });

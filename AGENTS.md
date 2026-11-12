@@ -419,6 +419,20 @@ read their header comments before changing anything in `src/common/`.
   streaming the rows into `ColumnStatsAccumulator`s (nothing but the first
   rows is kept); pushdown sources use `columnValueCounts()` instead, unless
   `--scan-rows` limits the rows.
+- `analysisCode()` (`analysis_code.{hxx,cxx}`) writes R (tidyverse),
+  Python with polars and plotnine, or Python with pandas and matplotlib
+  code that reads the file (`codeSourceOf()`: format, sheet, delimiter,
+  header, encoding, and each column's `ColumnKind`, which decides how a
+  filter value is compared) and repeats the view's filter and a
+  histogram, scatter plot or Group By, or the view itself (sort, hidden
+  columns). It favours short, idiomatic code over TableSkim's exact
+  semantics; keep it so. SQL results get none; the UIs keep the spec of
+  the view a Group By was made from, for the Group By sheet (GUI: Save
+  Code... in the chart windows and File > Export Analysis Code...,
+  `gui_code_export.cxx`; TUI: `K`; web: `analysisCode`, `CodeDialog`).
+  The hidden `[.analysis-code-run]` test writes code for the demo data to
+  `TABLESKIM_CODE_DIR` with TableSkim's row counts, to run it with R and
+  Python by hand.
 - Recent files (GUI: File > Open Recent) are kept by `RecentFiles`
   (`recent_files.{hxx,cxx}`) in `userDataDirectory()` like the SQL
   history, both written with `replaceFileContents()` (`file_util`); tests

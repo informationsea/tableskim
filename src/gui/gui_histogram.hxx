@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "gui_code_export.hxx"
 #include "table.hxx"
 
 class Fl_Box;
@@ -38,6 +39,8 @@ public:
     bool shown() const;
     // Picks up the model's progress.
     void update();
+    // "Save Code..." asks the owner to write the code of the histogram.
+    void setCodeCallback(CodeCallback callback) { code_callback_ = std::move(callback); }
 
 private:
     class Chart;
@@ -47,6 +50,8 @@ private:
     Fl_Choice *group_choice_ = nullptr; // "(none)", then the columns
     Fl_Box *status_ = nullptr;
     Fl_Button *save_button_ = nullptr;
+    Fl_Button *code_button_ = nullptr;
+    CodeCallback code_callback_;
     Chart *chart_ = nullptr;
     Fl_Box *detail_ = nullptr;
     std::shared_ptr<TableModel> model_;
@@ -75,6 +80,7 @@ private:
     static void columnCallback(Fl_Widget *, void *data);
     static void groupCallback(Fl_Widget *, void *data);
     static void saveCallback(Fl_Widget *, void *data);
+    static void codeCallback(Fl_Widget *, void *data);
     static void closeCallback(Fl_Widget *, void *data);
 };
 

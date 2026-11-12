@@ -950,3 +950,59 @@ TEST_CASE("WebSession converts a text file to Parquet and DuckDB as it was opene
     }
     client.result("cancelJob");
 }
+
+TEST_CASE("WebSession writes analysis code for views, charts and a Group By")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    const int id = openSheet(client, "normal.csv", "normal.csv");
+    client.result("setView", sheetParams(id, "\"sort\":[],\"filter\":{\"conditions\":[{\"column\":3,\"op\":\"greater\",\"value\":\"40\"}]}"));
+    client.readyInfo(id);
+
+    // The view, without its hidden columns; the path is the file's name.
+    JsonValue code = client.result("analysisCode", sheetParams(id, "\"language\":\"r\",\"analysis\":\"view\",\"hidden\":[2]"));
+    CHECK(*code["fileName"].string() == "normal-view.R");
+    std::string text = *code["code"].string();
+    CHECK(text.find("path <- \"normal.csv\"\n") != std::string::npos);
+    CHECK(text.find("filter(Age > 40)") != std::string::npos);
+    CHECK(text.find("select(-Email)") != std::string::npos);
+
+    code = client.result("analysisCode", sheetParams(id, "\"language\":\"polars\",\"analysis\":\"histogram\","
+                                                         "\"column\":6,\"groupColumn\":8,\"bins\":12"));
+    CHECK(*code["fileName"].string() == "normal-histogram-polars.py");
+    text = *code["code"].string();
+    CHECK(text.find("pl.col(\"Age\") > 40") != std::string::npos);
+    CHECK(text.find("geom_histogram(bins=12)") != std::string::npos);
+    CHECK(text.find("fill=\"Active\"") != std::string::npos);
+
+    code = client.result("analysisCode", sheetParams(id, "\"language\":\"pandas\",\"analysis\":\"scatter\","
+                                                         "\"x\":3,\"y\":6,\"color\":null"));
+    CHECK(*code["fileName"].string() == "normal-scatter-pandas.py");
+    CHECK(code["code"].string()->find("ax.scatter(df[\"Age\"], df[\"Salary\"]") != std::string::npos);
+
+    CHECK(client.call("analysisCode", sheetParams(id, "\"language\":\"julia\",\"analysis\":\"view\""))["error"].string());
+    CHECK(client.call("analysisCode", sheetParams(id, "\"language\":\"r\",\"analysis\":\"histogram\",\"column\":99"))
+              ["error"].string());
+
+    // The Group By sheet's code is the Group By of the view it was made from,
+    // even after that view changes.
+    client.result("startGroupBy", sheetParams(id, "\"keys\":[4],\"values\":[6],\"aggregates\":[\"sum\"]"));
+    const JsonValue job = waitDone(client, "jobState", "{}");
+    REQUIRE(job["sheet"].string());
+    client.result("setView", sheetParams(id, "\"sort\":[],\"filter\":null"));
+    client.readyInfo(id);
+    const int grouped =
+        static_cast<int>(*client.result("sheet", "{\"name\":\"" + *job["sheet"].string() + "\"}")["sheet"].number());
+    client.readyInfo(grouped);
+    code = client.result("analysisCode", sheetParams(grouped, "\"language\":\"r\",\"analysis\":\"view\""));
+    CHECK(*code["fileName"].string() == "normal-group-by.R");
+    text = *code["code"].string();
+    CHECK(text.find("filter(Age > 40)") != std::string::npos);
+    CHECK(text.find("group_by(City)") != std::string::npos);
+    CHECK(text.find("`Salary sum` = sum(Salary, na.rm = TRUE)") != std::string::npos);
+    // Its own rows are not in the file.
+    const JsonValue refused =
+        client.call("analysisCode", sheetParams(grouped, "\"language\":\"r\",\"analysis\":\"histogram\",\"column\":0"));
+    REQUIRE(refused["error"].string());
+    CHECK(refused["error"].string()->find("not for SQL results") != std::string::npos);
+}

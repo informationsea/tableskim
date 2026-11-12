@@ -4,6 +4,7 @@ import type { ChartImage } from '../charts/image';
 import { ScatterChart, type ScatterMode, type ScatterPick } from '../charts/ScatterChart';
 import { columnLabel, errorText, usePolled } from '../hooks';
 import { type Condition, Events, type ScatterState, type SheetInfo } from '../protocol';
+import { CodeDialog } from './CodeDialog';
 import { ColumnSelect } from './ColumnSelect';
 import { Dialog } from './Dialog';
 import { SaveImageButtons } from './SaveImageButtons';
@@ -39,6 +40,7 @@ export function ScatterDialog({
     // The column the points are coloured by.
     const [colorColumn, setColorColumn] = useState<number | null>(null);
     const [fit, setFit] = useState(true);
+    const [code, setCode] = useState(false);
     const [state, setState] = useState<ScatterState | null>(null);
     const [error, setError] = useState('');
     const sheet = info.sheet;
@@ -206,6 +208,16 @@ export function ScatterDialog({
                     enabled={!!shown?.plottable}
                     onError={setError}
                 />
+                <button
+                    type="button"
+                    id="scatter-code"
+                    className="control"
+                    title="R or Python code that draws this plot"
+                    disabled={!axes}
+                    onClick={() => setCode(true)}
+                >
+                    Code…
+                </button>
                 <span id="scatter-progress" className="text-muted">
                     {progress}
                 </span>
@@ -232,6 +244,15 @@ export function ScatterDialog({
                         />
                     )}
                 </>
+            )}
+            {code && axes && (
+                <CodeDialog
+                    client={client}
+                    sheet={sheet}
+                    hidden={[]}
+                    analysis={{ analysis: 'scatter', x: axes.x, y: axes.y, color: colorColumn }}
+                    onClose={() => setCode(false)}
+                />
             )}
         </Dialog>
     );

@@ -5,6 +5,13 @@ Its version is TableSkim's; the changes of TableSkim itself (formats,
 statistics, charts, SQL) are in its
 [release notes](https://github.com/informationsea/tableskim/releases).
 
+## Unreleased
+
+- **Code** in the toolbar, and **Code…** in the chart dialogs, show R
+  (tidyverse) or Python (polars + plotnine, or pandas + matplotlib) code
+  that reads the file and repeats the view's filter and the chart or
+  Group By, to copy or save.
+
 ## v0.3.4
 
 The first release, as a preview.

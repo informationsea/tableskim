@@ -786,6 +786,7 @@ const std::map<std::string_view, WebSession::Method> &WebSession::methods()
         {"startGroupBy", &WebSession::startGroupBy},
         {"jobState", &WebSession::jobState},
         {"cancelJob", &WebSession::cancelJob},
+        {"analysisCode", &WebSession::analysisCode},
     };
     return table;
 }
@@ -909,12 +910,17 @@ void WebSession::open(const Params &params, JsonWriter &result)
     path_ = utf8Path(params.text("path"));
     book_ = TableBook::open(path_, options);
     options_ = options;
+    file_sheets_ = book_->sheetNames();
     // The same file with other options: a Group By's rows are kept in
     // memory, and the new book shows them again, as in the other UIs.
     if (!params.flag("keepGroupBy"))
+    {
         group_result_.reset();
+        group_sheet_.clear();
+        group_code_.reset();
+    }
     else if (group_result_)
-        book_->addResultSheet(GROUP_BY_SHEET, group_result_);
+        group_sheet_ = book_->addResultSheet(GROUP_BY_SHEET, group_result_);
     result.beginObject().key("sheets");
     writeSheetNames(result);
     result.key("usesHeaderOption")
@@ -1703,6 +1709,8 @@ void WebSession::startGroupBy(const Params &params, JsonWriter &result)
     job_ = std::make_unique<Job>();
     Job &job = *job_;
     job.kind = "groupBy";
+    // Taken now: the view may change before the code is asked for.
+    job.group_code = codeSpec(sheet, spec, params);
     job.thread = std::jthread([this, &job, model = sheet.model, spec](std::stop_token stop)
                               {
         std::string error;
@@ -1748,6 +1756,8 @@ void WebSession::jobState(const Params &, JsonWriter &result)
     {
         group_result_ = ResultRows::make(std::move(*job.group_rows));
         job.sheet = book_->addResultSheet(GROUP_BY_SHEET, group_result_);
+        group_sheet_ = job.sheet;
+        group_code_ = std::move(job.group_code);
         job.group_rows.reset();
         dropSheets(job.sheet);
     }
@@ -1779,4 +1789,74 @@ void WebSession::cancelJob(const Params &, JsonWriter &result)
 {
     stopJob();
     result.beginObject().endObject();
+}
+
+// The code of a sheet of the file (SQL results and Group By sheets have no
+// file to read), with the file's name as its path: the page's file has no
+// other path the code could use.
+std::optional<AnalysisCodeSpec> WebSession::codeSpec(const Sheet &sheet, const CodeAnalysis &analysis,
+                                                     const Params &params) const
+{
+    if (!book_ || std::find(file_sheets_.begin(), file_sheets_.end(), sheet.name) == file_sheets_.end())
+        return std::nullopt;
+    AnalysisCodeSpec spec;
+    spec.source = codeSourceOf(path_, *book_, *sheet.model, options_.delimiter);
+    spec.source.path = utf8String(path_.filename());
+    spec.view = sheet.model->view();
+    const size_t columns = sheet.model->columnCount();
+    const HiddenColumns hidden = parseHidden(params["hidden"], columns);
+    for (size_t column = 0; column < columns; ++column)
+    {
+        if (hidden.contains(column))
+            spec.hidden.push_back(column);
+    }
+    spec.analysis = analysis;
+    return spec;
+}
+
+// R or Python code repeating the sheet's view, a histogram or a scatter
+// plot of it, or (for the Group By sheet) the Group By that made it.
+void WebSession::analysisCode(const Params &params, JsonWriter &result)
+{
+    Sheet &sheet = this->sheet(params);
+    const auto language = parseCodeLanguage(params.text("language"));
+    if (!language)
+        throw std::invalid_argument("unknown language: " + params.text("language"));
+    const size_t columns = sheet.model->columnCount();
+    const auto column = [&](std::string_view key)
+    {
+        const size_t index = params.index(key);
+        if (index >= columns)
+            throw std::invalid_argument("no such column: " + std::to_string(index));
+        return index;
+    };
+    const auto optionalColumn = [&](std::string_view key)
+    { return params[key].isNull() ? std::nullopt : std::optional<size_t>(column(key)); };
+
+    const std::string &kind = params.text("analysis");
+    CodeAnalysis analysis;
+    if (kind == "histogram")
+        analysis = HistogramCodeSpec{.column = column("column"),
+                                     .group_column = optionalColumn("groupColumn"),
+                                     .bins = params.index("bins", 30)};
+    else if (kind == "scatter")
+        analysis = ScatterCodeSpec{.x_column = column("x"), .y_column = column("y"),
+                                   .color_column = optionalColumn("color")};
+    else if (kind != "view")
+        throw std::invalid_argument("unknown analysis: " + kind);
+
+    std::optional<AnalysisCodeSpec> spec;
+    if (kind == "view" && !group_sheet_.empty() && sheet.name == group_sheet_)
+        spec = group_code_;
+    else
+        spec = codeSpec(sheet, analysis, params);
+    if (!spec)
+        throw std::invalid_argument("Code is written for the sheets of the file only, not for SQL results or a "
+                                    "Group By of them.");
+    result.beginObject()
+        .key("code")
+        .value(::analysisCode(*spec, *language))
+        .key("fileName")
+        .value(analysisCodeFileName(*spec, *language))
+        .endObject();
 }

@@ -1,5 +1,6 @@
 #include "gui.h"
 #include "gui_table_view.hxx"
+#include "gui_code_export.hxx"
 #include "gui_convert.hxx"
 #include "gui_group_by.hxx"
 #include "gui_help.hxx"
@@ -156,6 +157,7 @@ bool TableWindow::open(const std::string &path, bool report_errors, bool keep_st
         group_result_.reset();
         group_sheet_.clear();
         group_spec_ = {};
+        group_code_.reset();
         editing_ = false;
     }
     current_path = path;
@@ -500,6 +502,8 @@ void TableWindow::show_group_by(std::optional<size_t> column)
     if (!spec)
         return;
     group_spec_ = *spec;
+    // Taken now: the view may change before the code is asked for.
+    const std::optional<AnalysisCodeSpec> code = code_spec(model, *spec);
     std::optional<ResultSheet> sheet = runGroupBy(model, *spec);
     // A reopen meanwhile (Auto Revert waits for the dialog, but a closed
     // window does not).
@@ -507,6 +511,7 @@ void TableWindow::show_group_by(std::optional<size_t> column)
         return;
     group_result_ = ResultRows::make(std::move(*sheet));
     group_sheet_ = table_book->addResultSheet(GROUP_BY_SHEET, group_result_);
+    group_code_ = code;
     tab->value(result_sheet_view(group_sheet_));
     current_sheet_changed();
     tab->redraw();
@@ -674,6 +679,7 @@ void TableWindow::sync_menu_items()
         {menuitem_follow, !current_path.empty()},
         {menuitem_show_in_file_browser, !current_path.empty()},
         {menuitem_export_view, has_sheet},
+        {menuitem_export_code, has_sheet},
         {menuitem_copy, has_sheet},
         {menuitem_find, has_sheet},
         {menuitem_go_to, has_sheet},
@@ -893,7 +899,11 @@ void TableWindow::show_histogram(std::optional<size_t> column)
     if (!column)
         column = selectedVisibleColumn(*table_view);
     if (!histogram_window_)
+    {
         histogram_window_ = std::make_unique<HistogramWindow>();
+        histogram_window_->setCodeCallback([this](const std::shared_ptr<TableModel> &model, const CodeAnalysis &analysis)
+                                           { save_code(model, analysis); });
+    }
     histogram_window_->show(table_view->model(), table_view->model()->name(), *column);
 }
 
@@ -941,6 +951,8 @@ void TableWindow::show_scatter_plot(std::optional<size_t> column)
             auto *current = dynamic_cast<GuiTableView *>(tab->value());
             if (current && current->model() == model && view_row <= INT_MAX && col <= INT_MAX)
                 current->jumpTo(static_cast<int>(view_row), static_cast<int>(col)); });
+        scatter_window_->setCodeCallback([this](const std::shared_ptr<TableModel> &model, const CodeAnalysis &analysis)
+                                         { save_code(model, analysis); });
     }
     scatter_window_->show(table_view->model(), table_view->model()->name(), x_column, y_column);
 }
@@ -1603,6 +1615,70 @@ void callback_export_view(Fl_Menu_ *, void *)
 {
     if (auto *self = frontTableWindow())
         self->export_view();
+}
+
+// The code of a sheet of the file: SQL results and Group By sheets have no
+// file to read.
+std::optional<AnalysisCodeSpec> TableWindow::code_spec(const std::shared_ptr<TableModel> &model,
+                                                       const CodeAnalysis &analysis)
+{
+    if (current_path.empty() || !table_book || !model || model->name() == sql_sheet_ ||
+        model->name() == group_sheet_)
+        return std::nullopt;
+    AnalysisCodeSpec spec;
+    spec.source = codeSourceOf(utf8Path(current_path), *table_book, *model);
+    spec.view = model->view();
+    for (const GuiTableView *view : gui_table_views)
+    {
+        if (view->model() != model)
+            continue;
+        for (size_t column = 0; column < model->columnCount(); ++column)
+        {
+            if (view->hiddenColumns().contains(column))
+                spec.hidden.push_back(column);
+        }
+    }
+    spec.analysis = analysis;
+    return spec;
+}
+
+void TableWindow::save_code(const std::shared_ptr<TableModel> &model, const CodeAnalysis &analysis)
+{
+    const std::optional<AnalysisCodeSpec> spec = code_spec(model, analysis);
+    if (!spec)
+    {
+        NestedLoopGuard guard;
+        fl_alert("Code can be written for the sheets of the file only, not for SQL results or a Group By.");
+        return;
+    }
+    saveAnalysisCode(*spec, utf8String(utf8Path(current_path).parent_path()));
+}
+
+// The current sheet's view, or the Group By that made the Group By sheet.
+void TableWindow::export_code()
+{
+    auto *table_view = dynamic_cast<GuiTableView *>(tab->value());
+    if (!table_book || !table_view || !table_view->model())
+        return;
+    const std::shared_ptr<TableModel> model = table_view->model();
+    if (!group_sheet_.empty() && model->name() == group_sheet_)
+    {
+        if (group_code_)
+            saveAnalysisCode(*group_code_, utf8String(utf8Path(current_path).parent_path()));
+        else
+        {
+            NestedLoopGuard guard;
+            fl_alert("Code can be written for a Group By of the file's sheets only, not of SQL results.");
+        }
+        return;
+    }
+    save_code(model, std::monostate{});
+}
+
+void callback_export_code(Fl_Menu_ *, void *)
+{
+    if (auto *self = frontTableWindow())
+        self->export_code();
 }
 
 void callback_skip_meta_lines(Fl_Menu_ *w, void *)

@@ -82,6 +82,10 @@ that reads files without uploading them, and in Visual Studio Code as an
   CSV, TSV, Excel (`.xlsx`) or Parquet (**File → Export View...**; `w`);
   Excel and Parquet keep numbers, booleans and dates typed, also when they
   come from CSV text
+- Write R (tidyverse) or Python (polars + plotnine, or pandas + matplotlib)
+  code that reads the file and repeats the filter, a histogram, a scatter
+  plot or a Group By (**Save Code...** in the chart windows, **File →
+  Export Analysis Code...**; `K`)
 - Asynchronous loading on a worker thread, so large files open instantly
 - Sorting and filtering CSV / TSV and Excel files of any size, in memory;
   when the rows read from a CSV / TSV file take about 100 MB, 500 MB and

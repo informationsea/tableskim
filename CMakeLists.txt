@@ -114,6 +114,8 @@ add_library(tableskim-common
     src/common/column_type.cxx
     src/common/group_by.hxx
     src/common/group_by.cxx
+    src/common/analysis_code.hxx
+    src/common/analysis_code.cxx
     src/common/markdown.hxx
     src/common/markdown.cxx
     src/common/help_docs.hxx
@@ -391,6 +393,8 @@ if(TABLESKIM_BUILD_GUI)
         src/gui/gui_group_by.cxx
         src/gui/gui_image_export.hxx
         src/gui/gui_image_export.cxx
+        src/gui/gui_code_export.hxx
+        src/gui/gui_code_export.cxx
         src/gui/gui_help.hxx
         src/gui/gui_help.cxx
         src/gui/gui_fonts.hxx
@@ -608,6 +612,7 @@ add_executable(tableskim-tests
     tests/sql_tests.cxx
     tests/recent_files_tests.cxx
     tests/group_by_tests.cxx
+    tests/analysis_code_tests.cxx
     tests/column_type_tests.cxx
     tests/follow_tests.cxx
     tests/table_sqlite_tests.cxx

@@ -233,6 +233,11 @@ In the [web app](web.md#histograms-and-scatter-plots), **Save PNG** and
 into its downloads. The points of a scatter plot are separate shapes in
 its SVG.
 
+**Save Code...** writes R or Python code that draws the chart from the
+file, with the filter applied, and **File → Export Analysis Code...** on
+the **Group By** sheet writes the code of the Group By; see
+[Analysis code for R and Python](exporting.md#analysis-code-for-r-and-python).
+
 ## In the terminal UI
 
 The terminal UI has the same tools, drawn with characters:
@@ -244,6 +249,8 @@ The terminal UI has the same tools, drawn with characters:
   `Enter` filters to a box or cell.
 - `A` opens the Group By dialog; the result is a sheet, which `o` sorts.
 - `%` formats the current column, as **Format** does in the GUI.
+- `K` writes R or Python code for the histogram, density or Group By
+  shown (see [Analysis code](exporting.md#analysis-code-for-r-and-python)).
 
 ![Body mass by penguin species as a density in the terminal](../images/tui-density-categories.png)
 

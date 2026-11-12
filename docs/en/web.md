@@ -78,7 +78,7 @@ It, too, reads the files in your browser only.
   (**First row**, **Encoding**, **Skip ## lines**; shown only when they
   apply) and the buttons of the features (**Search**, **Filter**,
   **Statistics**, **Histogram**, **Scatter**, **Group By**, **SQL**,
-  **Export**, **Convert**, **Sidebar**, **Monospace**). Buttons
+  **Export**, **Code**, **Convert**, **Sidebar**, **Monospace**). Buttons
   that do not apply to the file are dimmed; a pressed button shows that
   its panel is open.
 - **Sheet tabs** below the toolbar, for files with several sheets.
@@ -302,6 +302,10 @@ and the terminal UI's. See [Running SQL](sql.md) for what can be queried.
 - **Export** saves the sheet as shown, with its sort and filter applied
   and without the hidden columns, as CSV, TSV, Excel or Parquet. See
   [Export View](exporting.md#export-view).
+- **Code** shows R or Python code that reads the file and repeats the view
+  (on the **Group By** sheet: the Group By), and **Code…** in the chart
+  dialogs the code of the chart. See
+  [Analysis code for R and Python](exporting.md#analysis-code-for-r-and-python).
 - **Convert** (text files only) converts the whole file to Parquet or a
   DuckDB database, read as it is shown (its encoding, first row and `##`
   lines) and with each column given the narrowest type its values fit;

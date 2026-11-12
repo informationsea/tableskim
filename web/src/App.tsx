@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TableSkimClient } from './client';
 import { CheckpointBanner, MessageBanner } from './components/Banners';
 import { DropOverlay, EmptyState } from './components/EmptyState';
+import { CodeDialog } from './components/CodeDialog';
 import { ExportDialog } from './components/ExportDialog';
 import { FilterPane } from './components/FilterPane';
 import { FormatDialog } from './components/FormatDialog';
@@ -50,7 +51,7 @@ type Phase =
     | { kind: 'failed'; name: string }
     | { kind: 'open' };
 
-type DialogKind = 'histogram' | 'scatter' | 'export' | 'convert' | 'groupBy' | 'format' | 'goTo';
+type DialogKind = 'histogram' | 'scatter' | 'export' | 'convert' | 'groupBy' | 'format' | 'goTo' | 'code';
 
 // Hidden and frozen columns: part of what a sheet shows, kept here.
 interface Layout {
@@ -728,6 +729,12 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
             onClick: () => setSqlOpen((open) => !open),
         },
         sheetTool('export-button', 'Export', 'Save the view as CSV, TSV, Excel or Parquet', 'export'),
+        sheetTool(
+            'code-button',
+            'Code',
+            'R or Python code repeating the view (on the Group By sheet: the Group By)',
+            'code',
+        ),
         {
             ...sheetTool('convert-button', 'Convert', 'Convert the whole text file to Parquet or DuckDB', 'convert'),
             enabled: showGrid && !!book?.isTextFormat,
@@ -913,6 +920,15 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
                             client={client}
                             info={info}
                             hidden={hidden}
+                            onClose={closeDialog}
+                        />
+                    )}
+                    {dialog.kind === 'code' && (
+                        <CodeDialog
+                            client={client}
+                            sheet={info.sheet}
+                            hidden={hidden}
+                            analysis={{ analysis: 'view' }}
                             onClose={closeDialog}
                         />
                     )}

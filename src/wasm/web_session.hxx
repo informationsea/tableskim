@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include "analysis_code.hxx"
 #include "cell_format.hxx"
 #include "sql_text.hxx"
 #include "table.hxx"
@@ -87,6 +88,7 @@ private:
         std::filesystem::path file;            // export, convert: the file written
         std::string file_name;                 // export, convert: the name to save it under
         std::optional<ResultSheet> group_rows; // groupBy: until the result sheet is added
+        std::optional<AnalysisCodeSpec> group_code; // groupBy: the code of the view grouped
         std::string sheet;                     // groupBy: the result sheet
         std::jthread thread;                   // declared last: stopped and joined first
     };
@@ -101,6 +103,10 @@ private:
     std::shared_ptr<TableBook> book_;
     // The last Group By's rows, shown again when the file is opened again.
     std::shared_ptr<const ResultRows> group_result_;
+    // The sheet showing it, and the code of the view it grouped (analysisCode).
+    std::string group_sheet_;
+    std::optional<AnalysisCodeSpec> group_code_;
+    std::vector<std::string> file_sheets_; // the file's own, without results
     std::vector<std::unique_ptr<Sheet>> sheets_; // destroyed before book_ by close()
     int next_sheet_id_ = 1;
     std::optional<std::vector<SqlTable>> schema_; // for completion, until the next query
@@ -157,6 +163,9 @@ private:
     void startGroupBy(const Params &params, JsonWriter &result);
     void jobState(const Params &params, JsonWriter &result);
     void cancelJob(const Params &params, JsonWriter &result);
+    std::optional<AnalysisCodeSpec> codeSpec(const Sheet &sheet, const CodeAnalysis &analysis,
+                                             const Params &params) const;
+    void analysisCode(const Params &params, JsonWriter &result);
 };
 
 #endif // _WEB_SESSION_HXX_

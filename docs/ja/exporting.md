@@ -8,6 +8,7 @@ TableSkim は [編集モード](editing.md) の外では開いたファイルを
 | --------------------------- | ------------------------------------ | ------------------------- | --------------------------------------- |
 | Export View                 | すべてのシート（SQL の結果を含む）   | CSV、TSV、Excel、Parquet  | 表示どおりのシート：並べ替え・フィルタ適用後、非表示の列を除く |
 | Convert to Parquet / DuckDB | CSV、TSV、VCF などのテキストファイル | Parquet、DuckDB           | ファイル全体をファイルの順序で          |
+| 解析コード                  | ファイルのシート（SQL の結果を除く） | R、Python                 | ファイルを読み、フィルタ・グラフ・Group By を再現するコード |
 
 ## Export View
 
@@ -62,3 +63,47 @@ GUI とターミナル UI では、保存していない変更がある場合は
 - DuckDB ファイルには、元のファイル名にちなんだ名前のテーブルが 1 つ入ります。
 
 エクスポートと同じく変換も中止でき、保存先のファイルは完成してから置き換えます。元のファイル自体を保存先に選ぶことはできません。
+
+## R と Python の解析コード
+
+TableSkim で行った解析を R や Python で再現するコードを書き出せます。スクリプトやノートブックの出発点として使えます。コードはファイルを読み、ビューのフィルタを適用してから、ヒストグラムや散布図を描くか、Group By を計算するか、（シートそのもののときは）行を並べ替えて非表示の列を除きます。
+
+- GUI：ヒストグラムと散布図のウィンドウの **Save Code...**。**File → Export Analysis Code...** は現在のシートの、**Group By** シートではそれを作った Group By のコードを書き出します。ファイルダイアログで選んだ種類で言語が決まります。
+- ターミナル UI：シート、ヒストグラム（`B`）、密度分布（`M`）で `K`。プロンプトにファイルと同じ場所のファイル名が表示され、`Tab` で言語を切り替えます。
+- Web アプリ：ツールバーの **Code** と、グラフのダイアログの **Code…**。ダイアログにコードが表示され、**Copy** と **Save…** が使えます。コードはファイルを名前だけで読むので、`path` をファイルの場所に書き換えてください。
+
+書き出す言語は 3 種類です。
+
+| 言語                          | ライブラリ                                   | 名前の候補                 |
+| ----------------------------- | -------------------------------------------- | -------------------------- |
+| R (tidyverse)                 | readr、dplyr、ggplot2（ほかの形式では readxl、arrow、jsonlite、DBI） | `sales-histogram.R`        |
+| Python (polars + plotnine)    | polars、plotnine（必要に応じて duckdb、fastexcel） | `sales-histogram-polars.py` |
+| Python (pandas + matplotlib)  | pandas、matplotlib（必要に応じて duckdb、openpyxl） | `sales-histogram-pandas.py` |
+
+たとえば `Age` が 40 より大きい行について、`Active` で積み上げた `Salary` のヒストグラムは、R では次のようになります。
+
+```r
+library(tidyverse)
+
+path <- "/data/normal.csv"
+df <- read_csv(path)
+
+df <- df |>
+  filter(Age > 40)
+
+p <- ggplot(df, aes(x = Salary, fill = factor(Active))) +
+  geom_histogram(bins = 30) +
+  labs(y = "rows", fill = "Active")
+print(p)
+# ggsave("plot.png", p)
+```
+
+コードは厳密さよりも簡潔さを優先しています。
+
+- ファイルは各ライブラリの規則で読みます。列の型はライブラリが推測し、readr は値の前後の空白を取り除きます。フィルタは、数値・日付・真偽値の列とはその型の値として比べ、それ以外の列とは文字列として比べます。
+- R と polars では、空のセルとの比較は（「等しくない」を除いて）その行を除きます。TableSkim は空のセルを空の文字列として比べます。
+- グラフの色、区間、軸は各ライブラリの既定のままです。X が文字列なら箱ひげ図に、文字列の列のヒストグラムは出現回数の多い値の棒グラフになります。
+- Group By はグループごとの行数（`count`）を数え、列には TableSkim と同じ名前（`Salary sum` など）を付けます。文字列の列の合計・平均・標準偏差は省きます。
+
+SQL の結果には読むファイルがないため、コードは書き出せません（それを集計した Group By も同様です）。
+
