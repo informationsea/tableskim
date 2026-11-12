@@ -127,5 +127,12 @@ std::string analysisCodeFileName(const AnalysisCodeSpec &spec, CodeLanguage lang
 // The language a file name chosen for code is in (".R", or "polars" or
 // "pandas" in the name of a ".py" file), if it tells.
 std::optional<CodeLanguage> codeLanguageFromFileName(const std::filesystem::path &path);
+// The file to save code of `language` as, from the one chosen in a file
+// chooser that suggested analysisCodeFileName(): a suggested name (of any
+// language, as the chooser may leave it or only change its extension when
+// another language is picked) becomes the language's own, and another
+// name gets the language's extension unless it has it.
+std::filesystem::path analysisCodeTarget(const AnalysisCodeSpec &spec, const std::filesystem::path &chosen,
+                                         CodeLanguage language);
 
 #endif // _ANALYSIS_CODE_HXX_

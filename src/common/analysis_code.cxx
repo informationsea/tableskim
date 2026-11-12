@@ -476,7 +476,10 @@ namespace
             std::string note = "# Sums, means and standard deviations are left out for";
             for (size_t i = 0; i < names.size(); ++i)
                 note += (i ? ", " : " ") + names[i];
+            // Line breaks in a name would end the comment: the rest of the
+            // name would be run as code (Python ends a comment at a CR too).
             std::replace(note.begin(), note.end(), '\n', ' ');
+            std::replace(note.begin(), note.end(), '\r', ' ');
             return note + " (not numbers)\n";
         }
 
@@ -914,8 +917,9 @@ namespace
                 open = "open";
                 args = "path";
             }
-            if (source_.encoding != TextEncoding::Utf8 || open == "open")
-                args += ", encoding=" + literal(pythonEncoding());
+            // Always: text mode would use the locale's encoding otherwise,
+            // which is not UTF-8 on Windows.
+            args += ", encoding=" + literal(pythonEncoding());
             return "with " + open + "(" + args + ") as file:\n" +
                    "    text = \"\".join(line for line in file if not line.startswith(\"##\"))\n";
         }
@@ -1080,7 +1084,13 @@ namespace
 
         std::string contains(size_t column, const std::string &value, bool negated) override
         {
-            const std::string detect = ".str.to_lowercase().str.contains(" + literal(asciiLower(value)) + ", literal=True)";
+            // to_lowercase() folds every letter, so the text looked for
+            // must be folded alike: letters outside ASCII by Python.
+            std::string needle = literal(asciiLower(value));
+            if (std::any_of(value.begin(), value.end(), [](char c)
+                            { return static_cast<unsigned char>(c) >= 0x80; }))
+                needle += ".lower()";
+            const std::string detect = ".str.to_lowercase().str.contains(" + needle + ", literal=True)";
             if (negated)
                 return "~" + text(column) + ".fill_null(\"\")" + detect;
             return text(column) + detect;
@@ -1689,6 +1699,31 @@ std::string analysisCodeFileName(const AnalysisCodeSpec &spec, CodeLanguage lang
     else if (language == CodeLanguage::Pandas)
         name += "-pandas";
     return name + codeLanguageExtension(language);
+}
+
+std::filesystem::path analysisCodeTarget(const AnalysisCodeSpec &spec, const std::filesystem::path &chosen,
+                                         CodeLanguage language)
+{
+    const std::string name = utf8String(chosen.filename());
+    const std::string extension = codeLanguageExtension(language);
+    for (const CodeLanguage suggested_language : CODE_LANGUAGES)
+    {
+        // "data-view.R" as it is, or as choosers change it for another
+        // type: "data-view.R.py", "data-view.py".
+        const std::string suggested = analysisCodeFileName(spec, suggested_language);
+        const std::string stem = utf8String(utf8Path(suggested).stem());
+        if (name == suggested || name == suggested + extension || name == stem + extension)
+            return chosen.parent_path() / utf8Path(analysisCodeFileName(spec, language));
+    }
+    const std::string chosen_extension = lowerExtension(chosen);
+    if (chosen_extension == asciiLower(extension))
+        return chosen;
+    std::filesystem::path target = chosen;
+    if (chosen_extension == ".r" || chosen_extension == ".py")
+        target.replace_extension(utf8Path(extension)); // the other language's
+    else
+        target += extension;
+    return target;
 }
 
 std::optional<CodeLanguage> codeLanguageFromFileName(const std::filesystem::path &path)

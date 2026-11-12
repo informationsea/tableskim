@@ -56,10 +56,13 @@ void saveAnalysisCode(const AnalysisCodeSpec &spec, const std::string &directory
         language = CODE_LANGUAGES[filter];
     else if (const auto named = codeLanguageFromFileName(target))
         language = *named;
-    if (lowerExtension(target) != (language == CodeLanguage::R ? ".r" : ".py"))
+    // A name suggested for another language would say the wrong one
+    // ("data-view.R.py", polars code in "data-view-pandas.py").
+    const std::filesystem::path chosen_target = target;
+    target = analysisCodeTarget(spec, chosen_target, language);
+    if (target != chosen_target)
     {
-        target += codeLanguageExtension(language);
-        // Not checked by SAVEAS_CONFIRM, which saw the name without it.
+        // Not checked by SAVEAS_CONFIRM, which saw the name chosen.
         std::error_code exists_error;
         if (std::filesystem::exists(target, exists_error))
         {

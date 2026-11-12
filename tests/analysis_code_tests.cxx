@@ -166,6 +166,12 @@ TEST_CASE("analysisCode: reading the file")
         CHECK(contains(pandas, "io.StringIO(text)"));
         CHECK(contains(pandas, "header=None"));
         CHECK(contains(pandas, "names=[\"A\", \"B\"]"));
+        // UTF-8 is named too: text mode reads in the locale's encoding.
+        spec.source.encoding = TextEncoding::Utf8;
+        CHECK(contains(analysisCode(spec, CodeLanguage::Pandas),
+                       "with gzip.open(path, \"rt\", encoding=\"utf-8\") as file:\n"));
+        spec.source.path = "/data/calls.vcf";
+        CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "with open(path, encoding=\"utf-8\") as file:\n"));
     }
     SECTION("Compression polars does not read")
     {
@@ -249,6 +255,13 @@ TEST_CASE("analysisCode: filters, sorts and hidden columns of the view")
     CHECK(contains(polars, "df = df.sort([\"Age\", \"Name\"], descending=[True, False], nulls_last=True)\n"));
     CHECK(contains(polars, "df = df.drop([\"Salary\", \"Last Login\"])\n"));
 
+    // Letters outside ASCII are folded by Python, as to_lowercase() folds the column.
+    AnalysisCodeSpec accented = spec;
+    accented.view.filter->conditions = {{CITY, FilterOp::Contains, "\xC3\x89" "COLE"}, {NAME, FilterOp::NotContains, "\xC3\x89"}};
+    const std::string folded = analysisCode(accented, CodeLanguage::Polars);
+    CHECK(contains(folded, "pl.col(\"City\").str.to_lowercase().str.contains(\"\xC3\x89" "cole\".lower(), literal=True),\n"));
+    CHECK(contains(folded, "~pl.col(\"Name\").fill_null(\"\").str.to_lowercase().str.contains(\"\xC3\x89\".lower(), literal=True),\n"));
+
     const std::string pandas = analysisCode(spec, CodeLanguage::Pandas);
     CHECK(contains(pandas, "df = df[\n    (df[\"Age\"] >= 40)\n"
                            "    & (df[\"City\"].str.contains(\"OSA\", case=False, regex=False, na=False))\n"
@@ -328,6 +341,13 @@ TEST_CASE("analysisCode: Group By")
     const std::string r = analysisCode(spec, CodeLanguage::R);
     CHECK(r.find("arrange(") == std::string::npos);
     CHECK(contains(r, "# Sums, means and standard deviations are left out for Name (not numbers)\n"));
+    {
+        // A line break in a column name must not end the comment and run the rest.
+        AnalysisCodeSpec breaks = spec;
+        breaks.source.columns[NAME] = "a\rimport os\r\nb";
+        for (const CodeLanguage language : {CodeLanguage::R, CodeLanguage::Polars, CodeLanguage::Pandas})
+            CHECK(contains(analysisCode(breaks, language), " are left out for a import os  b (not numbers)\n"));
+    }
     CHECK(contains(r, "result <- df |>\n  group_by(City, Active) |>\n  summarise(\n    count = n(),\n"
                       "    `Salary sum` = sum(Salary, na.rm = TRUE),\n"
                       "    `Salary std dev` = sd(Salary, na.rm = TRUE),\n"
@@ -427,6 +447,25 @@ TEST_CASE("analysisCode: file names and languages")
         CHECK(parseCodeLanguage(codeLanguageId(language)) == language);
         CHECK(codeLanguageFromFileName(analysisCodeFileName(spec, language)) == language);
     }
+    // A suggested name is made the language's own, however the file
+    // chooser left it when another language was picked.
+    const std::filesystem::path dir = "out";
+    CHECK(analysisCodeTarget(spec, dir / "sales-group-by.R", CodeLanguage::R) == dir / "sales-group-by.R");
+    CHECK(analysisCodeTarget(spec, dir / "sales-group-by.R", CodeLanguage::Polars) == dir / "sales-group-by-polars.py");
+    CHECK(analysisCodeTarget(spec, dir / "sales-group-by.R.py", CodeLanguage::Pandas) == dir / "sales-group-by-pandas.py");
+    CHECK(analysisCodeTarget(spec, dir / "sales-group-by.py", CodeLanguage::Polars) == dir / "sales-group-by-polars.py");
+    CHECK(analysisCodeTarget(spec, dir / "sales-group-by-pandas.py", CodeLanguage::Polars) ==
+          dir / "sales-group-by-polars.py");
+    CHECK(analysisCodeTarget(spec, dir / "sales-group-by-polars.py", CodeLanguage::R) == dir / "sales-group-by.R");
+    CHECK(analysisCodeTarget(spec, dir / "sales-group-by-polars.R", CodeLanguage::R) == dir / "sales-group-by.R");
+    // Other names keep what was typed, with the language's extension.
+    CHECK(analysisCodeTarget(spec, dir / "mine.py", CodeLanguage::Pandas) == dir / "mine.py");
+    CHECK(analysisCodeTarget(spec, dir / "mine.PY", CodeLanguage::Polars) == dir / "mine.PY");
+    CHECK(analysisCodeTarget(spec, dir / "mine", CodeLanguage::R) == dir / "mine.R");
+    CHECK(analysisCodeTarget(spec, dir / "mine.v2", CodeLanguage::Polars) == dir / "mine.v2.py");
+    CHECK(analysisCodeTarget(spec, dir / "mine.py", CodeLanguage::R) == dir / "mine.R");
+    CHECK(analysisCodeTarget(spec, dir / "mine.r", CodeLanguage::Pandas) == dir / "mine.py");
+
     CHECK(codeLanguageFromFileName("x.r") == CodeLanguage::R);
     CHECK_FALSE(codeLanguageFromFileName("x.py"));
     CHECK_FALSE(codeLanguageFromFileName("x.txt"));
