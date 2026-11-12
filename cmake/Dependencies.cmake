@@ -394,6 +394,27 @@ else()
     target_include_directories(tableskim-compression SYSTEM INTERFACE ${xz_SOURCE_DIR}/src/liblzma/api)
 endif()
 
+# XML parser for OpenDocument spreadsheets (.ods), which are streamed rather
+# than loaded whole. Static, with its symbols hidden (expat's default), so
+# that the system's libexpat, loaded by fontconfig, keeps its own.
+set(EXPAT_BUILD_TOOLS OFF)
+set(EXPAT_BUILD_EXAMPLES OFF)
+set(EXPAT_BUILD_TESTS OFF)
+set(EXPAT_BUILD_DOCS OFF)
+set(EXPAT_BUILD_FUZZERS OFF)
+set(EXPAT_BUILD_PKGCONFIG OFF)
+set(EXPAT_SHARED_LIBS OFF)
+set(EXPAT_ENABLE_INSTALL OFF)
+FetchContent_Declare(
+    expat
+    SYSTEM
+    URL https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.gz
+    URL_HASH SHA256=5466a341f9c692ef7a958a6881311be597f8e1ce345984cf78414f54793dea4c
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(expat)
+
 # Regular expression search. RE2 needs Abseil, which is added first so that
 # RE2 uses these targets instead of looking for an installed Abseil.
 set(ABSL_PROPAGATE_CXX_STD ON)

@@ -34,7 +34,7 @@ if(UNIX AND NOT APPLE)
             )
         endforeach()
         # File icons only for the formats defined in tableskim-mime.xml;
-        # CSV, Excel, SQLite and JSON files keep the icons of the user's theme.
+        # CSV, Excel, ODS, SQLite and JSON files keep the icons of the user's theme.
         # Package triggers of shared-mime-info and the icon cache pick these up.
         install(FILES packaging/linux/tableskim-mime.xml
             DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages

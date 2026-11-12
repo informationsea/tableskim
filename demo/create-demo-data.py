@@ -31,7 +31,8 @@ cp932-sample.csv holds characters that are tricky in CP932: trail bytes
 that are '\\' or '|', NEC and IBM extensions, half-width katakana, and
 quoted fields with commas and line breaks.
 
-super-large.csv.xz, super-large.xlsx and super-large.parquet (zstd) hold
+super-large.csv.xz, super-large.xlsx, super-large.ods and super-large.parquet
+(zstd) hold
 1,000,000 rows shaped like "large", streamed to disk, for testing
 performance and memory use. They are the slowest part to generate; skip them
 with --no-super-large.
@@ -41,12 +42,18 @@ normal.ndjson (one object per line) and normal.jsonl.gz. nested.json holds
 nested objects and arrays, keys missing from some objects, and a key whose
 values change type after the first rows.
 
-Excel-only files:
+Every dataset is also written as an OpenDocument spreadsheet (.ods), as
+LibreOffice writes one: runs of empty cells and rows as repeats, rows filled
+up to 1024 columns and the sheet up to 1,048,576 rows with empty repeats.
+
+Spreadsheet-only files:
 
   multisheet.xlsx : Several worksheets (including an empty one, a hidden one,
                     one whose data starts away from A1 and a chart sheet)
   merged.xlsx     : Merged cells in the header, horizontally, vertically and
                     as blocks, including merges reaching past the last value
+  multisheet.ods, merged.ods : The same as OpenDocument spreadsheets (without
+                    the chart sheet)
 
 Usage:
   python3 create-demo-data.py [-o OUTPUT_DIR]
@@ -60,10 +67,13 @@ import csv
 import datetime
 import gzip
 import io
+import itertools
 import json
 import lzma
 import random
+import re
 import sqlite3
+import zipfile
 from pathlib import Path
 
 import duckdb
@@ -75,6 +85,7 @@ from openpyxl.cell import WriteOnlyCell
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
+from xml.sax.saxutils import escape, quoteattr
 
 SEED = 20261005
 SUPER_LARGE_SEED = SEED + 4
@@ -389,7 +400,7 @@ def write_super_large_parquet(output: Path, seed: int, n_rows: int = SUPER_LARGE
 
 
 def write_super_large(output: Path, seed: int, n_rows: int = SUPER_LARGE_ROWS):
-    """Write super-large.csv.xz, .xlsx and .parquet without keeping rows in memory.
+    """Write super-large.csv.xz, .xlsx, .ods and .parquet without keeping rows in memory.
 
     Every file is generated from the same seed instead of buffering the rows.
     """
@@ -411,6 +422,10 @@ def write_super_large(output: Path, seed: int, n_rows: int = SUPER_LARGE_ROWS):
     for row in iter_large_rows(random.Random(seed), n_rows):
         ws.append(row)
     wb.save(output / "super-large.xlsx")
+
+    write_ods(output / "super-large.ods",
+              [OdsSheet("super-large", itertools.chain([LARGE_HEADER],
+                                                       iter_large_rows(random.Random(seed), n_rows)))])
 
     write_super_large_parquet(output, seed, n_rows)
 
@@ -626,6 +641,281 @@ def write_merged_xlsx(path: Path, rng: random.Random):
     wb.save(path)
 
 
+# ---------------------------------------------------------------------------
+# OpenDocument spreadsheets, written directly (no extra dependency) and
+# streamed, so that the super-large file is never held in memory.
+# ---------------------------------------------------------------------------
+
+ODS_MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
+ODS_NAMESPACES = {
+    "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+    "style": "urn:oasis:names:tc:opendocument:xmlns:style:1.0",
+    "text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+    "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+    "fo": "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0",
+    "of": "urn:oasis:names:tc:opendocument:xmlns:of:1.2",
+}
+ODS_XMLNS = " ".join(f'xmlns:{prefix}="{uri}"' for prefix, uri in ODS_NAMESPACES.items())
+ODS_COLUMNS = 1024     # LibreOffice fills each row up to here ...
+ODS_ROWS = 1_048_576   # ... and each sheet up to here, with empty repeats
+# Fixed, so that the files do not change from one run to the next.
+ODS_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
+
+
+class OdsFormula:
+    """A formula cell with its computed value, as a spreadsheet saves it."""
+
+    def __init__(self, formula: str, value):
+        self.formula = formula
+        self.value = value
+
+
+class OdsSheet:
+    """`rows` may be any iterable; merges are (row, column, rows, columns), 0-based."""
+
+    def __init__(self, name: str, rows, merges=(), hidden: bool = False):
+        self.name = name
+        self.rows = rows
+        self.merges = list(merges)
+        self.hidden = hidden
+
+
+def ods_paragraphs(text: str) -> str:
+    """text:p elements for a string: single spaces between words stay as they
+    are, other runs become text:s (ODF collapses white space), tabs text:tab."""
+    paragraphs = []
+    for line in text.split("\n"):
+        out = []
+        for match in re.finditer(r" +|\t|[^ \t]+", line):
+            token = match.group()
+            if token == "\t":
+                out.append("<text:tab/>")
+            elif token[0] == " ":
+                n = len(token)
+                if n == 1 and match.start() > 0 and match.end() < len(line):
+                    out.append(" ")
+                else:
+                    out.append("<text:s/>" if n == 1 else f'<text:s text:c="{n}"/>')
+            else:
+                out.append(escape(token))
+        paragraphs.append("<text:p>" + "".join(out) + "</text:p>")
+    return "".join(paragraphs)
+
+
+def ods_duration(seconds: float) -> str:
+    whole = int(seconds)
+    text = "PT%02dH%02dM%02d" % (whole // 3600, whole // 60 % 60, whole % 60)
+    micros = round((seconds - whole) * 1_000_000)
+    if micros:
+        text += (".%06d" % micros).rstrip("0")
+    return text + "S"
+
+
+def ods_cell(value, attributes: str = "") -> str:
+    formula = ""
+    if isinstance(value, OdsFormula):
+        formula = f" table:formula={quoteattr(value.formula)}"
+        value = value.value
+    if value is None or value == "":
+        return f"<table:table-cell{attributes}/>"
+    if isinstance(value, bool):
+        typed = f'office:value-type="boolean" office:boolean-value="{"true" if value else "false"}"'
+        shown = "TRUE" if value else "FALSE"
+    elif isinstance(value, int):
+        typed, shown = f'office:value-type="float" office:value="{value}"', str(value)
+    elif isinstance(value, float):
+        text = str(int(value)) if value.is_integer() and abs(value) < 1e15 else repr(value)
+        typed, shown = f'office:value-type="float" office:value="{text}"', text
+    elif isinstance(value, datetime.datetime):
+        typed = f'office:value-type="date" office:date-value="{value.isoformat()}"'
+        shown = value.isoformat(sep=" ")
+    elif isinstance(value, datetime.date):
+        typed, shown = f'office:value-type="date" office:date-value="{value.isoformat()}"', value.isoformat()
+    elif isinstance(value, datetime.time):
+        seconds = value.hour * 3600 + value.minute * 60 + value.second + value.microsecond / 1e6
+        typed, shown = f'office:value-type="time" office:time-value="{ods_duration(seconds)}"', value.isoformat()
+    elif isinstance(value, datetime.timedelta):
+        typed = f'office:value-type="time" office:time-value="{ods_duration(value.total_seconds())}"'
+        shown = format_duration(value)
+    else:
+        typed, shown = 'office:value-type="string"', str(value)
+    return f"<table:table-cell{attributes}{formula} {typed}>{ods_paragraphs(shown)}</table:table-cell>"
+
+
+def ods_repeat(element: str, attribute: str, count: int) -> str:
+    return f"<{element}/>" if count == 1 else f'<{element} table:{attribute}="{count}"/>'
+
+
+def ods_row(row, r: int, starts: dict, covered: set) -> str:
+    """One table:table-row's cells; runs of empty cells become repeats."""
+    width = max(len(row), max((c + 1 for (rr, c) in covered if rr == r), default=0))
+    cells = []
+    run_element, run = None, 0
+
+    def flush():
+        if run:
+            cells.append(ods_repeat(run_element, "number-columns-repeated", run))
+
+    for c in range(width):
+        value = row[c] if c < len(row) else None
+        if (r, c) in covered:
+            element = "table:covered-table-cell"
+        elif (r, c) not in starts and (value is None or value == ""):
+            element = "table:table-cell"
+        else:
+            element = None
+        if element is not None:
+            if element != run_element:
+                flush()
+                run_element, run = element, 0
+            run += 1
+            continue
+        flush()
+        run_element, run = None, 0
+        span = starts.get((r, c))
+        attributes = (f' table:number-rows-spanned="{span[0]}" table:number-columns-spanned="{span[1]}"'
+                      if span else "")
+        cells.append(ods_cell(value, attributes))
+    flush()
+    if width < ODS_COLUMNS:
+        cells.append(ods_repeat("table:table-cell", "number-columns-repeated", ODS_COLUMNS - width))
+    return "".join(cells)
+
+
+def write_ods_table(out, sheet: OdsSheet):
+    starts = {(r, c): (rows, cols) for r, c, rows, cols in sheet.merges}
+    covered = {(r + dr, c + dc) for r, c, rows, cols in sheet.merges
+               for dr in range(rows) for dc in range(cols) if dr or dc}
+    last_merge_row = max((r + rows for r, _, rows, _ in sheet.merges), default=0)
+    style = "ta2" if sheet.hidden else "ta1"
+    out.write(f"<table:table table:name={quoteattr(sheet.name)} table:style-name=\"{style}\">"
+              f'<table:table-column table:number-columns-repeated="{ODS_COLUMNS}"/>')
+    empty_rows = 0
+    r = 0
+
+    def flush_empty():
+        if empty_rows:
+            cells = ods_repeat("table:table-cell", "number-columns-repeated", ODS_COLUMNS)
+            repeat = "" if empty_rows == 1 else f' table:number-rows-repeated="{empty_rows}"'
+            out.write(f"<table:table-row{repeat}>{cells}</table:table-row>")
+
+    for row in sheet.rows:
+        if all(v is None or v == "" for v in row) and not any(rr == r for rr, _ in covered) \
+                and not any(sr == r for sr, _ in starts):
+            empty_rows += 1
+        else:
+            flush_empty()
+            empty_rows = 0
+            out.write(f"<table:table-row>{ods_row(row, r, starts, covered)}</table:table-row>")
+        r += 1
+    # Rows that only merges reach.
+    while r < last_merge_row:
+        flush_empty()
+        empty_rows = 0
+        out.write(f"<table:table-row>{ods_row([], r, starts, covered)}</table:table-row>")
+        r += 1
+    empty_rows += ODS_ROWS - r
+    flush_empty()
+    out.write("</table:table>")
+
+
+def write_ods(path: Path, sheets):
+    content_head = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<office:document-content {ODS_XMLNS} office:version="1.3">'
+        "<office:automatic-styles>"
+        '<style:style style:name="ta1" style:family="table" style:master-page-name="Default">'
+        '<style:table-properties table:display="true"/></style:style>'
+        '<style:style style:name="ta2" style:family="table" style:master-page-name="Default">'
+        '<style:table-properties table:display="false"/></style:style>'
+        "</office:automatic-styles><office:body><office:spreadsheet>")
+    styles = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+              f'<office:document-styles {ODS_XMLNS} office:version="1.3"><office:master-styles>'
+              '<style:master-page style:name="Default"/></office:master-styles></office:document-styles>')
+    manifest = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" '
+        'manifest:version="1.3">'
+        f'<manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="{ODS_MIMETYPE}"/>'
+        '<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>'
+        '<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>'
+        "</manifest:manifest>")
+
+    def info(name, compress=zipfile.ZIP_DEFLATED):
+        entry = zipfile.ZipInfo(name, date_time=ODS_ZIP_TIME)
+        entry.compress_type = compress
+        return entry
+
+    with zipfile.ZipFile(path, "w") as z:
+        # Uncompressed and first, so that the type shows in the leading bytes.
+        z.writestr(info("mimetype", zipfile.ZIP_STORED), ODS_MIMETYPE)
+        with z.open(info("content.xml"), "w", force_zip64=True) as raw:
+            out = io.TextIOWrapper(raw, encoding="utf-8", newline="")
+            out.write(content_head)
+            for sheet in sheets:
+                write_ods_table(out, sheet)
+            out.write("</office:spreadsheet></office:body></office:document-content>")
+            out.flush()
+            out.detach()
+        z.writestr(info("styles.xml"), styles)
+        z.writestr(info("META-INF/manifest.xml"), manifest)
+
+
+def write_multisheet_ods(path: Path, rng: random.Random):
+    """multisheet.xlsx's sheets (the same values, from the same seed) but the chart."""
+    people = [PERSON_HEADER] + [random_person(rng, i) for i in range(1, 31)]
+    sales = [["Month", "Tokyo", "Osaka", "Sendai"]]
+    for m in range(1, 13):
+        sales.append([datetime.date(2026, m, 1)] + [rng.randint(100, 1000) for _ in range(3)])
+    offset = [[], []] + [[None, None] + row for row in [["Key", "Value"], ["a", 1], ["b", 2], ["c", 3]]]
+    wide = ([[f"C{c}" for c in range(1, 101)]] +
+            [[r * 100 + c for c in range(1, 101)] for r in range(1, 21)])
+    write_ods(path, [
+        OdsSheet("People", people),
+        OdsSheet("売上", sales),
+        OdsSheet("Empty", []),
+        OdsSheet("Offset", offset),
+        OdsSheet("Hidden", [["Secret", "Value"], ["x", 10], ["y", 20]], hidden=True),
+        OdsSheet("Wide", wide),
+    ])
+
+
+def write_merged_ods(path: Path, rng: random.Random):
+    """merged.xlsx's sheets: the same layout and values, from the same seed."""
+    rows = [["Quarterly report"], ["Region", "Store", "H1", None, "H2"], [None, None, "Q1", "Q2", "Q3", "Q4"]]
+    merges = [(0, 0, 1, 6), (1, 0, 2, 1), (1, 1, 2, 1), (1, 2, 1, 2), (1, 4, 1, 2)]
+    for region, stores in [("East", ["Sendai", "Tokyo", "Yokohama"]),
+                           ("West", ["Osaka", "Kobe"]),
+                           ("North", ["Sapporo"])]:
+        if len(stores) > 1:
+            merges.append((len(rows), 0, len(stores), 1))
+        for i, store in enumerate(stores):
+            rows.append([region if i == 0 else None, store] + [rng.randint(100, 999) for _ in range(4)])
+    body = rows[3:]
+    first, last = 4, len(rows)
+    total = ["Total", None]
+    for c in range(2, 6):
+        letter = "CDEF"[c - 2]
+        total.append(OdsFormula(f"of:=SUM([.{letter}{first}:.{letter}{last}])", sum(r[c] for r in body)))
+    merges.append((len(rows), 0, 1, 2))
+    rows.append(total)
+    rows.append([])
+    merges.append((len(rows), 1, 2, 5))
+    rows.append(["Notes", "This note spans a 2x5 block."])
+    rows.append([])
+    rows.append([])
+    merges.append((len(rows), 0, 3, 3))
+    rows.append(["Tail"])
+
+    header_merge = [["Name", "Contact"],
+                    ["Alice", "alice@example.com", "022-000-0000"],
+                    ["Bob", "bob@example.com", "03-0000-0000"]]
+    write_ods(path, [
+        OdsSheet("report", rows, merges),
+        OdsSheet("header_merge", header_merge, [(0, 1, 1, 2)]),
+    ])
+
+
 MULTILINGUAL_NAME = "多言語サンプル"
 
 # (native name, code, script, direction, "hello", "thank you", digits 0-9)
@@ -731,8 +1021,9 @@ def main():
             write_multilingual_xlsx(args.output / f"{name}.xlsx", rows)
         else:
             write_xlsx(args.output / f"{name}.xlsx", rows, name, header=header)
+        write_ods(args.output / f"{name}.ods", [OdsSheet(name, rows)])
         write_parquet(args.output / f"{name}.parquet", rows, header)
-        print(f"wrote {name}.csv, {name}.xlsx and {name}.parquet ({len(rows)} rows)")
+        print(f"wrote {name}.csv, {name}.xlsx, {name}.ods and {name}.parquet ({len(rows)} rows)")
 
     normal_rows = to_csv_rows(next(rows for name, rows, _ in datasets if name == "normal"))
     for suffix in COMPRESSORS:
@@ -752,6 +1043,9 @@ def main():
     print("wrote multisheet.xlsx")
     write_merged_xlsx(args.output / "merged.xlsx", random.Random(SEED + 3))
     print("wrote merged.xlsx")
+    write_multisheet_ods(args.output / "multisheet.ods", random.Random(SEED + 2))
+    write_merged_ods(args.output / "merged.ods", random.Random(SEED + 3))
+    print("wrote multisheet.ods and merged.ods")
 
     tables = ", ".join(name for name, _, _ in datasets)
     for db_name, writer in [("demo.sqlite3", write_sqlite), ("demo.duckdb", write_duckdb)]:
@@ -760,7 +1054,7 @@ def main():
 
     if not args.no_super_large:
         write_super_large(args.output, SUPER_LARGE_SEED)
-        print(f"wrote super-large.csv.xz, .xlsx and .parquet ({SUPER_LARGE_ROWS} data rows)")
+        print(f"wrote super-large.csv.xz, .xlsx, .ods and .parquet ({SUPER_LARGE_ROWS} data rows)")
 
 
 if __name__ == "__main__":

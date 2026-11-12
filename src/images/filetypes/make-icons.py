@@ -25,6 +25,7 @@ FORMATS = [
     ("tsv", "TSV", "#7A4FD0", "#FFFFFF"),
     ("xlsx", "XLSX", "#1D6F42", "#FFFFFF"),
     ("xlsm", "XLSM", "#1D6F42", "#FFFFFF"),
+    ("ods", "ODS", "#18A303", "#FFFFFF"),
     ("parquet", "PARQ", "#D9650B", "#FFFFFF"),
     ("duckdb", "DUCK", "#E3B505", "#3A2E00"),
     ("sqlite", "SQL", "#0B5F8C", "#FFFFFF"),

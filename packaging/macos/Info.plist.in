@@ -82,6 +82,20 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>OpenDocument Spreadsheet</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>ods.icns</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.oasis-open.opendocument.spreadsheet</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>JSON File</string>
 			<key>CFBundleTypeIconFile</key>
 			<string>json.icns</string>

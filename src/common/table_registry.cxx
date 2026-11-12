@@ -3,6 +3,7 @@
 #include "table_duckdb.hxx"
 #include "table_excel.hxx"
 #include "table_json.hxx"
+#include "table_ods.hxx"
 #include "table_parquet.hxx"
 #include "table_sqlite.hxx"
 
@@ -13,6 +14,7 @@ const BackendRegistry &BackendRegistry::builtin()
         BackendRegistry r;
         registerCsvBackend(r);
         registerExcelBackend(r);
+        registerOdsBackend(r);
         registerDuckDbBackend(r);
         registerParquetBackend(r);
         registerJsonBackend(r);

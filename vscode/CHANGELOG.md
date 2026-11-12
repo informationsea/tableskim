@@ -5,6 +5,11 @@ Its version is TableSkim's; the changes of TableSkim itself (formats,
 statistics, charts, SQL) are in its
 [release notes](https://github.com/informationsea/tableskim/releases).
 
+## Unreleased
+
+- Opens OpenDocument spreadsheets (`.ods`), by default like Excel
+  workbooks.
+
 ## v0.3.4
 
 The first release, as a preview.

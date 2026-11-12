@@ -29,6 +29,7 @@ WriteRegStr SHCTX "Software\Classes\Applications\TableSkim.exe\shell\open\comman
 !insertmacro _TableSkimRegisterExtension ".tab" "TSV File" 202
 !insertmacro _TableSkimRegisterExtension ".xlsx" "Excel Workbook" 203
 !insertmacro _TableSkimRegisterExtension ".xlsm" "Excel Macro-Enabled Workbook" 204
+!insertmacro _TableSkimRegisterExtension ".ods" "OpenDocument Spreadsheet" 210
 !insertmacro _TableSkimRegisterExtension ".parquet" "Parquet File" 205
 !insertmacro _TableSkimRegisterExtension ".duckdb" "DuckDB Database" 206
 !insertmacro _TableSkimRegisterExtension ".ddb" "DuckDB Database" 206
