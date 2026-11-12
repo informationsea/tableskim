@@ -84,6 +84,12 @@ namespace
     void checkSameCells(TableModel &a, TableModel &b)
     {
         REQUIRE(a.rowCount() == b.rowCount());
+        // Every row read first: the columns grow with wider rows as they come.
+        if (a.rowCount().value > 0)
+        {
+            waitForCell(a, a.rowCount().value - 1, 0);
+            waitForCell(b, b.rowCount().value - 1, 0);
+        }
         REQUIRE(a.columnCount() == b.columnCount());
         CHECK(a.hasHeader() == b.hasHeader());
         for (size_t c = 0; c < a.columnCount(); ++c)

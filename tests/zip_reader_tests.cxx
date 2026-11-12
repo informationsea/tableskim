@@ -50,8 +50,11 @@ TEST_CASE("ZIP reader: stored entries, with and without ZIP64")
         CHECK(readEntry(archive, "a.txt", 2) == "hello");
         CHECK(readEntry(archive, "dir/empty", 16).empty());
         CHECK(readEntry(archive, "big", 4096) == big);
-        ZipEntryReader reader(archive, *archive.find("big"));
-        CHECK_THROWS_AS(reader.readAll(1000), std::runtime_error);
+        {
+            // Closed before the file is removed: Windows cannot remove an open file.
+            ZipEntryReader reader(archive, *archive.find("big"));
+            CHECK_THROWS_AS(reader.readAll(1000), std::runtime_error);
+        }
         std::filesystem::remove(path);
     }
 }
