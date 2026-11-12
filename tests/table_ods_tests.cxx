@@ -609,7 +609,11 @@ TEST_CASE("broken or unsupported ODS files fail to open cleanly")
 // Hidden (run with "[.super-large]"): one million rows in one table.
 TEST_CASE("super-large.ods: reaches the last row", "[.super-large]")
 {
-    auto book = TableBook::open(kDemoData / "super-large.ods");
+    // Its rows pass the first memory checkpoint, where reading would wait for an answer.
+    TableModel::Options options;
+    options.memory_checkpoints.clear();
+    options.memory_checkpoint_interval = 0;
+    auto book = TableBook::open(kDemoData / "super-large.ods", {}, BackendRegistry::builtin(), options);
     REQUIRE(book->sheetNames() == std::vector<std::string>{"super-large"});
     auto model = book->sheet("super-large");
     REQUIRE(waitFor([&]

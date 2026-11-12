@@ -879,6 +879,14 @@ namespace
             while (block->rows.size() < max_rows && next_sheet_row_ < total_rows_)
                 block->rows.push_back(takeRow());
             next_row_ += block->rows.size();
+            // The rows counted when the file was opened are all taken: only
+            // empty rows can follow, so the end tag need not be parsed.
+            if (next_sheet_row_ >= total_rows_)
+            {
+                stream_.reset();
+                pending_.clear();
+                available_ = 0;
+            }
             return block;
         }
     };
