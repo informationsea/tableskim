@@ -222,11 +222,9 @@ TEST_CASE("merged.ods and multisheet.ods")
     CHECK(cellText(*sales, 0, 0) == "2026-01-01");
 }
 
-TEST_CASE("large.ods: blocks, sorting and no memory checkpoints")
+TEST_CASE("large.ods: blocks and sorting")
 {
-    TableModel::Options options;
-    options.memory_checkpoints = {1};
-    auto book = TableBook::open(kDemoData / "large.ods", {}, BackendRegistry::builtin(), options);
+    auto book = TableBook::open(kDemoData / "large.ods");
     auto model = openSheet(*book, "large");
     CHECK(model->rowCount() == RowCount{10000, RowCount::Kind::Exact});
     CHECK(cellText(*model, 9999, 0) == "10000");
@@ -417,6 +415,94 @@ TEST_CASE("ODS repeats are bounded")
         CHECK(wide->columnCount() == 16384);
     }
     std::filesystem::remove(path);
+}
+
+TEST_CASE("ODS rows are parsed as they are read")
+{
+    // Rows that are small in the file and wide once read: 400 rows of
+    // 16,384 cells would take about 250 MiB if the piece of XML they share
+    // were turned into rows at once.
+    const size_t rows = 400;
+    const std::string row = "<table:table-row>" +
+                            cell(R"(table:number-columns-repeated="16384" office:value-type="float" office:value="1")") +
+                            "</table:table-row>";
+    std::string tables = R"(<table:table table:name="Wide">)";
+    for (size_t i = 0; i < rows; ++i)
+        tables += row;
+    tables += "</table:table>";
+    const auto path = writeOds("tableskim-test-wide-rows.ods", odsContent(tables));
+    {
+        // The reading pauses at the checkpoint, as for a text file: had the
+        // rows been made at once, it would be far past it by then.
+        TableModel::Options options;
+        options.block_rows = 8;
+        options.memory_checkpoints = {size_t{16} << 20};
+        options.memory_checkpoint_interval = 0;
+        auto book =
+            TableBook::open(path, {.header = OpenOptions::Header::No}, BackendRegistry::builtin(), options);
+        auto model = openSheet(*book, "Wide");
+        CHECK(model->rowCount() == RowCount{rows, RowCount::Kind::Exact});
+        CHECK(cellText(*model, 0, 16383) == "1");
+        CHECK_FALSE(model->memoryCheckpoint().has_value());
+        model->setView({.sort = {{.column = 0, .ascending = false}}});
+        REQUIRE(waitFor([&]
+                        { return model->memoryCheckpoint().has_value(); }));
+        const auto checkpoint = *model->memoryCheckpoint();
+        CHECK(checkpoint.bytes >= size_t{16} << 20);
+        CHECK(checkpoint.bytes < size_t{32} << 20);
+        CHECK(checkpoint.rows < 100);
+        model->stopReading();
+        REQUIRE(waitFor([&]
+                        { return model->readingStopped(); }));
+        CHECK(model->rowCount().value == checkpoint.rows);
+    }
+    {
+        // Rows wanted late are still there after the parser's pauses.
+        TableModel::Options options;
+        options.memory_checkpoints.clear();
+        options.memory_checkpoint_interval = 0;
+        auto book =
+            TableBook::open(path, {.header = OpenOptions::Header::No}, BackendRegistry::builtin(), options);
+        auto model = openSheet(*book, "Wide");
+        CHECK(cellText(*model, 100, 16383) == "1");
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("ODS row too large to hold is refused")
+{
+    // A megabyte of text in 16,384 cells: 16 GiB in one row.
+    const std::string tables =
+        R"(<table:table table:name="Bomb"><table:table-row>)" +
+        cell(R"(table:number-columns-repeated="16384" office:value-type="string")", std::string(1 << 20, 'x')) +
+        "</table:table-row></table:table>";
+    const auto path = writeOds("tableskim-test-row-bomb.ods", odsContent(tables));
+    try
+    {
+        TableBook::open(path);
+        FAIL("opened");
+    }
+    catch (const std::runtime_error &error)
+    {
+        CHECK(std::string(error.what()).find("too large") != std::string::npos);
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("ODS file is closed once its sheets are read")
+{
+    const auto path = writeOds("tableskim-test-closed.ods",
+                               odsContent(R"(<table:table table:name="A"><table:table-row>)" +
+                                          cell(R"(office:value-type="string")", "a") +
+                                          "</table:table-row></table:table>"));
+    auto book = TableBook::open(path, {.header = OpenOptions::Header::No});
+    auto model = openSheet(*book, "A");
+    CHECK(cellText(*model, 0, 0) == "a");
+    // Windows refuses to remove a file that is still open.
+    std::error_code error;
+    CHECK(std::filesystem::remove(path, error));
+    CHECK_FALSE(error);
+    CHECK(cellText(*model, 0, 0) == "a");
 }
 
 TEST_CASE("ODS header option and namespace prefixes")

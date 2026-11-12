@@ -104,6 +104,9 @@ row.
 - Merged cells and the first row behave as in Excel files.
 - Opening the file reads it through once, to find the sheets, their number
   of rows and their merged cells; each sheet is then read as you scroll.
+- The rows read are kept in memory, and repeated rows and cells take far
+  less room in the file than in memory, so reading pauses to ask whether
+  to continue as for [large text files](#large-text-files-and-memory).
 - Password-protected files cannot be opened.
 
 ## Parquet

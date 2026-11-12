@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <deque>
 #include <exception>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -21,6 +22,10 @@ namespace
     constexpr size_t kMaxRows = size_t{1} << 24;
     constexpr size_t kMaxColumns = 16384;
     constexpr size_t kMaxMerges = size_t{1} << 20;
+    // One row is held whole, and number-columns-repeated copies a cell's
+    // text: a row larger than this (by RowBlock's estimate) is refused, so
+    // that a long text repeated over a row cannot take gigabytes.
+    constexpr size_t kMaxRowBytes = size_t{64} << 20;
     // Reads of a file are dear in a browser: parse in large pieces.
     constexpr size_t kParseChunk = 1 << 20;
     constexpr std::string_view kMimeType = "application/vnd.oasis.opendocument.spreadsheet";
@@ -201,7 +206,9 @@ namespace
         virtual bool beginSheet(size_t index, std::string_view name) = 0;
         // `repeat` rows equal to `row` (empty: empty rows) start at sheet
         // row `index`; rows come in order, without gaps. `row` may be taken.
-        virtual void row(TableRow &row, size_t index, size_t repeat) = 0;
+        // Returns whether to go on: after false, parsing pauses until the
+        // next ContentParser::resume().
+        virtual bool row(TableRow &row, size_t index, size_t repeat) = 0;
         // A merged range, in sheet rows (before the row it starts in).
         virtual void merge(const CellRange &range) = 0;
         virtual void endSheet() = 0;
@@ -226,21 +233,19 @@ namespace
         ContentParser(const ContentParser &) = delete;
         ContentParser &operator=(const ContentParser &) = delete;
 
-        // Parses the next piece of the document (`last`: its end). Throws
+        // Parses the next piece of the document (`last`: its end), which
+        // must stay as it is while the parser is paused. Throws
         // std::runtime_error.
         void parse(const char *data, size_t size, bool last)
         {
-            if (XML_Parse(parser_, data, static_cast<int>(size), last ? XML_TRUE : XML_FALSE) == XML_STATUS_ERROR)
-            {
-                if (exception_)
-                    std::rethrow_exception(exception_);
-                if (!error_.empty())
-                    throw std::runtime_error(error_);
-                throw std::runtime_error("Cannot read the ODS file: " +
-                                         std::string(XML_ErrorString(XML_GetErrorCode(parser_))) + " at line " +
-                                         std::to_string(XML_GetCurrentLineNumber64(parser_)) + " of content.xml");
-            }
+            check(XML_Parse(parser_, data, static_cast<int>(size), last ? XML_TRUE : XML_FALSE));
         }
+
+        // Whether a listener paused the parser inside the last piece.
+        bool paused() const { return paused_; }
+
+        // Goes on with the piece the parser was paused in.
+        void resume() { check(XML_ResumeParser(parser_)); }
 
     private:
         struct CellAttributes
@@ -261,6 +266,7 @@ namespace
         ContentListener &listener_;
         std::exception_ptr exception_;
         std::string error_;
+        bool paused_ = false;
 
         size_t depth_ = 0;
         // The depth of the open element of each kind; 0 when none is open.
@@ -275,6 +281,7 @@ namespace
         size_t merge_count_ = 0;
 
         TableRow row_;
+        size_t row_bytes_ = 0; // of row_'s cells
         size_t row_repeat_ = 1;
         size_t column_ = 0;
         size_t pending_empty_ = 0; // empty cells not added yet: the row may end
@@ -285,6 +292,20 @@ namespace
         bool has_paragraph_ = false;
         bool paragraph_has_text_ = false;
         bool space_pending_ = false;
+
+        void check(XML_Status status)
+        {
+            paused_ = status == XML_STATUS_SUSPENDED;
+            if (status != XML_STATUS_ERROR)
+                return;
+            if (exception_)
+                std::rethrow_exception(exception_);
+            if (!error_.empty())
+                throw std::runtime_error(error_);
+            throw std::runtime_error("Cannot read the ODS file: " +
+                                     std::string(XML_ErrorString(XML_GetErrorCode(parser_))) + " at line " +
+                                     std::to_string(XML_GetCurrentLineNumber64(parser_)) + " of content.xml");
+        }
 
         template <typename F>
         void guarded(F &&f)
@@ -460,6 +481,7 @@ namespace
         {
             row_depth_ = depth_;
             row_.clear();
+            row_bytes_ = 0;
             row_merges_.clear();
             column_ = 0;
             pending_empty_ = 0;
@@ -490,8 +512,13 @@ namespace
                 if (merge_count_ >= kMaxMerges)
                     break;
             }
-            listener_.row(row_, row_index_, repeat);
+            const bool go_on = listener_.row(row_, row_index_, repeat);
             row_index_ += repeat;
+            // The rest of the piece waits in expat: without the pause, a
+            // megabyte of XML would become all its rows at once, each as
+            // wide as its repeated cells make it.
+            if (!go_on)
+                XML_StopParser(parser_, XML_TRUE);
         }
 
         void startCell(const XML_Char **attributes)
@@ -632,6 +659,14 @@ namespace
                 pending_empty_ += repeat;
             else
             {
+                // As RowBlock::approxBytes() counts a cell.
+                size_t cell_bytes = sizeof(CellValue);
+                if (const auto *text = std::get_if<std::string>(&value))
+                    cell_bytes += text->capacity();
+                if (cell_bytes > (kMaxRowBytes - row_bytes_) / repeat)
+                    throw std::runtime_error("Cannot read the ODS file: row " + std::to_string(row_index_ + 1) +
+                                             " of a sheet is too large");
+                row_bytes_ += cell_bytes * repeat;
                 row_.resize(row_.size() + pending_empty_);
                 pending_empty_ = 0;
                 row_.insert(row_.end(), repeat - 1, value);
@@ -650,15 +685,21 @@ namespace
         {
         }
 
-        // Parses the next piece; false once the whole document is parsed.
+        // Parses on, to the end of the next piece or until the listener
+        // pauses; false once the whole document is parsed.
         bool step()
         {
-            if (done_)
-                return false;
-            const size_t got = reader_.read(buffer_.data(), buffer_.size());
-            done_ = got == 0;
-            parser_.parse(buffer_.data(), got, done_);
-            return !done_;
+            if (parser_.paused())
+                parser_.resume();
+            else
+            {
+                if (done_)
+                    return false;
+                const size_t got = reader_.read(buffer_.data(), buffer_.size());
+                done_ = got == 0;
+                parser_.parse(buffer_.data(), got, done_);
+            }
+            return parser_.paused() || !done_;
         }
 
     private:
@@ -682,13 +723,14 @@ namespace
 
         bool beginSheet(size_t, std::string_view name) override
         {
-            sheets.push_back({.name = std::string(name)});
+            sheets.emplace_back().name = name;
             return true;
         }
-        void row(TableRow &row, size_t index, size_t repeat) override
+        bool row(TableRow &row, size_t index, size_t repeat) override
         {
             if (!row.empty())
                 sheets.back().rows = std::max(sheets.back().rows, index + repeat);
+            return true;
         }
         void merge(const CellRange &range) override
         {
@@ -720,9 +762,12 @@ namespace
         std::shared_ptr<const OdsWorkbook> book_;
         size_t index_;
         size_t total_rows_; // sheet rows shown, the header included
-        ContentStream stream_;
+        // Closed at the end of the sheet: the file handle would keep the
+        // file from being replaced on Windows while the sheet is shown.
+        std::optional<ContentStream> stream_;
         std::deque<Pending> pending_;
         size_t available_ = 0; // rows in pending_
+        size_t wanted_ = 0;    // rows fill() is parsing for
         bool sheet_done_ = false;
         size_t next_sheet_row_ = 0; // sheet rows taken from pending_ (or padded)
         size_t next_row_ = 0;       // next data row index
@@ -731,10 +776,11 @@ namespace
         std::vector<CellRange> merged_;
 
         bool beginSheet(size_t index, std::string_view) override { return index == index_; }
-        void row(TableRow &row, size_t, size_t repeat) override
+        bool row(TableRow &row, size_t, size_t repeat) override
         {
             pending_.push_back({std::move(row), repeat});
             available_ += repeat;
+            return available_ < wanted_;
         }
         void merge(const CellRange &) override {}
         void endSheet() override { sheet_done_ = true; }
@@ -742,9 +788,12 @@ namespace
         // Parses until `rows` rows are waiting, or the sheet has ended.
         void fill(size_t rows)
         {
-            while (available_ < rows && !sheet_done_ && stream_.step())
+            wanted_ = rows;
+            while (available_ < rows && !sheet_done_ && stream_ && stream_->step())
             {
             }
+            if (sheet_done_ || available_ < rows)
+                stream_.reset(); // nothing more to come
         }
 
         // The next sheet row; past the rows parsed, an empty row (merged
@@ -781,7 +830,7 @@ namespace
     public:
         OdsSheetSource(std::shared_ptr<const OdsWorkbook> book, size_t index, const OpenOptions &options)
             : book_(std::move(book)), index_(index), total_rows_(book_->sheets[index].rows),
-              stream_(book_->archive, *book_->content, *this)
+              stream_(std::in_place, book_->archive, *book_->content, static_cast<ContentListener &>(*this))
         {
             if (options.header != OpenOptions::Header::No && total_rows_ > 0)
             {
@@ -877,6 +926,9 @@ namespace
 
         std::vector<std::string> sheetNames() override { return sheet_names_; }
         bool usesHeaderOption() const override { return true; }
+        // Rows are read as they are asked for and repeated rows are small
+        // in the file, so a sheet can take far more memory than its file.
+        bool pausesAtMemoryCheckpoints() const override { return true; }
 
         std::unique_ptr<SheetSource> openSheet(const std::string &sheet_name) override
         {

@@ -216,7 +216,11 @@ read their header comments before changing anything in `src/common/`.
   sheets, turning rows into `RowBlock`s as they are read. Repeated rows and
   cells (`number-rows-repeated`, LibreOffice's filler to 1,048,576 rows)
   are kept as counts and trailing empty ones dropped; repeats are capped at
-  LibreOffice's largest sheet. Read-only (no `edits`).
+  LibreOffice's largest sheet. The sheet's parser pauses at each row once
+  the rows asked for are there (`XML_StopParser()`, resumable), so the
+  rows of a piece of XML are not all made at once, a row over
+  `kMaxRowBytes` is refused, and the file is closed at the sheet's end.
+  Read-only (no `edits`).
 - The SQLite backend (`table_sqlite.cxx`) uses the SQLite C API directly. Its
   filters call `cellMatchesCondition()` (the in-memory semantics) as an SQL
   function; a sort/filter is built once into a TEMP table of row positions.
@@ -225,7 +229,8 @@ read their header comments before changing anything in `src/common/`.
   `query_pushdown = true` means sort/filter are delegated via `applyView()`.
   Without pushdown, sort/filter are done in memory over every row, which
   sequential sources keep cached once read (no eviction). For CSV/TSV
-  (`TableBook` turns it off for other formats), reading pauses when the
+  and ODS (`DataSource::pausesAtMemoryCheckpoints()`; `TableBook` turns it
+  off for other formats), reading pauses when the
   cached rows reach each of `Options::memory_checkpoints` (100 MiB,
   500 MiB, 1 GiB) and then each multiple of `memory_checkpoint_interval`
   (2 GiB), by `RowBlock::approxBytes()`: `loadBlock()` does nothing while
