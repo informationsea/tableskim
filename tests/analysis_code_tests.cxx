@@ -91,6 +91,15 @@ TEST_CASE("codeSourceOf: format, options, names and kinds of an opened file")
         CHECK(source.format == CodeFormat::Excel);
         CHECK(source.table == opened.model->name());
     }
+    SECTION("OpenDocument names the sheet")
+    {
+        const auto path = kDemoData / "multisheet.ods";
+        const Opened opened = openSheet(path, "People");
+        const CodeSource source = codeSourceOf(path, *opened.book, *opened.model);
+        CHECK(source.format == CodeFormat::Ods);
+        CHECK(source.table == "People");
+        CHECK(source.header == opened.model->hasHeader());
+    }
     SECTION("A delimiter given when opening")
     {
         const Opened opened = openSheet(kDemoData / "normal.csv");
@@ -106,6 +115,15 @@ TEST_CASE("codeFormatOf: by the extension, and databases by their header")
     CHECK(codeFormatOf(kDemoData / "normal.ndjson", false) == CodeFormat::NdJson);
     CHECK(codeFormatOf(kDemoData / "normal.jsonl.gz", false) == CodeFormat::NdJson);
     CHECK(codeFormatOf(kDemoData / "normal.xlsx", false) == CodeFormat::Excel);
+    CHECK(codeFormatOf(kDemoData / "normal.ods", false) == CodeFormat::Ods);
+    CHECK(codeFormatOf("template.OTS", false) == CodeFormat::Ods);
+    {
+        // Told by its contents under another name.
+        const auto copy = std::filesystem::temp_directory_path() / "tableskim-test-code-ods.bin";
+        std::filesystem::copy_file(kDemoData / "normal.ods", copy, std::filesystem::copy_options::overwrite_existing);
+        CHECK(codeFormatOf(copy, false) == CodeFormat::Ods);
+        std::filesystem::remove(copy);
+    }
     CHECK(codeFormatOf(kDemoData / "demo.sqlite3", false) == CodeFormat::Sqlite);
     CHECK(codeFormatOf(kDemoData / "demo.duckdb", false) == CodeFormat::DuckDb);
     CHECK(codeFormatOf(kDemoData / "normal.csv.gz", true) == CodeFormat::Text);
@@ -199,6 +217,24 @@ TEST_CASE("analysisCode: reading the file")
         CHECK(contains(analysisCode(spec, CodeLanguage::R), "read_excel(path, sheet = \"Sheet 2\")"));
         CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "pl.read_excel(path, sheet_name=\"Sheet 2\")"));
         CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "pd.read_excel(path, sheet_name=\"Sheet 2\")"));
+    }
+    SECTION("OpenDocument")
+    {
+        spec.source.path = "/data/book.ods";
+        spec.source.format = CodeFormat::Ods;
+        spec.source.table = "Sheet 2";
+        CHECK(contains(analysisCode(spec, CodeLanguage::R), "library(readODS)\n"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::R), "df <- read_ods(path, sheet = \"Sheet 2\")\n"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "pl.read_excel(path, sheet_name=\"Sheet 2\")"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Pandas),
+                       "pd.read_excel(path, engine=\"odf\", sheet_name=\"Sheet 2\")"));
+        spec.source.header = false;
+        spec.source.columns = {"A", "B"};
+        CHECK(contains(analysisCode(spec, CodeLanguage::R),
+                       "df <- read_ods(path, sheet = \"Sheet 2\", col_names = FALSE)\nnames(df) <- c(\"A\", \"B\")\n"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "has_header=False"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "df.columns = [\"A\", \"B\"]\n"));
+        CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "header=None, names=[\"A\", \"B\"]"));
     }
     SECTION("Databases")
     {
@@ -635,6 +671,8 @@ TEST_CASE("analysisCode: write runnable examples", "[.analysis-code-run]")
          [](AnalysisCodeSpec &spec) { spec.view.filter = Filter{.conditions = {{3, FilterOp::Greater, "30"}}}; }},
         {"bz2", "normal.csv.bz2", "", [](AnalysisCodeSpec &) {}},
         {"xlsx", "normal.xlsx", "", [](AnalysisCodeSpec &spec)
+         { spec.view.filter = Filter{.conditions = {{7, FilterOp::GreaterEqual, "1990-01-01"}}}; }},
+        {"ods", "normal.ods", "", [](AnalysisCodeSpec &spec)
          { spec.view.filter = Filter{.conditions = {{7, FilterOp::GreaterEqual, "1990-01-01"}}}; }},
         {"parquet", "normal.parquet", "", [](AnalysisCodeSpec &spec)
          { spec.analysis = ScatterCodeSpec{.x_column = 7, .y_column = 6}; }},

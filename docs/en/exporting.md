@@ -115,9 +115,9 @@ Three languages are written:
 
 | Language                      | Libraries                                   | Suggested name             |
 | ----------------------------- | ------------------------------------------- | -------------------------- |
-| R (tidyverse)                 | readr, dplyr, ggplot2 (readxl, arrow, jsonlite, DBI for other formats) | `sales-histogram.R`        |
+| R (tidyverse)                 | readr, dplyr, ggplot2 (readxl, readODS, arrow, jsonlite, DBI for other formats) | `sales-histogram.R`        |
 | Python (polars + plotnine)    | polars, plotnine (duckdb, fastexcel as needed) | `sales-histogram-polars.py` |
-| Python (pandas + matplotlib)  | pandas, matplotlib (duckdb, openpyxl as needed) | `sales-histogram-pandas.py` |
+| Python (pandas + matplotlib)  | pandas, matplotlib (duckdb, openpyxl, odfpy as needed) | `sales-histogram-pandas.py` |
 
 For example, a histogram of `Salary` stacked by `Active`, over the rows
 with `Age` above 40, becomes in R:

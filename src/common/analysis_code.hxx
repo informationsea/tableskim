@@ -44,6 +44,7 @@ enum class CodeFormat
 {
     Text, // CSV, TSV, ... (compressed too)
     Excel,
+    Ods, // OpenDocument spreadsheets
     Parquet,
     Json,
     NdJson,

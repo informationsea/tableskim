@@ -586,6 +586,20 @@ namespace
                 out += "df <- " + call("read_excel", args, language_) + "\n";
                 break;
             }
+            case CodeFormat::Ods:
+            {
+                imports_.insert("library(readODS)");
+                std::vector<std::string> args = {"path"};
+                if (!source_.table.empty())
+                    args.push_back("sheet = " + literal(source_.table));
+                // read_ods() takes no names: only whether the first row has them.
+                if (!source_.header)
+                    args.push_back("col_names = FALSE");
+                out += "df <- " + call("read_ods", args, language_) + "\n";
+                if (!source_.header)
+                    out += "names(df) <- " + literalList(names, language_) + "\n";
+                break;
+            }
             case CodeFormat::Parquet:
                 imports_.insert("library(arrow)");
                 out += "df <- read_parquet(path)\n";
@@ -1039,6 +1053,7 @@ namespace
                 break;
             }
             case CodeFormat::Excel:
+            case CodeFormat::Ods: // read alike, by its contents
             {
                 std::vector<std::string> args = {"path"};
                 if (!source_.table.empty())
@@ -1368,8 +1383,12 @@ namespace
                 break;
             }
             case CodeFormat::Excel:
+            case CodeFormat::Ods:
             {
                 std::vector<std::string> args = {"path"};
+                // Named: pandas tells the engine by the extension otherwise.
+                if (source_.format == CodeFormat::Ods)
+                    args.push_back("engine=\"odf\"");
                 if (!source_.table.empty())
                     args.push_back("sheet_name=" + literal(source_.table));
                 if (!source_.header)
@@ -1689,10 +1708,17 @@ CodeFormat codeFormatOf(const std::filesystem::path &path, bool text_format)
         return CodeFormat::NdJson;
     if (extension == ".json")
         return CodeFormat::Json;
-    // Databases by their header: ".db" may be either.
-    std::array<char, 16> head{};
+    if (extension == ".ods" || extension == ".ots")
+        return CodeFormat::Ods;
+    // Databases by their header: ".db" may be either. An OpenDocument
+    // spreadsheet of another name starts with its "mimetype" ZIP entry.
+    std::array<char, 96> head{};
     std::ifstream in(path, std::ios::binary);
     in.read(head.data(), head.size());
+    if (std::string_view(head.data(), 4) == std::string_view("PK\x03\x04", 4) &&
+        std::string_view(head.data(), head.size())
+                .find("mimetypeapplication/vnd.oasis.opendocument.spreadsheet") != std::string_view::npos)
+        return CodeFormat::Ods;
     if (std::string_view(head.data(), 16) == std::string_view("SQLite format 3\0", 16))
         return CodeFormat::Sqlite;
     if (std::string_view(head.data() + 8, 4) == "DUCK")
@@ -1710,8 +1736,8 @@ CodeSource codeSourceOf(const std::filesystem::path &path, const TableBook &book
     CodeSource source;
     source.path = utf8String(path);
     source.format = codeFormatOf(path, book.isTextFormat());
-    if (source.format == CodeFormat::Excel || source.format == CodeFormat::Sqlite ||
-        source.format == CodeFormat::DuckDb)
+    if (source.format == CodeFormat::Excel || source.format == CodeFormat::Ods ||
+        source.format == CodeFormat::Sqlite || source.format == CodeFormat::DuckDb)
         source.table = model.name();
     if (source.format == CodeFormat::Text)
     {
@@ -1727,7 +1753,7 @@ CodeSource codeSourceOf(const std::filesystem::path &path, const TableBook &book
         source.skip_meta_lines = book.skipsMetaLines();
         source.encoding = book.textEncoding().value_or(TextEncoding::Utf8);
     }
-    if (source.format == CodeFormat::Text || source.format == CodeFormat::Excel)
+    if (source.format == CodeFormat::Text || source.format == CodeFormat::Excel || source.format == CodeFormat::Ods)
         source.header = model.hasHeader();
     const size_t columns = model.columnCount();
     const std::vector<ColumnType> types = model.columnTypes();

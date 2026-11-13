@@ -76,9 +76,9 @@ TableSkim で行った解析を R や Python で再現するコードを書き�
 
 | 言語                          | ライブラリ                                   | 名前の候補                 |
 | ----------------------------- | -------------------------------------------- | -------------------------- |
-| R (tidyverse)                 | readr、dplyr、ggplot2（ほかの形式では readxl、arrow、jsonlite、DBI） | `sales-histogram.R`        |
+| R (tidyverse)                 | readr、dplyr、ggplot2（ほかの形式では readxl、readODS、arrow、jsonlite、DBI） | `sales-histogram.R`        |
 | Python (polars + plotnine)    | polars、plotnine（必要に応じて duckdb、fastexcel） | `sales-histogram-polars.py` |
-| Python (pandas + matplotlib)  | pandas、matplotlib（必要に応じて duckdb、openpyxl） | `sales-histogram-pandas.py` |
+| Python (pandas + matplotlib)  | pandas、matplotlib（必要に応じて duckdb、openpyxl、odfpy） | `sales-histogram-pandas.py` |
 
 たとえば `Age` が 40 より大きい行について、`Active` で積み上げた `Salary` のヒストグラムは、R では次のようになります。
 
