@@ -106,7 +106,7 @@ tableskim --encoding cp932 old.csv # read a Shift_JIS CSV file
 | ------------------- | ------------------------------------------------------------------- |
 | `-t`, `--tui`       | Use the terminal UI even if a graphical display is available        |
 | `--encoding <name>` | Encoding of CSV / TSV files: `auto` (default), `utf-8`, `utf-16le`, `utf-16be` or `cp932` (`shift_jis`) |
-| `--header <when>`   | Whether the first row of CSV / TSV files and Excel sheets holds the column names: `auto` (default), `yes` or `no` |
+| `--header <when>`   | Whether the first row of CSV / TSV files and Excel / ODS sheets holds the column names: `auto` (default), `yes` or `no` |
 | `--log <file>`      | Write log messages to a file                                        |
 | `-v`, `--verbose`   | Enable verbose (debug) logging                                      |
 | `-V`, `--version`   | Show version information and exit                                   |

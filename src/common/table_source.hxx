@@ -133,6 +133,10 @@ public:
     // Delimited text (CSV, TSV, ...): OpenOptions::skip_meta_lines and encoding apply,
     // and the file can be converted with convertToParquet().
     virtual bool isTextFormat() const { return false; }
+    // Whether reading pauses at TableModel::Options::memory_checkpoints:
+    // formats whose rows are read as they are asked for and then kept
+    // (text files, ODS). The others hold the file in memory anyway.
+    virtual bool pausesAtMemoryCheckpoints() const { return isTextFormat(); }
     // Whether lines starting with "##" are dropped, after applying the default.
     virtual bool skipsMetaLines() const { return false; }
     // Text formats: the encoding the file is read in, after detection.

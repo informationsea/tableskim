@@ -23,8 +23,8 @@ that reads files without uploading them, and in Visual Studio Code as an
 
 ## Features
 
-- **CSV / TSV** and **Excel (`.xlsx`, `.xlsm`)** files, including workbooks
-  with multiple sheets
+- **CSV / TSV**, **Excel (`.xlsx`, `.xlsm`)** and **OpenDocument
+  (`.ods`)** files, including workbooks with multiple sheets
 - CSV / TSV compressed with gzip, bzip2, xz or zstd (e.g. `data.csv.gz`)
   are decompressed on the fly
 - CSV / TSV in UTF-8 (with or without a BOM), UTF-16 (with or without a
@@ -125,7 +125,7 @@ line (it exits with an error otherwise).
 | `-t`, `--tui`     | Use the terminal UI even if a graphical display is available |
 | `--log <file>`    | Write log messages to a file                              |
 | `--encoding <name>` | Encoding of CSV / TSV files: `auto` (default), `utf-8`, `utf-16le`, `utf-16be` or `cp932` (`shift_jis`) |
-| `--header <when>` | Whether the first row of CSV / TSV files and Excel sheets holds the column names: `auto` (default), `yes` or `no` |
+| `--header <when>` | Whether the first row of CSV / TSV files and Excel / ODS sheets holds the column names: `auto` (default), `yes` or `no` |
 | `-v`, `--verbose` | Enable verbose (debug) logging                            |
 | `-V`, `--version` | Show version information and exit                         |
 

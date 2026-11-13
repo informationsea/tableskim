@@ -40,7 +40,7 @@ std::optional<int> parseCommandLine(const std::vector<std::string> &args, Comman
             "ENCODING"));
     std::string header = "auto";
     app.add_option("--header", header,
-                   "Whether the first row of CSV / TSV files and Excel sheets holds the column names: auto "
+                   "Whether the first row of CSV / TSV files and Excel / ODS sheets holds the column names: auto "
                    "(default), yes or no")
         ->check(CLI::Validator(
             [](std::string &value) -> std::string

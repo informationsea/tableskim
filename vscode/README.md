@@ -14,7 +14,7 @@ available as a desktop app and a web app, as an editor in VS Code.
 ## Features
 
 - **Many formats**: CSV, TSV and VCF, compressed with gzip, bzip2, xz or
-  zstd too; Excel (`.xlsx`, `.xlsm`); Parquet; JSON and NDJSON; DuckDB and
+  zstd too; Excel (`.xlsx`, `.xlsm`); OpenDocument (`.ods`); Parquet; JSON and NDJSON; DuckDB and
   SQLite databases, a sheet per table. The text encoding of CSV and TSV
   files (UTF-8, UTF-16 or Shift_JIS / CP932) is detected.
 - **Sort and filter**: sort by columns, and filter rows by conditions on

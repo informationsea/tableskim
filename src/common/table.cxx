@@ -3132,7 +3132,7 @@ TableBook::TableBook(std::unique_ptr<DataSource> data_source, TableModel::Option
     sheet_names_ = data_source_->sheetNames();
     uses_header_option_ = data_source_->usesHeaderOption();
     is_text_format_ = data_source_->isTextFormat();
-    if (!is_text_format_)
+    if (!data_source_->pausesAtMemoryCheckpoints())
     {
         model_options_.memory_checkpoints.clear();
         model_options_.memory_checkpoint_interval = 0;

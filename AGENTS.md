@@ -5,7 +5,7 @@ Guidance for coding agents working on TableSkim.
 ## Project overview
 
 TableSkim is a lightweight viewer for tabular files (CSV/TSV/VCF, optionally
-gzip/bzip2/xz/zstd compressed, Excel, DuckDB, SQLite, Parquet and JSON / NDJSON). It is written in C++20 and has two
+gzip/bzip2/xz/zstd compressed, Excel, OpenDocument spreadsheets, DuckDB, SQLite, Parquet and JSON / NDJSON). It is written in C++20 and has two
 frontends sharing one core library, linked into a single executable:
 
 | Target             | Sources                            | Notes                                                    |
@@ -26,7 +26,7 @@ from the same `main.cxx` without `TABLESKIM_HAS_GUI`). Add new options
 there so both frontends get them.
 
 All third-party dependencies (FLTK, DuckDB, SQLite, OpenXLSX, csv-parser,
-Catch2, FTXUI, CLI11, spdlog, zlib, bzip2, xz, zstd, RE2, Abseil) are pulled with `FetchContent` in
+Catch2, FTXUI, CLI11, spdlog, zlib, bzip2, xz, zstd, expat, RE2, Abseil) are pulled with `FetchContent` in
 `cmake/Dependencies.cmake` and linked statically (OpenXLSX is patched at
 every configure by `cmake/patches/openxlsx.cmake`, which must leave patched
 files alone). Linux GUI builds also need system development packages for
@@ -137,7 +137,7 @@ ctest --preset debug -j 8            # test cases in parallel
 ### Demo / test data
 
 `demo/data/` contains generated sample files (normal, ragged, large, dates,
-multilingual, multi-sheet, merged cells) in CSV, XLSX, Parquet, SQLite and
+multilingual, multi-sheet, merged cells) in CSV, XLSX, ODS, Parquet, SQLite and
 DuckDB formats, plus compressed CSV/TSV (`normal.csv.{gz,bz2,xz,zst}`,
 `large.tsv.gz`) and CSV/TSV in other encodings (`normal-cp932.csv`,
 `normal-utf16le-bom.tsv`, ..., `cp932-sample.csv`) and JSON (`normal.json`,
@@ -153,8 +153,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Do not edit the files in `demo/data/` by hand; change `create-demo-data.py`
 and regenerate.
 
-`super-large.csv.xz`, `super-large.xlsx` and `super-large.parquet` (zstd,
-1,000,000 rows) are generated
+`super-large.csv.xz`, `super-large.xlsx`, `super-large.ods` and
+`super-large.parquet` (zstd, 1,000,000 rows) are generated
 too but are not committed (see `demo/.gitignore`); `--no-super-large` skips
 them. Their tests are hidden and run only on request:
 
@@ -190,7 +190,7 @@ read their header comments before changing anything in `src/common/`.
   path and leading bytes. Built-in backends are registered in
   `table_registry.cxx` (`registerCsvBackend`, `registerExcelBackend`,
   `registerDuckDbBackend`, `registerParquetBackend`, `registerSqliteBackend`,
-  `registerJsonBackend`).
+  `registerJsonBackend`, `registerOdsBackend`).
   To add a format: create `table_<format>.{hxx,cxx}`, implement the two
   interfaces, register it in `table_registry.cxx`, add the files to
   `tableskim-common` in `CMakeLists.txt`, and add `tests/table_<format>_tests.cxx`.
@@ -207,6 +207,20 @@ read their header comments before changing anything in `src/common/`.
   and `table_json.cxx`). Their DuckDB extensions are linked statically:
   add new ones to `BUILD_EXTENSIONS` and the link lists in
   `cmake/Dependencies.cmake`, since autoloading is off.
+- The ODS backend (`table_ods.cxx`) streams `content.xml` out of the ZIP
+  archive (`ZipArchive` / `ZipEntryReader` in `zip_reader.{hxx,cxx}`, on
+  zlib) into expat, never holding the document: the `DataSource`
+  constructor parses it once for the sheet names, row counts and merged
+  cells (`mergedCells()` and an exact `rowCount()` are needed when a sheet
+  opens), and each `SheetSource` parses it again, skipping the other
+  sheets, turning rows into `RowBlock`s as they are read. Repeated rows and
+  cells (`number-rows-repeated`, LibreOffice's filler to 1,048,576 rows)
+  are kept as counts and trailing empty ones dropped; repeats are capped at
+  LibreOffice's largest sheet. The sheet's parser pauses at each row once
+  the rows asked for are there (`XML_StopParser()`, resumable), so the
+  rows of a piece of XML are not all made at once, a row over
+  `kMaxRowBytes` is refused, and the file is closed at the sheet's end.
+  Read-only (no `edits`).
 - The SQLite backend (`table_sqlite.cxx`) uses the SQLite C API directly. Its
   filters call `cellMatchesCondition()` (the in-memory semantics) as an SQL
   function; a sort/filter is built once into a TEMP table of row positions.
@@ -215,7 +229,8 @@ read their header comments before changing anything in `src/common/`.
   `query_pushdown = true` means sort/filter are delegated via `applyView()`.
   Without pushdown, sort/filter are done in memory over every row, which
   sequential sources keep cached once read (no eviction). For CSV/TSV
-  (`TableBook` turns it off for other formats), reading pauses when the
+  and ODS (`DataSource::pausesAtMemoryCheckpoints()`; `TableBook` turns it
+  off for other formats), reading pauses when the
   cached rows reach each of `Options::memory_checkpoints` (100 MiB,
   500 MiB, 1 GiB) and then each multiple of `memory_checkpoint_interval`
   (2 GiB), by `RowBlock::approxBytes()`: `loadBlock()` does nothing while

@@ -82,7 +82,7 @@ namespace
         {"F", "Clear the filter"},
         {"y, c", "Copy the selection (tab-separated)"},
         {"s", "Show / hide the sidebar"},
-        {"H", "First row: switch between the guess and header / data (CSV / TSV / Excel)"},
+        {"H", "First row: switch between the guess and header / data (CSV / TSV / Excel / ODS)"},
         {"#", "Skip lines starting with ## (on by default for VCF)"},
         {"E", "Next text encoding: UTF-8, UTF-16LE, UTF-16BE, Shift_JIS (CP932)"},
         {":", "Run SQL (DuckDB / SQLite / Parquet / JSON); a SELECT is shown as a sheet"},

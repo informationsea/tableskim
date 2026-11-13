@@ -1093,7 +1093,7 @@ namespace
         Fl_Native_File_Chooser chooser;
         chooser.title("Open File");
         chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
-        chooser.filter("All Supported Files\t*.{csv,tsv,tab,txt,vcf,xlsx,xlsm,parquet,json,jsonl,ndjson,duckdb,ddb,sqlite,sqlite3,db,db3,gz,bgz,bz2,xz,zst}\nCSV Files\t*.{csv,csv.gz,csv.bz2,csv.xz,csv.zst}\nTSV Files\t*.{tsv,tab,tsv.gz,tsv.bz2,tsv.xz,tsv.zst}\nVCF Files\t*.{vcf,vcf.gz,vcf.bgz}\nExcel Files\t*.{xlsx,xlsm}\nParquet Files\t*.parquet\nJSON Files\t*.{json,jsonl,ndjson,json.gz,jsonl.gz,ndjson.gz,json.zst,jsonl.zst,ndjson.zst}\nDuckDB Files\t*.{duckdb,ddb}\nSQLite Files\t*.{sqlite,sqlite3,db,db3}\nAll Files\t*");
+        chooser.filter("All Supported Files\t*.{csv,tsv,tab,txt,vcf,xlsx,xlsm,ods,ots,parquet,json,jsonl,ndjson,duckdb,ddb,sqlite,sqlite3,db,db3,gz,bgz,bz2,xz,zst}\nCSV Files\t*.{csv,csv.gz,csv.bz2,csv.xz,csv.zst}\nTSV Files\t*.{tsv,tab,tsv.gz,tsv.bz2,tsv.xz,tsv.zst}\nVCF Files\t*.{vcf,vcf.gz,vcf.bgz}\nExcel Files\t*.{xlsx,xlsm}\nOpenDocument Spreadsheets\t*.{ods,ots}\nParquet Files\t*.parquet\nJSON Files\t*.{json,jsonl,ndjson,json.gz,jsonl.gz,ndjson.gz,json.zst,jsonl.zst,ndjson.zst}\nDuckDB Files\t*.{duckdb,ddb}\nSQLite Files\t*.{sqlite,sqlite3,db,db3}\nAll Files\t*");
         int chosen;
         {
             NestedLoopGuard guard;

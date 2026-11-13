@@ -84,6 +84,15 @@
           </uap3:FileTypeAssociation>
         </uap3:Extension>
         <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="ods">
+            <uap:DisplayName>OpenDocument Spreadsheet</uap:DisplayName>
+            <uap:Logo>Assets\FileTypes\ods.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.ods</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
           <uap3:FileTypeAssociation Name="parquet">
             <uap:DisplayName>Parquet File</uap:DisplayName>
             <uap:Logo>Assets\FileTypes\parquet.png</uap:Logo>
