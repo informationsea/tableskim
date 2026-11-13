@@ -15,7 +15,7 @@ if (!version) {
 }
 // The changes of a release are listed under its version before it is tagged.
 const changelog = readFileSync(path.join(extensionDir, 'CHANGELOG.md'), 'utf8');
-if (!changelog.includes(`\n## ${version}`))
+if (!changelog.includes(`\n## v${version}`) && !changelog.includes(`\n## ${version}`))
     console.warn(`CHANGELOG.md has no "## ${version}": rename "## Unreleased" before a release`);
 // The README's images and links relative to it are taken from GitHub, as
 // images/ stays out of the package.

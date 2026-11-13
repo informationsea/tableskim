@@ -491,9 +491,29 @@ jobs:
   # Open VSX token of the namespace informationsea). The package is the
   # one the release attaches. Its changelog must name the version: a
   # release with "## Unreleased" fails here, after the GitHub release.
-  publish-vscode:
+  # A job's `if` cannot read secrets, so this job reports whether a
+  # publishing token is set; without one publish-vscode is skipped.
+  vscode-tokens:
     needs: release
     if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      vsce: ${{ steps.tokens.outputs.vsce }}
+      ovsx: ${{ steps.tokens.outputs.ovsx }}
+    steps:
+      # Only whether each token is set: the tokens themselves go to their
+      # publishing step alone, not to the dependencies' install scripts.
+      - name: Check the publishing tokens
+        id: tokens
+        run: |
+          echo "vsce=${{ secrets.VSCE_PAT != '' }}" >> "$GITHUB_OUTPUT"
+          echo "ovsx=${{ secrets.OVSX_PAT != '' }}" >> "$GITHUB_OUTPUT"
+
+  publish-vscode:
+    needs: [release, vscode-tokens]
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') &&
+      (needs.vscode-tokens.outputs.vsce == 'true' || needs.vscode-tokens.outputs.ovsx == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -502,13 +522,6 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: vscode/package-lock.json
-      # Only whether each token is set: the tokens themselves go to their
-      # publishing step alone, not to the dependencies' install scripts.
-      - name: Check the publishing tokens
-        id: tokens
-        run: |
-          echo "vsce=${{ secrets.VSCE_PAT != '' }}" >> "$GITHUB_OUTPUT"
-          echo "ovsx=${{ secrets.OVSX_PAT != '' }}" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: vscode
@@ -516,7 +529,7 @@ jobs:
       - name: Changelog names the version
         run: |
           version="${GITHUB_REF_NAME#v}"
-          if ! grep -q "^## ${version}\b" vscode/CHANGELOG.md; then
+          if ! grep -Eq "^## v?${version}\b" vscode/CHANGELOG.md; then
             echo "vscode/CHANGELOG.md has no '## ${version}': rename '## Unreleased' before tagging" >&2
             exit 1
           fi
@@ -524,13 +537,13 @@ jobs:
         working-directory: vscode
         run: npm ci --no-audit --no-fund
       - name: Publish to the Visual Studio Marketplace
-        if: steps.tokens.outputs.vsce == 'true'
+        if: needs.vscode-tokens.outputs.vsce == 'true'
         working-directory: vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx vsce publish --packagePath ../dist/tableskim-*-vscode.vsix
       - name: Publish to Open VSX
-        if: steps.tokens.outputs.ovsx == 'true'
+        if: needs.vscode-tokens.outputs.ovsx == 'true'
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx --yes ovsx@1.3.0 publish dist/tableskim-*-vscode.vsix --pat "$OVSX_PAT"
