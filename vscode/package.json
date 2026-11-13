@@ -62,6 +62,9 @@
             "filenamePattern": "*.xlsm"
           },
           {
+            "filenamePattern": "*.ods"
+          },
+          {
             "filenamePattern": "*.duckdb"
           },
           {

@@ -108,6 +108,7 @@ tableskim_add_license("zlib" FETCH zlib FILE LICENSE)
 tableskim_add_license("bzip2" FETCH bzip2 FILE LICENSE)
 tableskim_add_license("liblzma (XZ Utils)" FETCH xz FILE COPYING.0BSD)
 tableskim_add_license("Zstandard" FETCH zstd FILE LICENSE)
+tableskim_add_license("Expat" FETCH expat FILE COPYING)
 tableskim_add_license("RE2" FETCH re2 FILE LICENSE)
 tableskim_add_license("Abseil" FETCH absl FILE LICENSE)
 

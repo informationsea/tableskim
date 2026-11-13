@@ -5,8 +5,8 @@ export function EmptyState({ title }: { title: string }) {
                 {title}
             </p>
             <p className="my-1 max-w-xl text-muted">
-                CSV, TSV, Excel, Parquet, JSON, SQLite and DuckDB files, compressed or not. The file is read here in
-                your browser; it is not uploaded anywhere.
+                CSV, TSV, Excel, OpenDocument, Parquet, JSON, SQLite and DuckDB files, compressed or not. The file is
+                read here in your browser; it is not uploaded anywhere.
             </p>
         </div>
     );

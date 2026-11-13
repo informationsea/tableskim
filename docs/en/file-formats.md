@@ -3,8 +3,8 @@
 [← Contents](README.md)
 
 TableSkim picks the format from the file name and its first bytes. Parquet,
-DuckDB and SQLite files are recognized by their first bytes, so they open
-even with another extension, and text starting with `{` or `[` is read as
+DuckDB, SQLite and OpenDocument spreadsheet files are recognized by their
+first bytes, so they open even with another extension, and text starting with `{` or `[` is read as
 JSON. The extensions below are the usual ones. Every
 format opens in the same kind of window; formats with several tables show
 each table as a **sheet** (a tab at the bottom of the GUI window, or at the
@@ -17,6 +17,7 @@ top of the terminal UI).
 | VCF                   | `.vcf`, `.vcf.gz`, `.vcf.bgz`                      | one                       |
 | Other text            | `.txt` and unknown extensions that look like text  | one                       |
 | Excel                 | `.xlsx`, `.xlsm`                                   | one per worksheet         |
+| OpenDocument          | `.ods`, `.ots`                                     | one per sheet             |
 | Parquet               | `.parquet`                                         | one                       |
 | JSON                  | `.json`, `.ndjson`, `.jsonl`                       | one                       |
 | DuckDB                | `.duckdb`, `.ddb`                                  | one per table and view    |
@@ -90,6 +91,23 @@ row.
 - The value of a merged range is shown in its top-left cell; the other cells
   of the range are empty.
 - The first row is the header or data as for CSV, sheet by sheet.
+
+## OpenDocument spreadsheets
+
+- `.ods` spreadsheets (LibreOffice Calc, and the "OpenDocument" format of
+  other spreadsheet programs) and `.ots` templates are supported; every
+  sheet is a sheet. Cells cannot be edited.
+- Numbers (percentages and currencies as plain numbers), dates, date-times
+  and booleans keep their types. Times and durations are shown as text such
+  as `09:30:15` or `50:03:04`.
+- Formulas show the value the spreadsheet last computed.
+- Merged cells and the first row behave as in Excel files.
+- Opening the file reads it through once, to find the sheets, their number
+  of rows and their merged cells; each sheet is then read as you scroll.
+- The rows read are kept in memory, and repeated rows and cells take far
+  less room in the file than in memory, so reading pauses to ask whether
+  to continue as for [large text files](#large-text-files-and-memory).
+- Password-protected files cannot be opened.
 
 ## Parquet
 
