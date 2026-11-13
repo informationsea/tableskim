@@ -14,6 +14,7 @@
 #include <ftxui/component/app.hpp>
 #include <ftxui/component/component.hpp>
 
+#include "analysis_code.hxx"
 #include "group_by.hxx"
 #include "table.hxx"
 #include "sql_history.hxx"
@@ -72,6 +73,7 @@ private:
         None,
         Convert,
         Export,
+        Code,
     };
     Overwrite confirm_overwrite_ = Overwrite::None; // waiting for y / n
     bool converting_ = false;
@@ -86,6 +88,15 @@ private:
     // The sheet the prompt was opened for; a click on another tab must not
     // export that one instead.
     std::shared_ptr<TableModel> export_model_;
+
+    // Code prompt (K): where to write R or Python code repeating the view,
+    // histogram, density plot or Group By shown (code_spec_, taken when the
+    // prompt opens); Tab picks the language.
+    bool code_prompt_ = false;
+    std::string code_input_;
+    CodeLanguage code_language_ = CodeLanguage::R;
+    std::optional<AnalysisCodeSpec> code_spec_;
+    std::filesystem::path code_target_;
 
     std::string status_message_;
     bool status_is_error_ = false;
@@ -207,6 +218,8 @@ private:
     size_t group_aggregate_ = 0; // the aggregate selected on its line
     std::shared_ptr<const ResultRows> group_result_;
     std::string group_sheet_;
+    // The view and spec that made group_sheet_, for its code.
+    std::optional<AnalysisCodeSpec> group_code_;
 
     // Format dialog (%): edits the format of the cursor's column, applied
     // to it (or the selected columns) with Enter. Lines: thousands
@@ -258,6 +271,12 @@ private:
     ftxui::Element renderExportPrompt();
     void exportTo(const std::string &text);
     void startExport();
+    std::optional<AnalysisCodeSpec> codeSpec(const std::shared_ptr<TableModel> &model, const CodeAnalysis &analysis);
+    void openCodePrompt();
+    bool handleCodePromptEvent(ftxui::Event event);
+    ftxui::Element renderCodePrompt();
+    void codeTo(const std::string &text);
+    void writeCode();
     void copySelection();
     void showHelp();
     void showTextDialog(std::string title, const std::string &text, bool wrap = true);

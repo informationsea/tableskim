@@ -727,11 +727,15 @@ ScatterWindow::ScatterWindow()
     status_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
     const int stats_y = status_y + LINE_HEIGHT;
     const int save_x = WINDOW_WIDTH - MARGIN - SAVE_WIDTH;
-    const int fit_x = save_x - MARGIN - FIT_WIDTH;
+    const int code_x = save_x - MARGIN - SAVE_WIDTH;
+    const int fit_x = code_x - MARGIN - FIT_WIDTH;
     stats_ = new Fl_Box(MARGIN, stats_y, fit_x - 2 * MARGIN, LINE_HEIGHT);
     stats_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
     save_button_ = new Fl_Button(save_x, stats_y, SAVE_WIDTH, LINE_HEIGHT, "Save Image...");
     save_button_->callback(saveCallback, this);
+    code_button_ = new Fl_Button(code_x, stats_y, SAVE_WIDTH, LINE_HEIGHT, "Save Code...");
+    code_button_->callback(codeCallback, this);
+    code_button_->tooltip("Write R or Python code that draws this plot");
     fit_button_ = new Fl_Check_Button(fit_x, stats_y, FIT_WIDTH, LINE_HEIGHT, "Regression line");
     fit_button_->value(1);
     fit_button_->callback([](Fl_Widget *, void *data) { static_cast<ScatterWindow *>(data)->chart_->redraw(); }, this);
@@ -877,6 +881,7 @@ void ScatterWindow::update()
     setActive(log_button_, density_);
     setActive(fit_button_, !state_.plot.categorical());
     setActive(save_button_, state_.active && state_.plot.plottable());
+    setActive(code_button_, shown && code_callback_);
 
     std::string text;
     if (!model_ || model_->state() == ModelState::Error)
@@ -1056,6 +1061,16 @@ void ScatterWindow::modeCallback(Fl_Widget *, void *data)
     auto *self = static_cast<ScatterWindow *>(data);
     self->setMode(self->mode_choice_->value());
     self->update();
+}
+
+void ScatterWindow::codeCallback(Fl_Widget *, void *data)
+{
+    auto *self = static_cast<ScatterWindow *>(data);
+    if (!self->model_ || !self->state_.active || !self->code_callback_)
+        return;
+    self->code_callback_(self->model_, ScatterCodeSpec{.x_column = self->state_.x_column,
+                                                       .y_column = self->state_.y_column,
+                                                       .color_column = self->state_.color_column});
 }
 
 void ScatterWindow::saveCallback(Fl_Widget *, void *data)

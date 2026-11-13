@@ -26,6 +26,7 @@ decl {\#include <memory>
 \#include "gui_stats_pane.hxx"
 \#include "gui_histogram.hxx"
 \#include "gui_scatter.hxx"
+\#include "analysis_code.hxx"
 \#include "group_by.hxx"
 \#include "licenses.hxx"
 \#include "gui_sql.hxx"} {public global
@@ -137,6 +138,11 @@ class TableWindow {open
             label {Export View...}
             callback callback_export_view
             xywh {0 0 100 20} shortcut 0x410065
+          }
+          MenuItem menuitem_export_code {
+            label {Export Analysis Code...}
+            callback callback_export_code
+            xywh {0 0 100 20}
           }
           MenuItem menuitem_convert {
             label {Convert to Parquet / DuckDB...}
@@ -539,6 +545,12 @@ requestWindowMenuUpdate();} {}
   }
   decl {void export_view()} {public local
   }
+  decl {void export_code()} {public local
+  }
+  decl {void save_code(const std::shared_ptr<TableModel> &model, const CodeAnalysis &analysis)} {public local
+  }
+  decl {std::optional<AnalysisCodeSpec> code_spec(const std::shared_ptr<TableModel> &model, const CodeAnalysis &analysis)} {private local
+  }
   decl {bool sql_available() const} {public local
   }
   decl {void show_sql()} {public local
@@ -708,6 +720,8 @@ return !table_book || table_book->usesHeaderOption();} {}
   decl {std::string group_sheet_} {private local
   }
   decl {GroupBySpec group_spec_} {private local
+  }
+  decl {std::optional<AnalysisCodeSpec> group_code_} {private local
   }
   decl {void clear_filter()} {public local
   }

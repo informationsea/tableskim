@@ -9,6 +9,10 @@ statistics, charts, SQL) are in its
 
 - Opens OpenDocument spreadsheets (`.ods`), by default like Excel
   workbooks.
+- **Code** in the toolbar, and **Code…** in the chart dialogs, show R
+  (tidyverse) or Python (polars + plotnine, or pandas + matplotlib) code
+  that reads the file and repeats the view's filter and the chart or
+  Group By, to copy or save.
 
 ## v0.3.4
 

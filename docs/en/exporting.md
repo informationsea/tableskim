@@ -10,6 +10,7 @@ with any unsaved edits.
 | -------------------------- | ------------------------------ | ------------------------------- | --------------------------------------- |
 | Export View                | Any sheet, including SQL results | CSV, TSV, Excel, Parquet      | The sheet as shown: sorted, filtered, without hidden columns |
 | Convert to Parquet / DuckDB | CSV, TSV, VCF and other text files | Parquet, DuckDB             | The whole file, in file order           |
+| Analysis code              | The file's sheets (not SQL results) | R, Python                    | Code that reads the file and repeats the filter, chart or Group By |
 
 ## Export View
 
@@ -90,3 +91,67 @@ What is written:
 As for exports, the conversion can be cancelled, and the target file is
 replaced only when it is complete. The source file itself cannot be chosen
 as the target.
+
+## Analysis code for R and Python
+
+TableSkim can write code that repeats an analysis in R or Python, as a
+starting point for a script or a notebook: the code reads the file, applies
+the view's filter, and then draws the histogram or scatter plot, computes
+the Group By, or (for the sheet itself) sorts the rows and leaves out the
+hidden columns.
+
+- GUI: **Save Code...** in the histogram and scatter plot windows; **File →
+  Export Analysis Code...** for the current sheet, or, on the **Group By**
+  sheet, for the Group By that made it. The type chosen in the file dialog
+  picks the language.
+- Terminal UI: `K` in the sheet, the histogram (`B`) or the density (`M`);
+  the prompt suggests a name next to the file, and `Tab` picks the
+  language.
+- Web app: **Code** in the toolbar, and **Code…** in the chart dialogs;
+  the dialog shows the code, with **Copy** and **Save…**. The code reads
+  the file by its name: set `path` to where it is.
+
+Three languages are written:
+
+| Language                      | Libraries                                   | Suggested name             |
+| ----------------------------- | ------------------------------------------- | -------------------------- |
+| R (tidyverse)                 | readr, dplyr, ggplot2 (readxl, readODS, arrow, jsonlite, DBI for other formats) | `sales-histogram.R`        |
+| Python (polars + plotnine)    | polars, plotnine (duckdb, fastexcel as needed) | `sales-histogram-polars.py` |
+| Python (pandas + matplotlib)  | pandas, matplotlib (duckdb, openpyxl, odfpy as needed) | `sales-histogram-pandas.py` |
+
+For example, a histogram of `Salary` stacked by `Active`, over the rows
+with `Age` above 40, becomes in R:
+
+```r
+library(tidyverse)
+
+path <- "/data/normal.csv"
+df <- read_csv(path)
+
+df <- df |>
+  filter(Age > 40)
+
+p <- ggplot(df, aes(x = Salary, fill = factor(Active))) +
+  geom_histogram(bins = 30) +
+  labs(y = "rows", fill = "Active")
+print(p)
+# ggsave("plot.png", p)
+```
+
+The code is kept short rather than exact:
+
+- The libraries read the file with their own rules: they guess each
+  column's type, and readr trims spaces around values. A filter compares a
+  value with a column of numbers, dates or booleans as such, and with any
+  other column as text.
+- In R and polars, a comparison with an empty cell drops the row, except
+  "not equal to"; TableSkim compares an empty cell as empty text.
+- Charts keep the libraries' own colours, bins and axes; a text X makes box
+  plots, and a histogram of text shows its most frequent values.
+- A Group By counts the rows of each group (`count`) and names its columns
+  as TableSkim does (`Salary sum`); sums, means and standard deviations of
+  text columns are left out.
+
+SQL results have no file to read, so they get no code (nor does a Group By
+of them).
+

@@ -381,6 +381,9 @@ HistogramWindow::HistogramWindow()
     status_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_CLIP);
     save_button_ = new Fl_Button(save_x, MARGIN, SAVE_WIDTH, LINE_HEIGHT, "Save Image...");
     save_button_->callback(saveCallback, this);
+    code_button_ = new Fl_Button(save_x, 2 * MARGIN + LINE_HEIGHT, SAVE_WIDTH, LINE_HEIGHT, "Save Code...");
+    code_button_->callback(codeCallback, this);
+    code_button_->tooltip("Write R or Python code that draws this histogram");
     group_choice_ = new Fl_Choice(MARGIN + CHOICE_LABEL_WIDTH, 2 * MARGIN + LINE_HEIGHT, CHOICE_WIDTH, LINE_HEIGHT,
                                   "Stack by:");
     group_choice_->callback(groupCallback, this);
@@ -501,6 +504,7 @@ void HistogramWindow::update()
     const bool grouped = shown && state_.group_column && *state_.group_column < column_labels_.size();
     group_choice_->value(grouped ? static_cast<int>(*state_.group_column) + 1 : 0);
     setActive(group_choice_, shown);
+    setActive(code_button_, shown && code_callback_);
 
     std::string text;
     if (!model_ || model_->state() == ModelState::Error)
@@ -635,6 +639,16 @@ void HistogramWindow::saveCallback(Fl_Widget *, void *data)
     self->hovered_.reset();
     self->showDetail();
     saveWidgetImage(self->chart_, imageFileName("histogram-" + self->model_->columnName(self->state_.column)));
+}
+
+void HistogramWindow::codeCallback(Fl_Widget *, void *data)
+{
+    auto *self = static_cast<HistogramWindow *>(data);
+    if (!self->model_ || !self->state_.active || !self->code_callback_)
+        return;
+    self->code_callback_(self->model_, HistogramCodeSpec{.column = self->state_.column,
+                                                         .group_column = self->state_.group_column,
+                                                         .bins = self->state_.target_bins});
 }
 
 void HistogramWindow::closeCallback(Fl_Widget *, void *data)

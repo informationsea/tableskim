@@ -225,6 +225,54 @@ class HiddenColumnsTest(TuiTestCase):
         tui.wait_text("Density: Age × ID")
 
 
+class AnalysisCodeTest(TuiTestCase):
+    def test_histogram_code_is_written_in_the_language_chosen(self):
+        path = self.temp_file("kinds.csv", "value,kind\n1,a\n2,b\n3,a\n")
+        tui = self.run_tui(path)
+        tui.wait_text("3 rows")
+        tui.send("f")
+        tui.wait_text("Ctrl+N: add")
+        tui.send("1", "enter")  # value contains 1
+        tui.wait_text("1 row of 3")
+        tui.send("B")
+        tui.wait_text("Histogram: value")
+        tui.send("K")
+        tui.wait_text("kinds-histogram.R")
+        tui.send("tab")  # polars
+        tui.wait_text("kinds-histogram-polars.py")
+        tui.send("enter")
+        target = os.path.join(os.path.dirname(path), "kinds-histogram-polars.py")
+        tui.wait_for(lambda text: "Wrote kinds" in text and os.path.exists(target), what="the code written")
+        with open(target, encoding="utf-8") as file:
+            code = file.read()
+        self.assertIn("pl.read_csv(path", code)
+        self.assertIn('pl.col("value").cast(pl.String).str.to_lowercase().str.contains("1", literal=True)', code)
+        self.assertIn('ggplot(df, aes(x="value"))', code)
+        # Back on the sheet: the view itself, in R.
+        tui.send("esc")
+        tui.wait_for(lambda text: "Histogram:" not in text)
+        tui.send("K")
+        tui.wait_text("kinds-view-polars.py")
+        tui.send("tab", "tab")
+        tui.wait_text("kinds-view.R")
+        tui.send("enter")
+        target = os.path.join(os.path.dirname(path), "kinds-view.R")
+        tui.wait_for(lambda text: os.path.exists(target), what="the code written")
+        with open(target, encoding="utf-8") as file:
+            self.assertIn("df <- read_csv(path)", file.read())
+
+    def test_sql_results_have_no_code(self):
+        tui = self.run_tui(self.demo("normal.parquet"))
+        tui.wait_text("54 rows")
+        tui.send(":")
+        tui.wait_text("Enter: run")
+        tui.type("SELECT * FROM normal WHERE Age < 30")
+        tui.send("enter")
+        tui.wait_text("13 rows × 9 cols")
+        tui.send("K")
+        tui.wait_text("No code for SQL results")
+
+
 class SqlResultTest(TuiTestCase):
     def run_sql(self, tui, sql):
         tui.send(":")

@@ -362,6 +362,7 @@ CSV / TSV と Excel ファイルのセルは、編集モードでだけ変更で
 | Auto Revert                        |                |
 | Follow End of File                 | `Ctrl+Shift+T` |
 | Export View...                     | `Ctrl+Shift+E` |
+| Export Analysis Code...            |                |
 | Convert to Parquet / DuckDB...     |                |
 | Show File in File Browser          |                |
 | Quit（macOS ではアプリケーションメニュー） | `Ctrl+Q` |

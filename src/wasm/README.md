@@ -241,6 +241,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `startGroupBy` | `sheet`, `keys`, `values` (columns), `aggregates` (names) | (a job) |
 | `jobState` | | `kind` (`export`, `convert`, `groupBy` or null), `done`, `rows`, `error`; an export's or a conversion's `file`, `fileName`, `size`; a Group By's `sheet`, `sheets` |
 | `cancelJob` | | (stops the job; removes an export's file) |
+| `analysisCode` | `sheet`, `language` (`r`, `polars`, `pandas`), `analysis` (`view` with `hidden`; `histogram` with `column`, `groupColumn`, `bins`; `scatter` with `x`, `y`, `color`) | `code`, `fileName`; on the Group By sheet, `view` is the Group By's code |
 
 Statistics, histograms and scatter plots run on the book's worker and
 report their progress as events (`STATS`, `HISTOGRAM`, `SCATTER`); the

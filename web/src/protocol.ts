@@ -298,6 +298,15 @@ type Empty = Record<string, never>;
 type SheetParams = { sheet: number };
 
 /** Each method's parameters and result. */
+/** The language analysisCode writes: R (tidyverse), Python with polars and plotnine, or with pandas and matplotlib. */
+export type CodeLanguage = 'r' | 'polars' | 'pandas';
+
+/** What analysisCode repeats after the view's filter. */
+export type CodeAnalysis =
+    | { analysis: 'view' } // the view itself (for the Group By sheet: the Group By)
+    | { analysis: 'histogram'; column: number; groupColumn: number | null; bins: number }
+    | { analysis: 'scatter'; x: number; y: number; color: number | null };
+
 export interface Methods {
     // keepGroupBy: the same file again, showing the last Group By's result again
     open: { params: OpenOptions & { file: File; keepGroupBy?: boolean }; result: BookInfo };
@@ -386,6 +395,10 @@ export interface Methods {
     };
     jobState: { params: Empty; result: JobState };
     cancelJob: { params: Empty; result: Empty };
+    analysisCode: {
+        params: SheetParams & { language: CodeLanguage; hidden: number[] } & CodeAnalysis;
+        result: { code: string; fileName: string };
+    };
 }
 
 export type Method = keyof Methods;

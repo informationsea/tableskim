@@ -98,6 +98,7 @@ SQL ウィンドウ内：
 | `y`、`c`   | 選択範囲をコピー（タブ区切り、OSC 52 経由）                                 |
 | `:`        | SQL を実行（DuckDB / SQLite / Parquet / JSON）。`Up` / `Down`：履歴、`Tab`：補完 |
 | `w`        | シートを表示どおりに CSV / TSV / Excel / Parquet へエクスポート             |
+| `K`        | 表示中のシート、ヒストグラム、密度分布、Group By を再現する R / Python のコードを書き出す（`Tab`：言語） |
 | `P` / `D`  | Parquet / DuckDB に変換して同じ場所に保存し、開く（`Esc`：中止）            |
 | `H`        | 先頭行：見出しの判定と、その逆（列名 / データ）を切り替える（CSV / TSV / Excel） |
 | `#`        | `##` で始まる行を読み飛ばす（VCF では既定でオン）                           |

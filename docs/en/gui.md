@@ -542,6 +542,7 @@ for a Parquet file) are disabled.
 | Auto Revert                        |                |
 | Follow End of File                 | `Ctrl+Shift+T` |
 | Export View...                     | `Ctrl+Shift+E` |
+| Export Analysis Code...            |                |
 | Convert to Parquet / DuckDB...     |                |
 | Show File in File Browser          |                |
 | Quit (in the application menu on macOS) | `Ctrl+Q`  |

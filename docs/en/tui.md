@@ -336,6 +336,12 @@ See [Running SQL](sql.md) for details.
   `.xlsx` or `.parquet`) selects the format.
 - `P` / `D` convert a text file to Parquet / DuckDB next to the original
   file and open the result.
+- `K` writes R or Python code that repeats what is shown: the view, the
+  histogram (`B`), the density (`M`), or on the **Group By** sheet the
+  Group By. A prompt suggests a file name next to the file, and `Tab`
+  switches between R (tidyverse), Python with polars and plotnine, and
+  Python with pandas and matplotlib. See
+  [Analysis code for R and Python](exporting.md#analysis-code-for-r-and-python).
 
 Progress is shown in the status bar; `Esc` cancels (instead of clearing
 the selection). Until it has finished, the file is not reopened: `r`, `H`,

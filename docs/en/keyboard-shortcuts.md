@@ -99,6 +99,7 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `y`, `c`   | Copy the selection (tab-separated, through OSC 52)                          |
 | `:`        | Run SQL (DuckDB / SQLite / Parquet / JSON); `Up` / `Down`: history, `Tab`: complete |
 | `w`        | Export the sheet as shown to CSV / TSV / Excel / Parquet                    |
+| `K`        | Write R / Python code for the view, histogram, density or Group By shown (`Tab`: language) |
 | `P` / `D`  | Convert to Parquet / DuckDB next to the file and open it (`Esc`: cancel)    |
 | `H`        | First row: switch between the guess and header / data (CSV / TSV / Excel) |
 | `#`        | Skip lines starting with `##` (on by default for VCF)                       |
