@@ -19,6 +19,16 @@ const MAX_SCROLL_HEIGHT = 8_000_000;
 const ROW_MARGIN = 40;
 const COLUMN_MARGIN = 4;
 const MAX_CACHED_ROWS = 20000;
+// A failed fetch is tried again after this long, twice as long each time.
+const RETRY_FIRST_MS = 100;
+const RETRY_MAX_MS = 5000;
+
+/** What fetchRows rejects with when it drops a reply on purpose (another sheet is shown now). */
+export class StaleRowsError extends Error {
+    constructor() {
+        super('stale');
+    }
+}
 
 export interface Cell {
     row: number;
@@ -94,7 +104,11 @@ export class GridController {
     private spacer: HTMLElement | null = null;
     private readonly cache = new Map<number, CachedRow>();
     private generation = 0; // bumped when cached rows may be out of date
+    // Bumped when the cache is emptied because its rows are another sheet's
+    // or view's: a fetch started before then is dropped.
+    private cacheEpoch = 0;
     private fetching = false;
+    private retryDelay = RETRY_FIRST_MS;
     private widthsMeasured = false;
     // Set by Ctrl+End while the row count is not known yet: the cursor
     // follows the last row as more are read.
@@ -163,7 +177,8 @@ export class GridController {
             this.widthsMeasured = false;
         }
         if (newSheet) {
-            this.cache.clear();
+            this.clearCache();
+            this.generation++;
             this.cursor = { row: 0, column: 0 };
             this.anchor = { row: 0, column: 0 };
             this.scroller?.scrollTo(0, 0);
@@ -249,7 +264,7 @@ export class GridController {
     viewChanged() {
         this.pendingGoTo = null;
         this.followEnd = false;
-        this.cache.clear();
+        this.clearCache();
         this.dataChanged();
     }
 
@@ -258,8 +273,13 @@ export class GridController {
         this.followEnd = false;
         this.columns = [];
         this.rowCount = 0;
-        this.cache.clear();
+        this.clearCache();
         this.redraw();
+    }
+
+    private clearCache() {
+        this.cache.clear();
+        this.cacheEpoch++;
     }
 
     selection(): Range {
@@ -440,6 +460,7 @@ export class GridController {
         const frozenApart = this.frozen > 0 && firstColumn > this.frozen;
         if (this.frozen > 0 && !frozenApart) firstColumn = 0;
         const generation = this.generation;
+        const epoch = this.cacheEpoch;
         const fetch = this.callbacks().fetchRows;
         this.fetching = true;
         Promise.all([
@@ -448,6 +469,12 @@ export class GridController {
         ]).then(
             ([rows, frozen]) => {
                 this.fetching = false;
+                this.retryDelay = RETRY_FIRST_MS;
+                // Rows of the sheet or view shown before: ask again for these.
+                if (epoch !== this.cacheEpoch) {
+                    this.redraw();
+                    return;
+                }
                 const count = Math.min(rows.rows.length, frozen ? frozen.rows.length : Infinity);
                 for (let i = 0; i < count; i++) {
                     this.cache.set(rows.first + i, {
@@ -474,11 +501,17 @@ export class GridController {
                     this.measureWidths(rows);
                 this.redraw();
             },
-            () => {
-                // Dropped (another sheet is shown now) or failed: look again
-                // soon, as no event may come to ask for the rows in view.
+            (error: unknown) => {
                 this.fetching = false;
-                setTimeout(this.redraw, 100);
+                // Dropped on purpose: what is shown now is asked for at once.
+                if (error instanceof StaleRowsError) {
+                    this.redraw();
+                    return;
+                }
+                // Failed: look again later, as no event may come to ask for
+                // the rows in view, but not so often while it keeps failing.
+                setTimeout(this.redraw, this.retryDelay);
+                this.retryDelay = Math.min(this.retryDelay * 2, RETRY_MAX_MS);
             },
         );
     }

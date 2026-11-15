@@ -66,7 +66,7 @@ export function GroupByDialog({ client, info, column, hidden, onDone, onClose, c
     const run = async () => {
         setError('');
         try {
-            await client.call('startGroupBy', { sheet: info.sheet, keys, values, aggregates: chosen });
+            await client.call('startGroupBy', { sheet: info.sheet, keys, values, aggregates: chosen, hidden });
             if (!mounted.current) return;
             setJob(null);
             setRunning(true);

@@ -60,8 +60,10 @@ export fails and can be started again.
 
 ## Convert to Parquet / DuckDB
 
-In the GUI and terminal UI, unsaved changes stay open after conversion;
-the converted file is saved without opening it.
+In the GUI and terminal UI, the converted file is opened when the
+conversion is done, except when there are unsaved changes (or, in the
+terminal UI, a cell is being edited): then the file is saved without
+opening it and the open file stays as it is.
 
 Text files have no index, so every sort or filter of a large CSV file reads
 all its rows into memory. Converting it once to Parquet or DuckDB makes

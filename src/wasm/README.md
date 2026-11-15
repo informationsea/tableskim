@@ -213,7 +213,7 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `info` | `sheet` | `state` (`opening`, `ready`, `error`), `error`, `rows`, `rowsExact`, `displayRows`, `rowsText`, `hasHeader`, `columns` (`name`, `mark`), `capabilities`, `view`, `pending`, `filterText`, `viewError` and `viewErrorId` (the last failed view, until another is asked for; the id tells a new failure), `checkpoint`, `readingStopped`, `readError` (why reading stopped before the end, if it failed) |
 | `rows` | `sheet`, `first`, `last`, `firstColumn`, `lastColumn` | `first`, `firstColumn`, `rows` (display texts), `kinds` (a character per cell: `n` number, `s` other, `e` empty, `l` loading, `o` beyond the row, `x` error), `hits` (while a search is on or has hits: each row's columns holding one), `loading`, `end` |
 | `cell` | `sheet`, `row`, `column` | `kind` (as in `rows`), `text` (the whole value, which `rows` cuts at 256 bytes; for the sidebar) |
-| `setView` | `sheet`, `sort` (`column`, `ascending`), `filter` (`combine`, `conditions`: `column`, `op`, `value`) or null, `addConditions` (conditions joined to the filter, once each); each left out keeps the view asked for last, even while it is applied | `view` |
+| `setView` | `sheet`, `sort` (`column`, `ascending`), `filter` (`combine`, `conditions` and `narrowing`: each a list of `column`, `op`, `value`) or null, `addConditions` (conditions joined to the filter, once each), `addNarrowing` (conditions added to the filter's narrowing, which is always joined with AND, as a chart's filter is); each left out keeps the view asked for last, even while it is applied | `view` |
 | `sortCycle` | `sheet`, `column` | `view` (by the column ascending, descending, then none) |
 | `search` / `cancelSearch` / `searchState` | `sheet`, `text`, `caseSensitive`, `regex`, `column` | `active`, `done`, `truncated`, `error`, `scannedRows`, `hits`, `generation` |
 | `findHit` | `sheet`, `row`, `column`, `forward`, `includeFrom` | `index` (null if none), `row`, `column`, `hits`, `wrapped`, `pending` |
@@ -231,14 +231,14 @@ The page posts `{id, method, params}`; the reply is `{id, result}` or
 | `startStats` / `statsState` | `sheet`, `column` | `active`, `done`, `column`, `scannedRows`, `lines` (`label`, `value`), `top` (`value`, `count`) |
 | `startHistogram` / `histogramState` | `sheet`, `column`, `bins` (2 to 200), `groupColumn` (stacked by it; optional) | `active`, `done`, `counting`, `column`, `groupColumn`, `scannedRows`, `histogram` (`kind`, `summary`, `bins`: `label`, `range`, `count`, `groups` (counts, when stacked); `top` without bins; `groups`, `otherGroup`, `emptyGroup`) |
 | `histogramFilter` | `sheet`, `bin` (a frequent value's index without bins), `group` (a part of a stacked bar; optional) | `conditions` |
-| `defaultScatter` | `sheet`, `column`, `hidden` | `x`, `y`: the columns to start with |
-| `startScatter` / `scatterState` | `sheet`, `x`, `y`, `colorColumn` (start: coloured by it; optional); `points` (state: send them) | `done`, `plottable`, `summary`, `statsText`, `pairs`, `fit` (`slope`, `intercept` of the regression line; null for categories), `xAxis` / `yAxis` (`kind`, `ticks`, `edges`, `binRanges`), `counts` (by X bin, then Y bin), `categories`, `boxes`, `boxTexts`, `points` (x, y, view row, ...), `colorColumn`, `colors`, `otherColor`, `emptyColor`, `colorPairs` (rows per colour), `pointColors` (one per point) |
+| `defaultScatter` | `sheet`, `column`, `hidden`, `firstRow`, `lastRow` (the rows the choice looks at; default 0 and `firstRow` + 100) | `x`, `y`: the columns to start with |
+| `startScatter` / `scatterState` | `sheet`, `x`, `y`, `colorColumn` (start: coloured by it; optional); `points` (start: false keeps no sample of points, default true; state: true sends them) | `done`, `plottable`, `summary`, `statsText`, `pairs`, `fit` (`slope`, `intercept` of the regression line; null for categories), `xAxis` / `yAxis` (`kind`, `ticks`, `edges`, `binRanges`), `counts` (by X bin, then Y bin), `categories`, `boxes`, `boxTexts`, `points` (x, y, view row, ...), `colorColumn`, `colors`, `otherColor`, `emptyColor`, `colorPairs` (rows per colour), `pointColors` (one per point) |
 | `scatterFilter` | `sheet` and `xBin`, `yBin`; or `category`; or `color` (a colour of the legend); or `xLow`, `xHigh`, `yLow`, `yHigh` | `conditions` |
 | `exportFormats` | | `format`, `label`, `extension` of each |
 | `startExport` | `sheet`, `format` (`csv`, `tsv`, `excel`, `parquet`), `hidden` | (a job) |
 | `startConvert` | `format` (`parquet`, `duckdb`): the open text file, read with the options it was opened with | (a job, `kind` `convert`) |
 | `aggregates` | | the aggregates' names |
-| `startGroupBy` | `sheet`, `keys`, `values` (columns), `aggregates` (names) | (a job) |
+| `startGroupBy` | `sheet`, `keys`, `values` (columns), `aggregates` (names), `hidden` (the page's hidden columns; used only for the code of a Group By sheet) | (a job) |
 | `jobState` | | `kind` (`export`, `convert`, `groupBy` or null), `done`, `rows`, `error`; an export's or a conversion's `file`, `fileName`, `size`; a Group By's `sheet`, `sheets` |
 | `cancelJob` | | (stops the job; removes an export's file) |
 | `analysisCode` | `sheet`, `language` (`r`, `polars`, `pandas`), `analysis` (`view` with `hidden`; `histogram` with `column`, `groupColumn`, `bins`; `scatter` with `x`, `y`, `color`) | `code`, `fileName`; on the Group By sheet, `view` is the Group By's code |
@@ -259,7 +259,7 @@ gone.
 4-core cloud container, Release build, Chromium 153 (headless, Playwright
 1.63), Node.js 22. Times are seconds as the probe reports them.
 
-All of `tableskim-tests` passes in Node.js (303 test cases, the same as
+All of `tableskim-tests` passes in Node.js (the same test cases as
 natively). In Chromium, every demo format opens, reads, sorts and (where
 supported) runs SQL: CSV/TSV (UTF-8, UTF-16, CP932, gzip/bzip2/xz/zstd),
 Excel (merged cells, several sheets, dates), Parquet, JSON/NDJSON (gzip,

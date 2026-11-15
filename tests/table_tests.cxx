@@ -31,6 +31,8 @@ namespace
         // Pushed-down filters fail when applied, or only when rows are read.
         std::atomic<bool> fail_filter_apply{false};
         std::atomic<bool> fail_filtered_reads{false};
+        // Reads of a sorted or filtered view fail, the plain table's do not.
+        std::atomic<bool> fail_view_reads{false};
         // columnValueCounts(): supported, how often it ran, failing halfway.
         std::atomic<bool> value_counts{false};
         std::atomic<int> value_count_calls{0};
@@ -78,6 +80,8 @@ namespace
             ++stats_->reads;
             if (filtered_ && stats_->fail_filtered_reads)
                 throw std::runtime_error("filtered read failed");
+            if ((descending_ || filtered_) && stats_->fail_view_reads)
+                throw std::runtime_error("read failed");
             {
                 std::lock_guard lock(stats_->mutex);
                 stats_->read_rows.insert(first_row);
@@ -867,6 +871,55 @@ TEST_CASE("a failing pushed-down view is cleared instead of breaking the sheet",
     REQUIRE(waitFor([&] { return model->view().sort.size() == 1; }));
     CHECK(cellText(*model, 0, 0) == "999990");
     CHECK(model->state() == ModelState::Ready);
+}
+
+
+TEST_CASE("a pushed-down view whose later page fails falls back, and an export's read fails only the export",
+          "[regression]")
+{
+    auto data = std::make_unique<FakeData>();
+    data->pushdown = true;
+    auto stats = data->stats;
+    TableBook book(std::move(data));
+    auto model = book.sheet("a");
+    const ViewSpec descending{.sort = {{0, false}}};
+    model->setView(descending);
+    REQUIRE(waitFor([&] { return model->view() == descending; }));
+    CHECK(cellText(*model, 0, 0) == "999990");
+    // Counting comes after the blocks to read: then the worker is idle.
+    REQUIRE(waitFor([&] { return model->rowCount().isExact(); }));
+    stats->fail_view_reads = true;
+
+    SECTION("a later page of the view falls back to the plain table")
+    {
+        // Its query may fail only on that page (LIMIT/OFFSET), a cast error far down, say.
+        model->requestRange(50000, 50010);
+        std::optional<std::string> error;
+        REQUIRE(waitFor([&]
+                        {
+            if (!error)
+                error = model->takeViewError();
+            return error && model->view() == ViewSpec{}; }));
+        CHECK(error == std::optional<std::string>("read failed"));
+        CHECK(model->requestedView() == ViewSpec{});
+        CHECK(cellText(*model, 50000, 0) == "500000");
+        CHECK(model->state() == ModelState::Ready);
+    }
+    SECTION("an export's read fails the export only")
+    {
+        auto reader = model->readView();
+        std::stop_source stop;
+        CHECK_THROWS_AS(reader->next(stop.get_token()), std::runtime_error);
+        CHECK(model->requestedView() == descending);
+        CHECK(model->view() == descending);
+        CHECK(model->state() == ModelState::Ready);
+        CHECK_FALSE(model->takeViewError().has_value());
+        // The sheet goes on reading once the source does.
+        stats->fail_view_reads = false;
+        model->requestRange(50000, 50010);
+        CHECK(waitForCell(*model, 50000, 0).state == CellState::Ready);
+        CHECK(cellText(*model, 50000, 0) == "499990");
+    }
 }
 
 TEST_CASE("sort and filter preserve large integer precision", "[regression]")

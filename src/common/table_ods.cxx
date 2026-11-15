@@ -21,11 +21,20 @@ namespace
     // billions of cells.
     constexpr size_t kMaxRows = size_t{1} << 24;
     constexpr size_t kMaxColumns = 16384;
+    // In the whole document: a sheet's limit alone would let many sheets
+    // claim a million merges each.
     constexpr size_t kMaxMerges = size_t{1} << 20;
     // One row is held whole, and number-columns-repeated copies a cell's
     // text: a row larger than this (by RowBlock's estimate) is refused, so
     // that a long text repeated over a row cannot take gigabytes.
     constexpr size_t kMaxRowBytes = size_t{64} << 20;
+    // Repeats are copied when read, so a few bytes of XML can stand for
+    // terabytes (16,384 cells repeated over millions of rows), and a block
+    // of rows of kMaxRowBytes each would be no bound. The copies past the
+    // first, by the same estimate, are limited in the whole document;
+    // more than a 32-bit address space could hold is no limit there.
+    constexpr size_t kMaxRepeatedBytes =
+        sizeof(size_t) < 8 ? size_t{1} << 30 : static_cast<size_t>(uint64_t{4} << 30);
     // Reads of a file are dear in a browser: parse in large pieces.
     constexpr size_t kParseChunk = 1 << 20;
     constexpr std::string_view kMimeType = "application/vnd.oasis.opendocument.spreadsheet";
@@ -177,9 +186,10 @@ namespace
                 return std::nullopt;
             if (fraction_millis != 0 && unit != 'S')
                 return std::nullopt;
-            millis += whole * unit_millis + fraction_millis;
-            if (millis > kMaxMillis)
+            // Checked before multiplying: P999999999999D would overflow.
+            if (fraction_millis > kMaxMillis - millis || whole > (kMaxMillis - millis - fraction_millis) / unit_millis)
                 return std::nullopt;
+            millis += whole * unit_millis + fraction_millis;
             any = true;
         }
         if (!any)
@@ -278,7 +288,8 @@ namespace
         size_t skip_depth_ = 0; // a subtree ignored entirely
         size_t sheet_count_ = 0;
         size_t row_index_ = 0;
-        size_t merge_count_ = 0;
+        size_t merge_count_ = 0;    // in the document
+        size_t repeated_bytes_ = 0; // copies made by repeats, in the document
 
         TableRow row_;
         size_t row_bytes_ = 0; // of row_'s cells
@@ -372,7 +383,7 @@ namespace
                     if (element.local == "p" || element.local == "h")
                     {
                         if (has_paragraph_)
-                            text_ += '\n';
+                            appendText("\n");
                         has_paragraph_ = true;
                         paragraph_has_text_ = false;
                         space_pending_ = false;
@@ -434,7 +445,7 @@ namespace
                 // A run of spaces at the end stays one space, as LibreOffice
                 // reads it (and writes a single trailing space as is).
                 if (space_pending_)
-                    text_ += ' ';
+                    appendText(" ");
                 space_pending_ = false;
                 paragraph_depth_ = 0;
             }
@@ -474,7 +485,6 @@ namespace
             }
             sheet_depth_ = depth_;
             row_index_ = 0;
-            merge_count_ = 0;
         }
 
         void startRow(const XML_Char **attributes)
@@ -499,6 +509,7 @@ namespace
             const size_t repeat = row_index_ >= kMaxRows ? 0 : std::min(row_repeat_, kMaxRows - row_index_);
             if (repeat == 0)
                 return;
+            addRepeated(row_bytes_, repeat);
             for (size_t r = 0; r < repeat && !row_merges_.empty(); ++r)
             {
                 for (CellRange range : row_merges_)
@@ -568,6 +579,30 @@ namespace
             }
         }
 
+        [[noreturn]] void rowTooLarge() const
+        {
+            throw std::runtime_error("Cannot read the ODS file: row " + std::to_string(row_index_ + 1) +
+                                     " of a sheet is too large");
+        }
+
+        // Checked as it grows, not once the cell ends: text:s repeats
+        // spaces, so a little XML can make a cell's text of gigabytes.
+        void appendText(std::string_view text)
+        {
+            if (text.size() > kMaxRowBytes - row_bytes_ - text_.size())
+                rowTooLarge();
+            text_ += text;
+        }
+
+        // `bytes` held `repeat` times: the copies past the first count.
+        void addRepeated(size_t bytes, size_t repeat)
+        {
+            if (bytes != 0 && repeat - 1 > (kMaxRepeatedBytes - repeated_bytes_) / bytes)
+                throw std::runtime_error("Cannot read the ODS file: the repeats of row " +
+                                         std::to_string(row_index_ + 1) + " of a sheet are too large to hold");
+            repeated_bytes_ += bytes * (repeat - 1);
+        }
+
         // ODF collapses runs of white space in paragraphs to one space and
         // drops it at their start; other spaces are written as text:s.
         void addText(std::string_view text)
@@ -580,9 +615,9 @@ namespace
                     continue;
                 }
                 if (space_pending_)
-                    text_ += ' ';
+                    appendText(" ");
                 space_pending_ = false;
-                text_ += c;
+                appendText(std::string_view(&c, 1));
                 paragraph_has_text_ = true;
             }
         }
@@ -590,9 +625,9 @@ namespace
         void addExplicit(std::string_view text)
         {
             if (space_pending_)
-                text_ += ' ';
+                appendText(" ");
             space_pending_ = false;
-            text_ += text;
+            appendText(text);
             paragraph_has_text_ = true;
         }
 
@@ -664,8 +699,8 @@ namespace
                 if (const auto *text = std::get_if<std::string>(&value))
                     cell_bytes += text->capacity();
                 if (cell_bytes > (kMaxRowBytes - row_bytes_) / repeat)
-                    throw std::runtime_error("Cannot read the ODS file: row " + std::to_string(row_index_ + 1) +
-                                             " of a sheet is too large");
+                    rowTooLarge();
+                addRepeated(cell_bytes, repeat);
                 row_bytes_ += cell_bytes * repeat;
                 row_.resize(row_.size() + pending_empty_);
                 pending_empty_ = 0;

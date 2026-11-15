@@ -130,10 +130,11 @@ void quit(Fl_Menu_ *, void *)
     NestedLoopGuard::defer([]
                            {
         spdlog::debug("Quitting...");
-        // Each window with unsaved changes asks first; Cancel stops quitting.
+        // Each window with unsaved changes asks first; Cancel (or a failed
+        // save) stops quitting, keeping every window's edits.
         for (const auto &table_window : table_windows)
         {
-            if (!table_window->confirm_unsaved())
+            if (!table_window->confirm_unsaved(false, true))
                 return;
         }
         for (const auto &table_window : table_windows)

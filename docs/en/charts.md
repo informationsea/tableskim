@@ -258,5 +258,5 @@ The terminal UI has the same tools, drawn with characters:
 
 ![The Format dialog for the petal_length column](../images/tui-format.png)
 
-See [Using the Terminal UI](tui.md) for all keys. Saving charts as images
-is available in the GUI only.
+See [Using the Terminal UI](tui.md) for all keys. The terminal UI cannot
+save charts as images; the GUI and the web app can.

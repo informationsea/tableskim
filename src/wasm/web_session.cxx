@@ -26,6 +26,9 @@ namespace
     constexpr size_t TOP_VALUES = 10;
     // Points of a scatter plot sent to the frontend, a sample of the rows.
     constexpr size_t SCATTER_POINTS = 20000;
+    // The most cells one "copy" request copies, as in the GUI (Edit > Copy):
+    // the text is built in one string on the session thread.
+    constexpr size_t MAX_COPIED_CELLS = 5000000;
 
     struct OpName
     {
@@ -890,6 +893,10 @@ std::string WebSession::handle(std::string_view request_text)
 
 void WebSession::open(const Params &params, JsonWriter &result)
 {
+    // The book shown goes first, even if the new file fails to open: the
+    // page stops showing it as it asks, and wasm_worker_pre.js unmounts
+    // its file once this is answered, failed or not. Closing it first also
+    // frees its memory before the next file is read (wasm memory only grows).
     close();
     OpenOptions options;
     if (const std::string *header = params["header"].string())
@@ -907,8 +914,10 @@ void WebSession::open(const Params &params, JsonWriter &result)
     }
     if (const auto skip = params["skipMetaLines"].boolean())
         options.skip_meta_lines = *skip;
-    path_ = utf8Path(params.text("path"));
-    book_ = TableBook::open(path_, options);
+    // Kept only once open, so that a failure leaves the session as close() did.
+    std::filesystem::path path = utf8Path(params.text("path"));
+    book_ = TableBook::open(path, options);
+    path_ = std::move(path);
     options_ = options;
     file_sheets_ = book_->sheetNames();
     // The same file with other options: a Group By's rows are kept in
@@ -1170,9 +1179,28 @@ void WebSession::stopReading(const Params &params, JsonWriter &result)
 void WebSession::copy(const Params &params, JsonWriter &result)
 {
     TableModel &model = *sheet(params).model;
-    const HiddenColumns hidden = parseHidden(params["hidden"], model.columnCount());
-    const TsvCopyResult copied =
-        rangeToTsv(model, params.index("top"), params.index("left"), params.index("bottom"), params.index("right"), &hidden);
+    const size_t columns = model.columnCount();
+    const HiddenColumns hidden = parseHidden(params["hidden"], columns);
+    // Cut to the sheet: rangeToTsv() walks every row and column asked for.
+    const size_t rows = model.displayRowCount();
+    const size_t top = params.index("top");
+    const size_t left = params.index("left");
+    const size_t bottom = rows == 0 ? 0 : std::min(params.index("bottom"), rows - 1);
+    const size_t right = columns == 0 ? 0 : std::min(params.index("right"), columns - 1);
+    TsvCopyResult copied;
+    if (rows > 0 && columns > 0 && top <= bottom && left <= right)
+    {
+        size_t shown = 0;
+        for (size_t column = left; column <= right; ++column)
+        {
+            if (!hidden.contains(column))
+                ++shown;
+        }
+        if (shown > 0 && bottom - top >= MAX_COPIED_CELLS / shown)
+            throw std::invalid_argument("Too many cells to copy at once (at most 5,000,000). Export the view to "
+                                        "write them to a file.");
+        copied = rangeToTsv(model, top, left, bottom, right, &hidden);
+    }
     result.beginObject()
         .key("text")
         .value(copied.text)
@@ -1581,12 +1609,14 @@ void WebSession::startExport(const Params &params, JsonWriter &result)
 {
     if (job_ && !job_->done)
         throw std::invalid_argument("another export or Group By is running");
-    stopJob();
     Sheet &sheet = this->sheet(params);
     const ViewExportFormat format = parseExportFormat(params.text("format"));
     ViewExportOptions options;
     options.hidden = parseHidden(params["hidden"], sheet.model->columnCount());
     options.source = path_;
+    // Only a valid request replaces the last job, whose file may not have
+    // been read yet.
+    stopJob();
     std::filesystem::create_directories(scratch_);
 
     job_ = std::make_unique<Job>();
@@ -1682,7 +1712,6 @@ void WebSession::startGroupBy(const Params &params, JsonWriter &result)
 {
     if (job_ && !job_->done)
         throw std::invalid_argument("another export or Group By is running");
-    stopJob();
     Sheet &sheet = this->sheet(params);
     GroupBySpec spec;
     spec.keys = jsonIndexes(params["keys"], "keys");
@@ -1705,12 +1734,15 @@ void WebSession::startGroupBy(const Params &params, JsonWriter &result)
         if (column >= sheet.model->columnCount())
             throw std::invalid_argument("no such column: " + std::to_string(column));
     }
+    // Taken now: the view may change before the code is asked for.
+    std::optional<AnalysisCodeSpec> code = codeSpec(sheet, spec, params);
+    // Only a valid request replaces the last job (see startExport()).
+    stopJob();
 
     job_ = std::make_unique<Job>();
     Job &job = *job_;
     job.kind = "groupBy";
-    // Taken now: the view may change before the code is asked for.
-    job.group_code = codeSpec(sheet, spec, params);
+    job.group_code = std::move(code);
     job.thread = std::jthread([this, &job, model = sheet.model, spec](std::stop_token stop)
                               {
         std::string error;

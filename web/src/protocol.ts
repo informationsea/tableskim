@@ -389,8 +389,9 @@ export interface Methods {
     // The open text file, as it was opened (encoding, header, ## lines).
     startConvert: { params: { format: 'parquet' | 'duckdb' }; result: Empty };
     aggregates: { params: Empty; result: string[] };
+    // hidden: the page's hidden columns, used only for the code of the Group By sheet.
     startGroupBy: {
-        params: SheetParams & { keys: number[]; values: number[]; aggregates: string[] };
+        params: SheetParams & { keys: number[]; values: number[]; aggregates: string[]; hidden?: number[] };
         result: Empty;
     };
     jobState: { params: Empty; result: JobState };

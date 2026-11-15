@@ -1,7 +1,7 @@
 # TableSkim for Visual Studio Code (preview)
 
 View tables in VS Code: CSV, TSV and VCF files (also compressed),
-Excel workbooks, Parquet and JSON files, and DuckDB and SQLite databases.
+Excel and OpenDocument (`.ods`) workbooks, Parquet and JSON files, and DuckDB and SQLite databases.
 Sort, filter and search them, look at statistics and charts, and run SQL,
 without leaving the editor. Large files open at once: rows are read in the
 background as you scroll.
@@ -34,7 +34,7 @@ available as a desktop app and a web app, as an editor in VS Code.
 
 ## Usage
 
-- **Parquet, Excel, DuckDB and SQLite files** open in TableSkim.
+- **Parquet, Excel, OpenDocument (`.ods`), DuckDB and SQLite files** open in TableSkim.
 - **CSV, TSV, VCF, JSON and compressed files** open as text, as before. To
   view one as a table, right-click it in the Explorer and choose **Open in
   TableSkim**, or choose **Reopen Editor With… > TableSkim** from the

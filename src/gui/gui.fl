@@ -521,11 +521,13 @@ requestWindowMenuUpdate();} {}
   }
   decl {bool save(bool save_as)} {public local
   }
-  decl {bool confirm_unsaved(bool reload = false)} {public local
+  decl {bool confirm_unsaved(bool reload = false, bool quitting = false)} {public local
   }
   decl {void update_title()} {public local
   }
   decl {void finish_cell_editing()} {private local
+  }
+  decl {void close_unreadable()} {private local
   }
   decl {bool editing_ = false} {private local
   }

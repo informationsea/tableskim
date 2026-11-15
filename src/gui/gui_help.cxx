@@ -21,6 +21,7 @@
 
 #include "spdlog/spdlog.h"
 
+#include "file_util.hxx"
 #include "gui_table_view.hxx"
 #include "help_docs.hxx"
 
@@ -311,7 +312,7 @@ void HelpWindow::switchLanguage()
     std::filesystem::path page = directory_ / helpStartPage(languageCode());
     if (const char *current = view_->filename())
     {
-        const std::filesystem::path same = directory_ / languageCode() / std::filesystem::path(current).filename();
+        const std::filesystem::path same = directory_ / languageCode() / utf8Path(current).filename();
         std::error_code ec;
         if (std::filesystem::exists(same, ec))
             page = same;

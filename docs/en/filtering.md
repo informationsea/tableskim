@@ -29,7 +29,7 @@ but TableSkim still recognizes:
   before lower-case ones.
 - Rows with equal values keep their order in the file.
 
-For CSV / TSV and Excel files, sorting reads the whole sheet into memory
+For CSV / TSV, Excel and ODS files, sorting reads the whole sheet into memory
 first. For Parquet, JSON and databases, the sort runs inside the database,
 so it works for tables of any size.
 

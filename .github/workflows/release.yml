@@ -28,6 +28,28 @@ jobs:
             echo "Tag ${GITHUB_REF_NAME} does not match CMakeLists.txt version ${version}" >&2
             exit 1
           fi
+      # The web app's package.json follows the project's version (the VS
+      # Code extension's does not: vscode/scripts/package.mjs packs it with
+      # the project's).
+      - name: Web app version matches project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -nE 's/^project\(table-skim VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
+          web_version=$(sed -nE 's/^  "version": "([^"]+)".*/\1/p' web/package.json)
+          if [ "$web_version" != "$version" ]; then
+            echo "web/package.json version ${web_version} does not match CMakeLists.txt version ${version}" >&2
+            exit 1
+          fi
+      # The extension is published after the release is made, so a changelog
+      # that still says "## Unreleased" must fail before anything is built.
+      - name: VS Code changelog names the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -Eq "^## v?${version}\b" vscode/CHANGELOG.md; then
+            echo "vscode/CHANGELOG.md has no '## ${version}': rename '## Unreleased' before tagging" >&2
+            exit 1
+          fi
 
   # Built on the oldest supported distribution so the packages also run on
   # newer ones (Ubuntu 24.04 and Rocky Linux 10 both ship glibc 2.39). The
@@ -70,6 +92,7 @@ jobs:
         with:
           name: linux-deb
           path: build/release/*.deb
+          if-no-files-found: error
 
   linux-rpm:
     needs: check-version
@@ -114,6 +137,7 @@ jobs:
         with:
           name: linux-rpm
           path: build/release/*.rpm
+          if-no-files-found: error
 
   # The Linux ZIPs, built on the oldest distribution the actions run on in
   # a container, glibc 2.28 (RHEL 8, Debian 10, Ubuntu 20.04 and newer), so
@@ -184,6 +208,7 @@ jobs:
         with:
           name: linux-zip-${{ matrix.cache }}-gui-${{ matrix.gui }}
           path: build/release/*.zip
+          if-no-files-found: error
 
   # Apple silicon, and Intel Macs cross-compiled on the same runner, whose
   # tests run under Rosetta 2. Both are configured in build/release (the
@@ -238,6 +263,7 @@ jobs:
           path: |
             build/release/*.dmg
             build/release/*.zip
+          if-no-files-found: error
 
   # x64 on windows-latest, and ARM64 natively on a Windows on Arm runner
   # (cross-compiling would leave FLTK's fluid and the tests unable to run).
@@ -290,7 +316,7 @@ jobs:
           }
           $global:LASTEXITCODE = 0
       - name: Set up the MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: ${{ matrix.msvc_arch }}
       # As in ci.yml, so that its cache is found after a runner image update.
@@ -479,7 +505,7 @@ jobs:
       - name: Leave out the Microsoft Store package
         run: rm -f dist/*.msix
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: dist/*
           generate_release_notes: true
@@ -489,8 +515,8 @@ jobs:
   # its token is set as a secret (VSCE_PAT: an Azure DevOps token with
   # Marketplace "Manage" for the publisher informationsea; OVSX_PAT: an
   # Open VSX token of the namespace informationsea). The package is the
-  # one the release attaches. Its changelog must name the version: a
-  # release with "## Unreleased" fails here, after the GitHub release.
+  # one the release attaches. Its changelog must name the version, which
+  # check-version has checked before anything was built.
   # A job's `if` cannot read secrets, so this job reports whether a
   # publishing token is set; without one publish-vscode is skipped.
   vscode-tokens:
@@ -526,13 +552,6 @@ jobs:
         with:
           name: vscode
           path: dist
-      - name: Changelog names the version
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          if ! grep -Eq "^## v?${version}\b" vscode/CHANGELOG.md; then
-            echo "vscode/CHANGELOG.md has no '## ${version}': rename '## Unreleased' before tagging" >&2
-            exit 1
-          fi
       - name: Install vsce
         working-directory: vscode
         run: npm ci --no-audit --no-fund

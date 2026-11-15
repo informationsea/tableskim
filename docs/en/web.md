@@ -102,7 +102,7 @@ The page follows the light or dark appearance of the system.
   two files side by side, open the web app in two browser tabs.
 - For a text file (CSV, TSV, VCF):
   - **First row** chooses whether the first row is the header (**Auto**,
-    **Header**, **Data**), as in the GUI. It is shown for Excel files too.
+    **Header**, **Data**), as in the GUI. It is shown for Excel and ODS files too.
   - **Encoding** shows the detected text encoding and reads the file again
     in another one: UTF-8, UTF-16LE, UTF-16BE or Shift_JIS (CP932).
   - **Skip ## lines** leaves out lines starting with `##`, such as the
@@ -142,6 +142,7 @@ The **Sidebar** button shows or hides the sidebar. Its tabs:
   a selection), wrapped to the width of the pane, with its line breaks.
   The grid cuts long values short; this shows them whole. `Enter` or a
   double click on a cell opens it.
+- **Search**: the text to find and its hits (see [Searching](#searching)).
 - **Filter**: the filter conditions (see [Filtering](#filtering)).
 - **Statistics**: the statistics of the cursor's column (see
   [Column statistics](#column-statistics)).
@@ -249,7 +250,7 @@ How to read the charts and which one answers which question is explained in
 ## Group By
 
 **Group By** groups the rows of the view by the values of the key columns
-and computes aggregates (count, distinct, sum, mean, min, max) of other
+and computes aggregates (count, distinct, sum, mean, min, max, std dev) of other
 columns, as in the GUI. Tick each column's **Key** or **Aggregate** box and the aggregates to
 compute. The result opens as the sheet **Group By**, which a later Group By
 replaces. See [Summarizing in a table: Group By](charts.md#summarizing-in-a-table-group-by).

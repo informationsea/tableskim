@@ -93,7 +93,7 @@ that reads files without uploading them, and in Visual Studio Code as an
   keep reading or to show only the rows read so far
 - Ragged rows, dates, merged cells and non-ASCII (e.g. Japanese) text and
   file names
-- The first row of CSV / TSV and Excel files is taken as a header when it
+- The first row of CSV / TSV, Excel and ODS files is taken as a header when it
   looks like one, or as chosen (Parquet and databases have their own column
   names), monospace font, and
   several FLTK themes
@@ -163,7 +163,7 @@ freeze the columns up to the cursor, `Enter` to show a whole cell in the
 sidebar, `S` for the statistics of the cursor's column, `B` for its
 histogram, `y` to copy the
 selection as TSV, `w` to export the sheet as shown, `Tab` to switch sheets, `s` for the sidebar, `H` to switch
-the first row between the guess and header / data (CSV / TSV and Excel), `E` to switch the text
+the first row between the guess and header / data (CSV / TSV, Excel and ODS), `E` to switch the text
 encoding, `r` to revert, `q` to quit.
 
 Copying uses the OSC 52 escape sequence, so it works over SSH; the terminal
@@ -179,7 +179,7 @@ Requirements:
   fontconfig, X11 and the Wayland/Cairo/Pango stack)
 
 The bundled dependencies (FLTK, DuckDB, SQLite, OpenXLSX, csv-parser, CLI11,
-spdlog, zlib, bzip2, xz, zstd, RE2, Abseil, Catch2, FTXUI) are downloaded with CMake's
+spdlog, zlib, bzip2, xz, zstd, expat, RE2, Abseil, Catch2, FTXUI) are downloaded with CMake's
 `FetchContent` during the first configure. The first build compiles DuckDB
 and therefore takes a while.
 
@@ -323,8 +323,9 @@ them to a GitHub release:
   and three ZIPs built on Rocky Linux 8 (glibc 2.28) for older
   distributions: the GUI with Wayland, the GUI for X11 only (`-x11`), and
   the terminal UI only (`tableskim-tui`)
-- macOS: `.dmg` and `.zip`
+- macOS: `.dmg` and `.zip`, for Apple silicon (`arm64`) and Intel (`x86_64`)
 - Windows: installer (`.exe`) and `.zip`, for x64 (`AMD64`) and ARM64
+- Web app: `tableskim-<version>-web.zip`
 
 `package.bat msix` makes the Microsoft Store package
 (`packaging/windows/make-msix.ps1`). It needs the identity Partner Center

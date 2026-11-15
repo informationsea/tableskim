@@ -182,6 +182,9 @@ private:
     std::shared_ptr<TableModel> edit_model_;
     size_t edit_row_ = 0; // view row
     size_t edit_col_ = 0;
+    // The view edit_row_ belongs to: the edit is dropped if another one is
+    // applied while the prompt is open.
+    ViewSpec edit_view_;
     // Pasted in edit mode outside a prompt: goes into the selected cells.
     std::string paste_buffer_;
     bool saving_ = false;
@@ -228,6 +231,10 @@ private:
     ColumnFormat format_draft_;
     size_t format_line_ = 0;
 
+    // The sheet the filter, Group By or format dialog was opened on (they
+    // apply to the current sheet when done).
+    std::shared_ptr<TableModel> dialog_model_;
+
     // Text dialog (help, errors)
     bool show_text_dialog_ = false;
     // Between the bracketed paste markers: pasted keys are text, not commands.
@@ -255,6 +262,7 @@ private:
     // The hidden columns of the view showing `model` (none if no view does).
     const HiddenColumns &hiddenColumnsOf(const std::shared_ptr<TableModel> &model) const;
     void showSheet(size_t index);
+    void closeStaleDialogs();
     void revert();
     void revertIfChanged();
     void setFollow(bool enabled);

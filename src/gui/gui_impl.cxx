@@ -1866,7 +1866,9 @@ void TableWindow::set_editing(bool editing)
 // Asks what to do with unsaved changes before they would be lost. True if
 // they were saved or dropped (or there were none); false to cancel.
 // `reload`: the file is read again, so saving first makes no sense.
-bool TableWindow::confirm_unsaved(bool reload)
+// `quitting`: Don't Save keeps the edits, as a later window may still cancel
+// the quit; closing the window drops them anyway.
+bool TableWindow::confirm_unsaved(bool reload, bool quitting)
 {
     finish_cell_editing();
     if (!table_book || !table_book->modified())
@@ -1885,6 +1887,8 @@ bool TableWindow::confirm_unsaved(bool reload)
         return save(false);
     if (choice == 2)
     {
+        if (quitting)
+            return true;
         table_book->discardEdits();
         update_title();
         return true;
@@ -1956,11 +1960,26 @@ bool TableWindow::save(bool save_as)
                      escapeLabel(utf8String(target)).c_str(), escapeLabel(e.what()).c_str(),
                      escapeLabel(utf8String(result.written)).c_str());
         }
-        open(current_path, true, true);
+        if (!open(current_path, true, true))
+            close_unreadable();
         return false;
     }
-    open(utf8String(target), true, true);
+    bool reopened = open(utf8String(target), true, true);
+    // Save As left the original file as it was: show that instead.
+    if (!reopened && target != source)
+        reopened = open(current_path, true, true);
+    if (!reopened)
+        close_unreadable();
     return true;
+}
+
+// After a save the book is gone; if no file could be opened again, the views
+// would show rows that nothing can read or edit, so the window closes (open()
+// has said why).
+void TableWindow::close_unreadable()
+{
+    spdlog::error("Closing the window of {}: the file could not be opened again", current_path);
+    hide();
 }
 
 void callback_save(Fl_Menu_ *, void *)

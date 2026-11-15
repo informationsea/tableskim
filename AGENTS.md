@@ -6,7 +6,9 @@ Guidance for coding agents working on TableSkim.
 
 TableSkim is a lightweight viewer for tabular files (CSV/TSV/VCF, optionally
 gzip/bzip2/xz/zstd compressed, Excel, OpenDocument spreadsheets, DuckDB, SQLite, Parquet and JSON / NDJSON). It is written in C++20 and has two
-frontends sharing one core library, linked into a single executable:
+native frontends (GUI and TUI) sharing one core library, linked into a single
+executable; the web app and the VS Code extension run the same core as
+WebAssembly (see Architecture):
 
 | Target             | Sources                            | Notes                                                    |
 | ------------------ | ---------------------------------- | -------------------------------------------------------- |
@@ -88,10 +90,17 @@ ctest --preset debug -j 8            # test cases in parallel
 - Dependencies are always built as Release, even in Debug builds (except with
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
   `cmake/Dependencies.cmake`.
-- Git dependencies are cloned shallow at their tag (`GIT_SHALLOW`), and
-  archives carry a `URL_HASH`: update the hash with the URL. DuckDB gets its
-  version from `OVERRIDE_GIT_DESCRIBE`, so that it does not depend on the
-  shallow clone having fetched the tag.
+- Git dependencies are pinned by the commit their release tag points at,
+  with the tag in a comment on the `GIT_TAG` line: update both together
+  (`git ls-remote <repository> <tag>`, the peeled `<tag>^{}` line for an
+  annotated tag). They are cloned shallow (`GIT_SHALLOW`), which CMake's
+  documentation allows for names only; it works for a hash because the
+  shallow clone fetches the tip of every branch and tag, so a pin must be a
+  tagged commit, and a tag that upstream moves or deletes fails the
+  configure. Archives carry a `URL_HASH`: update the hash with the URL.
+  DuckDB gets its version from `OVERRIDE_GIT_DESCRIBE` (`DUCKDB_VERSION`,
+  raised with its commit), so that it does not depend on the clone having
+  the tag.
 - Debug builds define `TABLESKIM_DEBUG=1`, which enables debug logging.
 - TableSkim's own targets compile with `-Wall -Wextra` (MSVC: `/W4`) by
   linking `tableskim-warnings`; link it to every new target of our own.
@@ -153,6 +162,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Do not edit the files in `demo/data/` by hand; change `create-demo-data.py`
 and regenerate.
 
+`demo/examples/` is different: copies of public datasets (penguins, iris,
+flights, Bike Sharing) with their original values, larger ones stored
+compressed, which the manual's examples and screenshots use (see
+`demo/examples/README.md` for sources and licenses). They are not
+generated; do not change them.
+
 `super-large.csv.xz`, `super-large.xlsx`, `super-large.ods` and
 `super-large.parquet` (zstd, 1,000,000 rows) are generated
 too but are not committed (see `demo/.gitignore`); `--no-super-large` skips
@@ -195,7 +210,7 @@ read their header comments before changing anything in `src/common/`.
   interfaces, register it in `table_registry.cxx`, add the files to
   `tableskim-common` in `CMakeLists.txt`, and add `tests/table_<format>_tests.cxx`.
   Override `DataSource::usesHeaderOption()` to return true only if the
-  format honours `OpenOptions::header` (CSV, Excel); the UIs disable their
+  format honours `OpenOptions::header` (CSV, Excel, ODS); the UIs disable their
   first-row option (View > First Row, `H`) otherwise (`TableBook::usesHeaderOption()`).
 - The DuckDB backend (`table_duckdb.cxx`) pages with `LIMIT`/`OFFSET` and
   translates `ViewSpec` into SQL that mirrors the in-memory sort/filter
@@ -219,13 +234,15 @@ read their header comments before changing anything in `src/common/`.
   LibreOffice's largest sheet. The sheet's parser pauses at each row once
   the rows asked for are there (`XML_StopParser()`, resumable), so the
   rows of a piece of XML are not all made at once, a row over
-  `kMaxRowBytes` is refused, and the file is closed at the sheet's end.
-  Read-only (no `edits`).
+  `kMaxRowBytes` (its cells' text checked as it grows) is refused, so is
+  a document whose non-empty repeats copy more than `kMaxRepeatedBytes`
+  in all, and the file is closed at the sheet's end. Merged cells are
+  capped per document. Read-only (no `edits`).
 - The SQLite backend (`table_sqlite.cxx`) uses the SQLite C API directly. Its
   filters call `cellMatchesCondition()` (the in-memory semantics) as an SQL
   function; a sort/filter is built once into a TEMP table of row positions.
 - **`SourceCapabilities`** decides how the model treats a source:
-  `random_access = false` means rows are read strictly in order (CSV, Excel);
+  `random_access = false` means rows are read strictly in order (CSV, Excel, ODS);
   `query_pushdown = true` means sort/filter are delegated via `applyView()`.
   Without pushdown, sort/filter are done in memory over every row, which
   sequential sources keep cached once read (no eviction). For CSV/TSV
@@ -632,6 +649,10 @@ Match the existing code:
 - Keep the subject short (about 70 characters), without a trailing period.
 - If an agent wrote the commit, end the message with the trailers the tool
   provides for attribution (e.g. `Co-Authored-By:`), after a blank line.
+- A version bump changes `project(... VERSION ...)` in `CMakeLists.txt` and
+  the version of `web/package.json` (and its lock file): the release's
+  `check-version` job compares both with the tag, and requires
+  `vscode/CHANGELOG.md` to name the version.
 - Never commit `build/`, `.cache/`, `CMakeUserPresets.json`,
   `demo/.venv/`, `web/node_modules/`, `web/dist/` or what `vscode/` builds
   (`node_modules/`, `out/`, `media/`, `engine/`, `*.vsix`). Commit

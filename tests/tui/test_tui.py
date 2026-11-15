@@ -12,6 +12,7 @@ Needs pyte (python3-pyte, or `pip install -r tests/tui/requirements.txt`).
 
 import argparse
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -198,6 +199,26 @@ class ChartNarrowingTest(TuiTestCase):
         tui.send("esc")
         tui.wait_text("2 rows of 4")
 
+    def test_clicks_on_a_chart_do_not_reach_the_sheet_under_it(self):
+        path = self.temp_file("numbers.csv", "value,other\n1,a\n2,b\n3,c\n4,d\n")
+        tui = self.run_tui(path)
+        tui.wait_text("4 rows")
+        tui.send("I")
+        tui.wait_text("EDIT")
+        # Where the cell R3C2 ("c") is drawn.
+        lines = tui.text().splitlines()
+        y = next(i for i, line in enumerate(lines) if re.match(r"\s*3 │", line))
+        x = lines[y].index(" c ") + 1
+        tui.send("B")
+        tui.wait_text("4 numbers")
+        # A double click there (SGR mouse reports, 1-based).
+        for _ in range(2):
+            tui.type(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m")
+        tui.send("esc")
+        tui.wait_for(lambda text: "Histogram:" not in text)
+        self.assertIn("R1C1", status(tui))
+        self.assertNotIn("Edit R", tui.text())
+
 
 class HiddenColumnsTest(TuiTestCase):
     def test_histogram_columns_skip_hidden_ones(self):
@@ -223,6 +244,24 @@ class HiddenColumnsTest(TuiTestCase):
         tui.wait_text("Box plot: Department × ID")
         tui.send("X")
         tui.wait_text("Density: Age × ID")
+
+
+class StaleDialogTest(TuiTestCase):
+    def test_a_group_by_result_closes_the_filter_dialog_of_the_other_sheet(self):
+        # Enough rows that the grouping is still running when f is pressed.
+        rows = 300000
+        path = self.temp_file("t.csv", "kind,row\n" + "".join(f"k{i % 10},{i}\n" for i in range(rows)))
+        tui = self.run_tui(path)
+        tui.wait_text("rows × 2 cols")
+        tui.send("A")
+        tui.wait_text("Group By")
+        # Enter and f in one write, so that f opens the filter dialog before
+        # the result can come. The dialog is not waited for: a fast grouping
+        # closes it before the screen is read.
+        tui.type("\rf")
+        # The result's sheet is shown: the filter was for the file's sheet.
+        tui.wait_text("groups in the sheet")
+        self.assertNotIn("Match: all conditions", tui.text())
 
 
 class AnalysisCodeTest(TuiTestCase):
@@ -436,6 +475,25 @@ class EditingTest(TuiTestCase):
         tui.wait_text("Only text files can skip lines")
         self.assertNotIn("Save them?", tui.text())
         self.assertIn("*t.xlsx", status(tui))
+
+    def test_a_cell_is_not_edited_while_a_sort_is_pending(self):
+        # Enough rows that the sort is still running when the next key comes.
+        rows = 300000
+        lines = "".join(f"{(i * 7919) % rows},{i}\n" for i in range(rows))
+        path = self.temp_file("t.csv", "key,row\n" + lines)
+        tui = self.run_tui(path)
+        tui.wait_text("rows × 2 cols")
+        tui.send("I")
+        tui.wait_text("EDIT")
+        tui.send("j")
+        # The prompt would hold the cursor's view row, which the sort moves.
+        tui.type("oi")
+        tui.wait_text("Still sorting or filtering")
+        self.assertNotIn("Edit R2C1", tui.text())
+        tui.wait_for(lambda text: re.search(r"^\s+2 │\s+1 │", text, re.M), what="the sorted rows")
+        tui.send("i")
+        tui.wait_text("Edit R2C1")
+        tui.send("esc")
 
 class FollowTest(TuiTestCase):
     def test_appended_rows_are_shown(self):

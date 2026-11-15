@@ -140,7 +140,7 @@ For each sheet, the summary has:
   without keeping the rows in memory.
 - The first rows: 10 with `--summary`, N with `--head N`.
 
-The first row of a CSV / TSV file or an Excel sheet is taken as the column
+The first row of a CSV / TSV file or an Excel or ODS sheet is taken as the column
 names when it looks like a header, as in the windows (`--header`, above).
 
 | Option              | Description                                                         |
@@ -167,7 +167,7 @@ search while a large file is still loading.
 
 ![A CSV file in the GUI](../images/gui-main-window.png)
 
-The first row of a CSV / TSV file or an Excel sheet is taken as the column
+The first row of a CSV / TSV file or an Excel or ODS sheet is taken as the column
 names when it looks like a header: every cell is text, none is empty, and no
 two are the same. Otherwise it is shown as data, and the columns are named
 `A`, `B`, `C`, ... like a spreadsheet. If the guess is wrong, choose

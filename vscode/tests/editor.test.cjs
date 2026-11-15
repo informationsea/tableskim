@@ -212,14 +212,16 @@ test('save replies report the result and protect the source', async (t) => {
 
 // A provider with an editor on a document, as VS Code resolves it.
 // With linked, the document is a symbolic link to a file in another directory.
-async function resolveEditor(t, { linked = false } = {}) {
+// name: the document's file name; scheme: its URI's scheme.
+async function resolveEditor(t, { linked = false, name = 'data.csv', scheme = 'file' } = {}) {
     // Without links (macOS's temporary directory is under /var -> /private/var),
     // so that the document's directory is the only one watched.
     const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'tableskim-editor-')));
     t.after(() => fs.rm(directory, { recursive: true, force: true }));
     await fs.mkdir(path.join(directory, 'media'));
     await fs.writeFile(path.join(directory, 'media', 'vscode.html'), '<html><head></head></html>');
-    const document = new Uri(path.join(directory, 'data.csv'));
+    const document = new Uri(path.join(directory, name));
+    document.scheme = scheme;
     if (linked) {
         await fs.mkdir(path.join(directory, 'target'));
         await fs.writeFile(path.join(directory, 'target', 'real.csv'), 'a,b\n1,2\n');
@@ -294,6 +296,28 @@ test('each load of the page gets an engine of its own', async (t) => {
     assert.ok(watchers.every((watcher) => watcher.disposed));
     editor.provider.reloadActive();
     assert.equal(editor.loads.length, 2, 'a closed editor is not loaded');
+});
+
+test('the file name goes into the page as it is', async (t) => {
+    // Replacement patterns of String.replace(): $& is the match, $' what follows it.
+    const editor = await resolveEditor(t, { name: "a$'b$&c$$.csv" });
+    const page = editor.loads[0];
+    assert.match(page, /<meta name="tableskim-file" content="a\$'b\$&amp;c\$\$\.csv">/);
+    assert.equal(page.split('<head>').length, 2);
+    assert.ok(page.endsWith('"></head></html>'));
+    editor.dispose();
+});
+
+test('requests without an engine are answered with an engine error', async (t) => {
+    const editor = await resolveEditor(t, { scheme: 'untitled' });
+    editor.receive({ type: 'hello', page: 'page-1' });
+    assert.equal(engines.length, 0);
+    editor.receive({ type: 'engine', message: { id: 1, method: 'open', params: {} } });
+    assert.deepEqual(editor.posted, [
+        { type: 'engineError', message: 'TableSkim cannot read untitled: files' },
+        { type: 'engineError', message: 'TableSkim cannot read untitled: files' },
+    ]);
+    editor.dispose();
 });
 
 test('a stopped engine offers to reload the page', async (t) => {

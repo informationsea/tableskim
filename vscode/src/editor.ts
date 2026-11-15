@@ -119,6 +119,10 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
         const editor: Editor = { document: document.uri, panel, reload, post };
         this.editors.add(editor);
 
+        const noEngine = () =>
+            document.uri.scheme !== 'file'
+                ? `TableSkim cannot read ${document.uri.scheme}: files`
+                : 'the engine is not running';
         // A page that loads again (Developer: Reload Webviews, a crashed
         // webview, reload()) gets an engine of its own: the old one has
         // answered requests the new page never made.
@@ -128,7 +132,7 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
             // The engine reads files by their path on the machine this runs
             // on (the remote one with Remote Development).
             if (document.uri.scheme !== 'file') {
-                post({ type: 'engineError', message: `TableSkim cannot read ${document.uri.scheme}: files` });
+                post({ type: 'engineError', message: noEngine() });
                 return;
             }
             const current = new Engine(
@@ -175,7 +179,10 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
                     if (request.method === 'open')
                         request = { ...request, params: { ...request.params, path: document.uri.fsPath } };
                     this.relayed.fire({ document: document.uri, direction: 'toEngine', message: request });
-                    engine?.post(request);
+                    // Without an engine nothing would answer: the page learns it
+                    // as it learns of a stopped one, and asks no more.
+                    if (engine) engine.post(request);
+                    else post({ type: 'engineError', message: noEngine() });
                     break;
                 }
                 case 'save':
@@ -313,7 +320,8 @@ export class TableSkimEditorProvider implements vscode.CustomReadonlyEditorProvi
             `<meta name="tableskim-load" content="${load}">` +
             (this.testMode ? '<meta name="tableskim-test" content="1">' : '');
         // Webview resources are not served for CORS requests.
-        return page.replace('<head>', `<head>${head}`).replace(/ crossorigin/g, '');
+        // A function, so that $& or $' in the file's name is not a pattern.
+        return page.replace('<head>', () => `<head>${head}`).replace(/ crossorigin/g, '');
     }
 
     private async save(document: vscode.Uri, name: string, data: Uint8Array): Promise<SaveResult> {

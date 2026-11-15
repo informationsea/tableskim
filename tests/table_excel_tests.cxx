@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 
 #include <OpenXLSX.hpp>
 #include <XLXmlParser.hpp>
@@ -98,6 +99,40 @@ namespace
         doc.save();
         doc.close();
         return path;
+    }
+
+    // Gives the entries (all, or the one named) another uncompressed size
+    // in the ZIP directory, as a crafted file could.
+    void setUnpackedSizes(const std::filesystem::path &path, uint32_t size, const std::string &only = {})
+    {
+        std::string data;
+        {
+            std::ifstream in(path, std::ios::binary);
+            data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        }
+        auto le16 = [&](size_t at)
+        {
+            return static_cast<size_t>(static_cast<unsigned char>(data[at])) |
+                   static_cast<size_t>(static_cast<unsigned char>(data[at + 1])) << 8;
+        };
+        // The directory, from the end record (no comment, no ZIP64 here).
+        const size_t end = data.rfind("PK\x05\x06");
+        REQUIRE(end != std::string::npos);
+        size_t at = le16(end + 16) | le16(end + 18) << 16;
+        size_t changed = 0;
+        for (size_t i = 0; i < le16(end + 10); ++i, at += 46 + le16(at + 28) + le16(at + 30) + le16(at + 32))
+        {
+            REQUIRE(data.compare(at, 4, "PK\x01\x02") == 0);
+            const std::string name = data.substr(at + 46, le16(at + 28));
+            if (!only.empty() && name != only)
+                continue;
+            for (size_t k = 0; k < 4; ++k)
+                data[at + 24 + k] = static_cast<char>((size >> (8 * k)) & 0xFF);
+            ++changed;
+        }
+        REQUIRE(changed > 0);
+        std::ofstream(path, std::ios::binary | std::ios::trunc).write(data.data(),
+                                                                       static_cast<std::streamsize>(data.size()));
     }
 } // namespace
 
@@ -253,6 +288,35 @@ TEST_CASE("unsupported or broken Excel files fail to open cleanly")
         out << "PK\x03\x04 this is not really a zip";
     }
     CHECK_THROWS_AS(TableBook::open(path), std::exception);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Excel files that unpack too large are refused")
+{
+    const auto path = createWorkbook();
+    CHECK(TableBook::open(path)->sheetNames().size() == 2);
+    // OpenXLSX would allocate what the directory says, then parse it.
+    std::string expected = "too large";
+    SECTION("one entry")
+    {
+        setUnpackedSizes(path, 0xFFFFFFF0u, "xl/worksheets/sheet1.xml");
+    }
+    SECTION("the entries together")
+    {
+        // Each below the limit of an entry where size_t has 64 bits.
+        setUnpackedSizes(path, 0x7F000000u);
+        if (sizeof(size_t) == 8)
+            expected = "it unpacks to";
+    }
+    try
+    {
+        TableBook::open(path);
+        FAIL("opened");
+    }
+    catch (const std::runtime_error &error)
+    {
+        CHECK(std::string(error.what()).find(expected) != std::string::npos);
+    }
     std::filesystem::remove(path);
 }
 

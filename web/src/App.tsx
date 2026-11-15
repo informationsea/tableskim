@@ -23,7 +23,7 @@ import { SqlPanel } from './components/SqlPanel';
 import { StatsPanel } from './components/StatsPanel';
 import { StatusBar } from './components/StatusBar';
 import { type Tool, Toolbar } from './components/Toolbar';
-import type { Cell, ContextTarget, Range } from './grid/controller';
+import { type Cell, type ContextTarget, type Range, StaleRowsError } from './grid/controller';
 import { Grid, type GridHandle } from './grid/Grid';
 import { errorText } from './hooks';
 import { platform } from './platform';
@@ -554,7 +554,11 @@ export function App({ client, initialFile }: { client: TableSkimClient; initialF
                     }),
                 );
             return Promise.all(requests).then((replies) => {
-                if (epoch !== flow.current.epoch) throw new Error('stale');
+                // Another file or sheet is shown now, or is being chosen: its
+                // rows are not these (selectSheet() bumps the epoch before
+                // the new sheet's info comes, while info still names the old).
+                if (epoch !== flow.current.epoch || flow.current.info?.sheet !== current.sheet)
+                    throw new StaleRowsError();
                 const count = Math.min(...replies.map((reply) => reply.rows.length));
                 return {
                     first,
