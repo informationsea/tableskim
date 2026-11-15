@@ -1055,7 +1055,9 @@ TEST_CASE("WebSession cuts a copy to the sheet and refuses too many cells", "[re
 
     SECTION("more than 5,000,000 cells")
     {
-        // 1,001 rows of 5,000 columns.
+        // 1,001 rows in a sheet of 5,000 columns. Only the first row has
+        // them all: the cells are counted by the range, and a file of five
+        // million cells takes slow machines too long to read.
         const auto file = std::filesystem::temp_directory_path() / "tableskim-test-web-copy-wide.csv";
         {
             std::string line;
@@ -1063,8 +1065,9 @@ TEST_CASE("WebSession cuts a copy to the sheet and refuses too many cells", "[re
                 line += column == 0 ? "1" : ",1";
             line += '\n';
             std::ofstream out(file, std::ios::binary);
-            for (size_t row = 0; row < 1001; ++row)
-                out << line;
+            out << line;
+            for (size_t row = 1; row < 1001; ++row)
+                out << "1\n";
         }
         client.result("open", "{\"path\":\"" + jsonPath(file.generic_string()) + "\",\"header\":\"no\"}");
         const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"" + jsonPath(file.filename().generic_string()) +

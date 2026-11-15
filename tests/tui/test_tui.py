@@ -255,8 +255,10 @@ class StaleDialogTest(TuiTestCase):
         tui.wait_text("rows × 2 cols")
         tui.send("A")
         tui.wait_text("Group By")
+        # Enter and f in one write, so that f opens the filter dialog before
+        # the result can come. The dialog is not waited for: a fast grouping
+        # closes it before the screen is read.
         tui.type("\rf")
-        tui.wait_text("Match: all conditions")
         # The result's sheet is shown: the filter was for the file's sheet.
         tui.wait_text("groups in the sheet")
         self.assertNotIn("Match: all conditions", tui.text())
