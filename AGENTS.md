@@ -227,8 +227,10 @@ read their header comments before changing anything in `src/common/`.
   LibreOffice's largest sheet. The sheet's parser pauses at each row once
   the rows asked for are there (`XML_StopParser()`, resumable), so the
   rows of a piece of XML are not all made at once, a row over
-  `kMaxRowBytes` is refused, and the file is closed at the sheet's end.
-  Read-only (no `edits`).
+  `kMaxRowBytes` (its cells' text checked as it grows) is refused, so is
+  a document whose non-empty repeats copy more than `kMaxRepeatedBytes`
+  in all, and the file is closed at the sheet's end. Merged cells are
+  capped per document. Read-only (no `edits`).
 - The SQLite backend (`table_sqlite.cxx`) uses the SQLite C API directly. Its
   filters call `cellMatchesCondition()` (the in-memory semantics) as an SQL
   function; a sort/filter is built once into a TEMP table of row positions.

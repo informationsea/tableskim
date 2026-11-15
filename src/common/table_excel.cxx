@@ -14,11 +14,41 @@
 
 #include "file_util.hxx"
 #include "xlsx_writer.hxx"
+#include "zip_reader.hxx"
 
 namespace
 {
     // Serial number of 1970-01-01 in the 1900 date system.
     constexpr double kUnixEpochSerial = 25569.0;
+
+    // OpenXLSX unpacks an entry whole, as large as the ZIP directory says,
+    // and parses it into a DOM a few times larger: a small file could ask
+    // for any amount of memory. A sheet of a million rows of seven columns
+    // (super-large.xlsx) is about 400 MB of XML, so these leave room for
+    // real workbooks several times that. Where size_t is 32 bits
+    // (WebAssembly, at most 4 GiB of memory), less fits in all.
+    constexpr uint64_t kMaxEntryBytes = sizeof(size_t) < 8 ? uint64_t{512} << 20 : uint64_t{2} << 30;
+    constexpr uint64_t kMaxUnpackedBytes = sizeof(size_t) < 8 ? uint64_t{1} << 30 : uint64_t{4} << 30;
+
+    // Refuses a workbook that unpacks to more than those, before OpenXLSX
+    // reads it.
+    void checkUnpackedSize(const std::filesystem::path &path)
+    {
+        const ZipArchive archive(path);
+        uint64_t total = 0;
+        for (const ZipArchive::Entry &entry : archive.entries())
+        {
+            if (entry.size > kMaxEntryBytes)
+                throw std::runtime_error("The Excel file is too large to open: " + entry.name + " unpacks to " +
+                                         std::to_string(entry.size >> 20) + " MiB, more than " +
+                                         std::to_string(kMaxEntryBytes >> 20) + " MiB");
+            total += entry.size;
+        }
+        if (total > kMaxUnpackedBytes)
+            throw std::runtime_error("The Excel file is too large to open: it unpacks to " +
+                                     std::to_string(total >> 20) + " MiB, more than " +
+                                     std::to_string(kMaxUnpackedBytes >> 20) + " MiB");
+    }
 
     enum class DateKind : uint8_t
     {
@@ -498,6 +528,7 @@ namespace
         ExcelDataSource(const std::filesystem::path &path, const OpenOptions &options)
             : book_(std::make_shared<ExcelWorkbook>()), path_(path), options_(options)
         {
+            checkUnpackedSize(path);
             const std::u8string u8 = path.u8string();
             book_->document.open(std::string(u8.begin(), u8.end()));
             sheet_names_ = book_->document.workbook().worksheetNames();
@@ -544,6 +575,7 @@ namespace
         {
             try
             {
+                checkUnpackedSize(path_);
                 OpenXLSX::XLDocument document;
                 const std::u8string source = path_.u8string();
                 document.open(std::string(source.begin(), source.end()));

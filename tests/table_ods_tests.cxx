@@ -7,6 +7,7 @@
 
 #include "file_util.hxx"
 #include "table.hxx"
+#include "table_ods.hxx"
 #include "test_helpers.hxx"
 #include "test_zip.hxx"
 
@@ -485,6 +486,92 @@ TEST_CASE("ODS row too large to hold is refused")
     catch (const std::runtime_error &error)
     {
         CHECK(std::string(error.what()).find("too large") != std::string::npos);
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("ODS cell text is limited as it grows")
+{
+    // 72 MiB of spaces from 26 KB of XML, in a cell that never ends: the
+    // limit must be met while the text grows, before the XML is found
+    // broken (a cell of text:s elements alone could ask for gigabytes).
+    std::string spaces;
+    for (int i = 0; i < 1100; ++i)
+        spaces += R"(<text:s text:c="65536"/>)";
+    const std::string start = odsContent("");
+    const std::string content = start.substr(0, start.find("</office:spreadsheet>")) +
+                                R"(<table:table table:name="Bomb"><table:table-row>)"
+                                R"(<table:table-cell office:value-type="string"><text:p>a)" +
+                                spaces;
+    const auto path = writeOds("tableskim-test-text-bomb.ods", content);
+    try
+    {
+        TableBook::open(path);
+        FAIL("opened");
+    }
+    catch (const std::runtime_error &error)
+    {
+        CHECK(std::string(error.what()).find("row 1 of a sheet is too large") != std::string::npos);
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("ODS repeats copying too much are refused")
+{
+    // 16,384 cells repeated over 16,777,216 rows: about 11 TB once read,
+    // from a few hundred bytes.
+    const std::string tables =
+        R"(<table:table table:name="Tall"><table:table-row table:number-rows-repeated="4000000000">)" +
+        cell(R"(table:number-columns-repeated="16384" office:value-type="float" office:value="1")") +
+        "</table:table-row></table:table>";
+    const auto path = writeOds("tableskim-test-repeat-bomb.ods", odsContent(tables));
+    try
+    {
+        TableBook::open(path);
+        FAIL("opened");
+    }
+    catch (const std::runtime_error &error)
+    {
+        CHECK(std::string(error.what()).find("too large") != std::string::npos);
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("ODS merged cells are limited in the whole document")
+{
+    // Each sheet repeats a row of 16,384 merges 64 times: 2^20 merges, the
+    // limit, in each.
+    const std::string sheet =
+        R"(<table:table-row table:number-rows-repeated="64">)" +
+        cell(R"(table:number-columns-repeated="16384" table:number-rows-spanned="2")") + "</table:table-row>";
+    const auto path = writeOds("tableskim-test-merge-bomb.ods",
+                               odsContent(R"(<table:table table:name="A">)" + sheet + "</table:table>" +
+                                          R"(<table:table table:name="B">)" + sheet + "</table:table>"));
+    {
+        auto source = openOdsDataSource(path, {.header = OpenOptions::Header::No});
+        CHECK(source->openSheet("A")->mergedCells().size() == size_t{1} << 20);
+        CHECK(source->openSheet("B")->mergedCells().empty());
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("ODS durations too long to show stay text")
+{
+    const std::string tables =
+        R"(<table:table table:name="Times"><table:table-row>)" +
+        cell(R"(office:value-type="time" office:time-value="P999999999999D")", "days") +
+        cell(R"(office:value-type="time" office:time-value="PT999999999999H999999999999M")", "hours") +
+        cell(R"(office:value-type="time" office:time-value="PT999999999S")", "seconds") +
+        cell(R"(office:value-type="time" office:time-value="PT1000000000000.5S")", "fraction") +
+        "</table:table-row></table:table>";
+    const auto path = writeOds("tableskim-test-long-times.ods", odsContent(tables));
+    {
+        auto book = TableBook::open(path, {.header = OpenOptions::Header::No});
+        auto model = openSheet(*book, "Times");
+        CHECK(cellText(*model, 0, 0) == "days");
+        CHECK(cellText(*model, 0, 1) == "hours");
+        CHECK(cellText(*model, 0, 2) == "277777:46:39");
+        CHECK(cellText(*model, 0, 3) == "fraction");
     }
     std::filesystem::remove(path);
 }
