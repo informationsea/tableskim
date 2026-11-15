@@ -93,11 +93,14 @@ ctest --preset debug -j 8            # test cases in parallel
 - Git dependencies are pinned by the commit their release tag points at,
   with the tag in a comment on the `GIT_TAG` line: update both together
   (`git ls-remote <repository> <tag>`, the peeled `<tag>^{}` line for an
-  annotated tag). They are not `GIT_SHALLOW`, which CMake allows for branch
-  and tag names only, so each clone has the full history. Archives carry a
-  `URL_HASH`: update the hash with the URL. DuckDB gets its version from
-  `OVERRIDE_GIT_DESCRIBE` (`DUCKDB_VERSION`, raised with its commit), so that
-  it does not depend on the clone having the tag.
+  annotated tag). They are cloned shallow (`GIT_SHALLOW`), which CMake's
+  documentation allows for names only; it works for a hash because the
+  shallow clone fetches the tip of every branch and tag, so a pin must be a
+  tagged commit, and a tag that upstream moves or deletes fails the
+  configure. Archives carry a `URL_HASH`: update the hash with the URL.
+  DuckDB gets its version from `OVERRIDE_GIT_DESCRIBE` (`DUCKDB_VERSION`,
+  raised with its commit), so that it does not depend on the clone having
+  the tag.
 - Debug builds define `TABLESKIM_DEBUG=1`, which enables debug logging.
 - TableSkim's own targets compile with `-Wall -Wextra` (MSVC: `/W4`) by
   linking `tableskim-warnings`; link it to every new target of our own.
