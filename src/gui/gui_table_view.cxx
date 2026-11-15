@@ -1340,6 +1340,7 @@ void GuiTableView::showCellMenu(int row, int col, TableContext context)
     items.push_back({nullptr});
 
     const std::shared_ptr<TableModel> model = model_;
+    const ViewSpec shown = model_->view();
     MenuAction action;
     {
         NestedLoopGuard guard;
@@ -1348,6 +1349,13 @@ void GuiTableView::showCellMenu(int row, int col, TableContext context)
     // As in showSortMenu(): the menu was for this table only.
     if (model_ != model)
         return;
+    // Nor for other rows: a view applied meanwhile moved the selection and
+    // the clicked cell under the menu.
+    if (action != MenuAction::None && model_->view() != shown)
+    {
+        fl_beep();
+        return;
+    }
     switch (action)
     {
     case MenuAction::ColumnStats:
@@ -1528,13 +1536,19 @@ void GuiTableView::editCell(int row, int col, const std::optional<std::string> &
     {
         // Frozen cells are drawn left of the scrolled cells, where the editor
         // would be cut off.
+        const std::shared_ptr<TableModel> model = model_;
+        const ViewSpec shown = model_->view();
         const char *input;
         {
             NestedLoopGuard guard;
             input = fl_input("%s, row %d:", typed ? typed->c_str() : value.c_str(),
                              escapeLabel(model_->columnName(static_cast<size_t>(col))).c_str(), row + 1);
         }
-        if (input && model_)
+        // A view applied meanwhile (a pending sort, say) moved the row: the
+        // text would go to another one.
+        if (input && (model_ != model || model_->view() != shown))
+            fl_beep();
+        else if (input)
             model_->setCells({{static_cast<size_t>(row), static_cast<size_t>(col), input}});
         Fl::focus(this);
         return;

@@ -591,3 +591,106 @@ TEST_CASE("GUI: filter editing preserves chart narrowing and clears it separatel
     REQUIRE(window.waitForRows(view, 54));
     CHECK_FALSE(view->model()->view().filtered());
 }
+
+TEST_CASE("GUI: a quit cancelled in a later window keeps the edits of an earlier one", "[regression]")
+{
+    TempDir dir;
+    const auto path_a = dir.write("a.csv", "a,b\n1,x\n2,y\n");
+    const auto path_b = dir.write("b.csv", "a,b\n1,x\n2,y\n");
+    Window window_a(path_a, OpenOptions::Header::No);
+    Window window_b(path_b, OpenOptions::Header::No);
+    for (Window *window : {&window_a, &window_b})
+    {
+        REQUIRE(window->waitForRows(window->currentView(), 3));
+        (*window)->set_editing(true);
+        REQUIRE(window->currentView()->model()->setCells({{1, 0, "42"}}) == 1);
+    }
+
+    bool dont_save = false;
+    ModalAnswer answer([&](Fl_Window &dialog)
+                       {
+        const std::string message = ModalAnswer::message(dialog);
+        if (message.starts_with("a.csv"))
+        {
+            if (!dont_save)
+                dont_save = pressButton(dialog, "Don't Save");
+            return false;
+        }
+        return message.starts_with("b.csv") && pressButton(dialog, "Cancel"); });
+    quit(nullptr, nullptr);
+    REQUIRE(dont_save);
+    REQUIRE(answer.answered());
+    pump();
+    CHECK(window_a->main_window->shown());
+    CHECK(window_b->main_window->shown());
+    // Nothing was dropped: the quit did not go ahead.
+    CHECK(window_a.currentView()->model()->modified());
+    CHECK(currentCell(window_a, 1, 0) == "42");
+    CHECK(window_b.currentView()->model()->modified());
+    CHECK(readFile(path_a) == "a,b\n1,x\n2,y\n");
+}
+
+TEST_CASE("GUI: a sort applied while a frozen cell is edited does not move the text", "[regression]")
+{
+    TempDir dir;
+    // The rows are "a,b", "1,x" and "2,y".
+    const auto path = dir.write("t.csv", "a,b\n1,x\n2,y\n");
+    Window window(path, OpenOptions::Header::No);
+    GuiTableView *view = window.currentView();
+    REQUIRE(window.waitForRows(view, 3));
+    window->set_editing(true);
+    view->freezeColumns(1);
+    const auto model = view->model();
+
+    bool sorted = false;
+    ModalAnswer answer([&](Fl_Window &dialog)
+                       {
+        if (!sorted)
+        {
+            // Lands while the frozen cell's dialog is up.
+            model->setView({.sort = {{.column = 1, .ascending = false}}});
+            sorted = true;
+            return false;
+        }
+        auto *input = dynamic_cast<Fl_Input *>(Fl::focus());
+        if (model->view().sort.empty() || !input)
+            return false;
+        input->value("typed");
+        return pressButton(dialog, "OK"); });
+    view->editCell(2, 0); // "2,y", third before the sort
+    REQUIRE(answer.answered());
+    pump();
+    CHECK_FALSE(model->modified());
+    CHECK(waitFor([&] { return currentCell(window, 0, 0) == "2" && currentCell(window, 2, 0) == "a"; }));
+}
+
+TEST_CASE("GUI: Save As to a file that cannot be read shows the original again", "[regression]")
+{
+    TempDir dir;
+    const auto source = dir.path() / "t.xlsx";
+    std::filesystem::copy_file(kDemoData / "normal.xlsx", source);
+    // Written as Excel, which does not open as OpenDocument.
+    const auto target = dir.path() / "t.ods";
+    Window window(source);
+    GuiTableView *view = window.currentView();
+    REQUIRE(waitFor([&] { return view->model()->rowCount().isExact() && !currentCell(window, 0, 0).empty(); }));
+    const size_t rows = view->model()->rowCount().value;
+    const std::string original = currentCell(window, 0, 0);
+    window->set_editing(true);
+    REQUIRE(view->model()->setCells({{0, 0, "edited"}}) == 1);
+
+    ModalAnswer choose([&](Fl_Window &dialog) { return chooseFile(dialog, target); });
+    ModalAnswer failed([](Fl_Window &dialog)
+                       {
+        return ModalAnswer::message(dialog).find("Failed to open") != std::string::npos &&
+               pressButton(dialog, "Close"); });
+    CHECK(window->save(true));
+    REQUIRE(choose.answered());
+    CHECK(failed.answered());
+    CHECK(std::filesystem::exists(target));
+    // A book again, with the original file as it was.
+    CHECK(window->opened_path() == utf8String(source));
+    CHECK(window->editing());
+    REQUIRE(window.waitForRows(window.currentView(), rows));
+    CHECK(waitFor([&] { return currentCell(window, 0, 0) == original; }));
+}

@@ -576,6 +576,38 @@ void TuiApp::showSheet(size_t index)
     table_holder_->DetachAllChildren();
     table_holder_->Add(views_[index]);
     syncSearch();
+    closeStaleDialogs();
+}
+
+// A result shown meanwhile (Group By, SQL) replaces the sheet under a dialog
+// or chart, which would then act on that sheet. A reopen keeps them, as its
+// sheets have the same names.
+void TuiApp::closeStaleDialogs()
+{
+    const TuiTableView *view = currentView();
+    const std::shared_ptr<TableModel> model = view ? view->model() : nullptr;
+    const auto stale = [&model](const std::shared_ptr<TableModel> &opened)
+    { return opened && (!model || opened->name() != model->name()); };
+    bool closed = false;
+    if ((show_filter_dialog_ || show_group_dialog_ || show_format_dialog_) && stale(dialog_model_))
+    {
+        show_filter_dialog_ = show_group_dialog_ = show_format_dialog_ = false;
+        closed = true;
+    }
+    if (stale(histogram_model_))
+    {
+        closeHistogram();
+        closed = true;
+    }
+    if (stale(density_model_))
+    {
+        closeDensity();
+        closed = true;
+    }
+    if (!show_filter_dialog_ && !show_group_dialog_ && !show_format_dialog_)
+        dialog_model_.reset();
+    if (closed)
+        setStatus("Closed: another sheet is shown now");
 }
 
 void TuiApp::revert()
@@ -1319,6 +1351,7 @@ void TuiApp::openFilterDialog()
                                      { return c.column == view->cursorColumn(); });
         filter_line_ = static_cast<size_t>((it != conditions.end() ? it : conditions.begin()) - conditions.begin()) + 1;
     }
+    dialog_model_ = view->model();
     show_filter_dialog_ = true;
 }
 
@@ -1815,9 +1848,9 @@ bool TuiApp::handleEvent(Event event)
         }
         return true;
     }
-    if (histogram_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_)
+    if (histogram_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_ && !event.is_mouse())
         return handleHistogramEvent(event);
-    if (density_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_)
+    if (density_model_ && !search_prompt_ && !goto_prompt_ && !sql_prompt_ && !export_prompt_ && !event.is_mouse())
         return handleDensityEvent(event);
     if (search_prompt_ && !event.is_mouse())
         return handleSearchPromptEvent(event);
@@ -1842,7 +1875,9 @@ bool TuiApp::handleEvent(Event event)
                 }
             }
         }
-        return false;
+        // A chart is drawn over the sheet, whose cells were laid out where
+        // it is now: a click there must not move to (or edit) one.
+        return histogram_model_ || density_model_;
     }
 
     // A message stays until the next key, and a key cancels a waiting n / N.
@@ -3500,6 +3535,7 @@ void TuiApp::openGroupDialog()
     const auto cursor = std::lower_bound(group_columns_.begin(), group_columns_.end(), view->cursorColumn());
     group_line_ = static_cast<size_t>(cursor - group_columns_.begin());
     group_aggregate_ = 0;
+    dialog_model_ = view->model();
     show_group_dialog_ = true;
 }
 
@@ -3678,6 +3714,7 @@ void TuiApp::openFormatDialog()
         return;
     format_draft_ = view->columnFormats().get(view->cursorColumn());
     format_line_ = 0;
+    dialog_model_ = view->model();
     show_format_dialog_ = true;
 }
 
@@ -3809,11 +3846,18 @@ void TuiApp::editCell()
         setStatus("This cell cannot be edited (a formula, a time, part of a merged cell, or not read yet)", true);
         return;
     }
+    // The rows are about to move: the cursor's row would not be this cell's.
+    if (model->requestedView() != model->view())
+    {
+        setStatus("Still sorting or filtering: edit once it is done", true);
+        return;
+    }
     const CellRef cell = model->peek(row, col);
     edit_input_ = cell.state == CellState::Ready ? formatCell(*cell.value) : std::string();
     edit_model_ = model;
     edit_row_ = row;
     edit_col_ = col;
+    edit_view_ = model->view();
     edit_prompt_ = true;
 }
 
@@ -3843,6 +3887,12 @@ void TuiApp::finishEditPrompt(bool commit, int rows, int cols)
     const std::shared_ptr<TableModel> model = std::exchange(edit_model_, nullptr);
     if (!commit || !model)
         return;
+    // A view applied meanwhile put another row at edit_row_.
+    if (model->view() != edit_view_)
+    {
+        setStatus("The rows were sorted or filtered meanwhile; the cell was not changed", true);
+        return;
+    }
     model->setCells({{edit_row_, edit_col_, edit_input_}});
     TuiTableView *view = currentView();
     if (!view || view->model() != model || model->displayRowCount() == 0 || model->columnCount() == 0)
