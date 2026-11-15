@@ -221,7 +221,8 @@ public:
 
     // Blocks until the next rows are read. Returns an empty chunk after the
     // last row, and nullopt once `stop` is requested. Throws
-    // std::runtime_error if the sheet fails or the view changes meanwhile.
+    // std::runtime_error if the sheet or a read fails, or the view changes
+    // meanwhile.
     std::optional<ViewRows> next(std::stop_token stop);
 };
 
@@ -374,7 +375,8 @@ public:
     // Changes the cells at once, as one step for undo(); cells that are not
     // editable are left alone. CellsChanged is emitted, and searches,
     // statistics and histograms start over, but the view is not applied
-    // again: an edited row stays where it is until the next setView().
+    // again: an edited row stays where it is until the next setView(),
+    // which applies the view again even if it is the same.
     // Returns how many cells changed.
     size_t setCells(const std::vector<CellText> &cells);
     // Take back the last step, or do it again, in edit mode; `cell` gets
@@ -499,6 +501,10 @@ private:
     std::string error_message_;
     std::optional<std::string> view_error_;
     std::optional<std::string> read_error_;
+    // Edits so far, and those the applied view saw (setView() applies the
+    // same view again after an edit).
+    uint64_t edit_generation_ = 0;
+    uint64_t view_edit_generation_ = 0;
     SourceCapabilities capabilities_;
     std::map<size_t, CachedBlock> blocks_; // block index -> block
     size_t cache_bytes_ = 0;

@@ -271,6 +271,25 @@ TEST_CASE("Editing: the view is applied again only when asked")
     CHECK(cell == CellPosition{99, 99});
 }
 
+TEST_CASE("Editing: the same view asked for again sorts and filters the edited cells", "[regression]")
+{
+    auto book = TableBook::open(copyDemo("normal.csv"));
+    book->setEditing(true);
+    auto model = openSheet(*book);
+    const ViewSpec spec{.sort = {{4, true}}, .filter = Filter{.conditions = {{4, FilterOp::Equals, "Osaka"}}}};
+    model->setView(spec);
+    REQUIRE(waitFor([&] { return model->view() == spec; }));
+    const size_t rows = model->rowCount().value;
+    REQUIRE(rows > 1);
+
+    REQUIRE(setText(*model, 0, 4, "Kyoto"));
+    CHECK(model->rowCount().value == rows);
+    // Used to do nothing, as the view had not changed.
+    model->setView(spec);
+    CHECK(waitFor([&] { return model->rowCount().value == rows - 1; }));
+    CHECK(cellText(*model, 0, 4) == "Osaka");
+}
+
 TEST_CASE("Editing: statistics and searches start over")
 {
     auto book = TableBook::open(copyDemo("normal.csv"));

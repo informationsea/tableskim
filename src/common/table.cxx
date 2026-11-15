@@ -1275,7 +1275,8 @@ void TableModel::setView(ViewSpec spec)
 {
     {
         std::lock_guard lock(mutex_);
-        if (!pending_view_ && spec == view_)
+        // The same view again sorts and filters edited cells anew.
+        if (!pending_view_ && spec == view_ && (view_.empty() || view_edit_generation_ == edit_generation_))
             return;
         pending_view_ = std::move(spec);
     }
@@ -1682,6 +1683,8 @@ void TableModel::restartSearchLocked()
 
 void TableModel::cellsChangedLocked()
 {
+    // Edited rows stay where they are until the view is applied again.
+    ++edit_generation_;
     restartSearchLocked();
     if (stats_accumulator_)
         restartStatsLocked();
@@ -2390,6 +2393,8 @@ bool TableModel::stepApplyView(std::unique_lock<std::mutex> &lock, std::stop_tok
                                std::vector<TableEvent> &events)
 {
     const ViewSpec spec = *pending_view_;
+    // The rows sorted below are taken now, under the same lock.
+    const uint64_t edits_seen = edit_generation_;
 
     auto commit = [&](std::shared_ptr<const std::vector<size_t>> rows)
     {
@@ -2397,6 +2402,7 @@ bool TableModel::stepApplyView(std::unique_lock<std::mutex> &lock, std::stop_tok
             pending_view_.reset();
         view_ = spec;
         view_rows_ = std::move(rows);
+        view_edit_generation_ = edits_seen;
         if (capabilities_.random_access)
             evictLocked();
         restartSearchLocked();
@@ -2686,7 +2692,20 @@ bool TableModel::stepScan(std::unique_lock<std::mutex> &lock, std::stop_token st
         // query per read (DuckDB) is much faster this way.
         const std::shared_ptr<detail::ViewScan> scan = scan_;
         lock.unlock();
-        const RowBlockPtr block = source_->read(start, options_.scan_read_rows, stop);
+        RowBlockPtr block;
+        try
+        {
+            block = source_->read(start, options_.scan_read_rows, stop);
+        }
+        catch (const std::exception &e)
+        {
+            lock.lock();
+            // Only the reader fails: the sheet and the view shown stay as
+            // they are.
+            if (scan_ == scan)
+                failScanLocked(e.what());
+            return true;
+        }
         lock.lock();
         if (scan_ != scan || stop.stop_requested())
             return true; // the reader gave up, or the view changed (see commit())

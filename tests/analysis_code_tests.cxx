@@ -5,6 +5,7 @@
 #include <fstream>
 
 #include "analysis_code.hxx"
+#include "cell_format.hxx"
 #include "file_util.hxx"
 #include "table.hxx"
 #include "test_helpers.hxx"
@@ -375,6 +376,41 @@ TEST_CASE("analysisCode: filters, sorts and hidden columns of the view")
     }
 }
 
+TEST_CASE("analysisCode: a chart group's filter is written as an equality")
+{
+    // A group's filter is an RE2 pattern that Python's re refuses
+    // ("(?-i)" not at the start, "\z"); the code compares the text instead.
+    AnalysisCodeSpec spec;
+    spec.source = normalSource();
+    const ValueGroups cities{.values = {std::string("St. Louis (MO)")}, .other = true};
+    const ValueGroups ages{.values = {int64_t{42}}};
+    Filter filter;
+    filter.conditions = valueGroupConditions(cities, CITY, 1); // (other): not empty, not St. Louis
+    filter.narrowing = valueGroupConditions(ages, AGE, 0);
+    spec.view.filter = filter;
+
+    const std::string r = analysisCode(spec, CodeLanguage::R);
+    CHECK(contains(r, "(is.na(City) | City != \"St. Louis (MO)\")"));
+    CHECK(contains(r, "Age == 42"));
+    const std::string polars = analysisCode(spec, CodeLanguage::Polars);
+    CHECK(contains(polars, "pl.col(\"City\").ne_missing(\"St. Louis (MO)\")"));
+    CHECK(contains(polars, "pl.col(\"Age\") == 42"));
+    const std::string pandas = analysisCode(spec, CodeLanguage::Pandas);
+    CHECK(contains(pandas, "(df[\"City\"].fillna(\"\") != \"St. Louis (MO)\")"));
+    CHECK(contains(pandas, "(df[\"Age\"] == 42)"));
+    for (const CodeLanguage language : CODE_LANGUAGES)
+    {
+        const std::string code = analysisCode(spec, language);
+        CHECK(code.find("\\\\A") == std::string::npos);
+        CHECK(code.find("(?-i)") == std::string::npos);
+    }
+    // A group of a text column is compared as text, case and all.
+    spec.view.filter = Filter{.conditions = valueGroupConditions(cities, ID, 0)};
+    CHECK(contains(analysisCode(spec, CodeLanguage::R), "as.character(ID) == \"St. Louis (MO)\""));
+    CHECK(contains(analysisCode(spec, CodeLanguage::Polars), "pl.col(\"ID\").cast(pl.String) == \"St. Louis (MO)\""));
+    CHECK(contains(analysisCode(spec, CodeLanguage::Pandas), "df[\"ID\"].astype(str) == \"St. Louis (MO)\""));
+}
+
 TEST_CASE("analysisCode: Group By")
 {
     AnalysisCodeSpec spec;
@@ -643,6 +679,18 @@ TEST_CASE("analysisCode: write runnable examples", "[.analysis-code-run]")
              spec.view.filter = Filter{.combine = Filter::Combine::Or,
                                        .conditions = {{1, FilterOp::Matches, "^s"}, {4, FilterOp::IsEmpty, ""}},
                                        .narrowing = {{6, FilterOp::IsNumber, ""}, {7, FilterOp::IsDate, ""}}};
+         }},
+        {"csv-value-group", "normal.csv", "",
+         [](AnalysisCodeSpec &spec)
+         {
+             const ValueGroups cities{.values = {std::string("Osaka")}, .other = true};
+             spec.view.filter = Filter{.conditions = valueGroupConditions(cities, 4, 0)};
+         }},
+        {"csv-other-group", "normal.csv", "",
+         [](AnalysisCodeSpec &spec)
+         {
+             const ValueGroups cities{.values = {std::string("Osaka"), std::string("Paris")}, .other = true};
+             spec.view.filter = Filter{.conditions = valueGroupConditions(cities, 4, 2)};
          }},
         {"csv-group-by", "normal.csv", "",
          [](AnalysisCodeSpec &spec)

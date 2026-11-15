@@ -721,6 +721,57 @@ std::string histogramGroupText(const Histogram &histogram, size_t group)
     return valueGroupText(histogram.groups, group);
 }
 
+namespace
+{
+    constexpr std::string_view kExactTextPrefix = "(?-i)\\A";
+    constexpr std::string_view kExactTextSuffix = "\\z";
+
+    bool isWordByte(unsigned char c)
+    {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    }
+} // namespace
+
+std::string exactTextPattern(std::string_view text)
+{
+    return std::string(kExactTextPrefix) + re2::RE2::QuoteMeta(text) + std::string(kExactTextSuffix);
+}
+
+std::optional<std::string> exactTextOfPattern(std::string_view pattern)
+{
+    if (!pattern.starts_with(kExactTextPrefix) || !pattern.ends_with(kExactTextSuffix))
+        return std::nullopt;
+    pattern = pattern.substr(kExactTextPrefix.size(), pattern.size() - kExactTextPrefix.size() - kExactTextSuffix.size());
+    // Undoes QuoteMeta(): word characters and bytes of multibyte characters
+    // as they are, any other byte escaped, NUL as \x00. Anything else (\d,
+    // an unescaped metacharacter) is a pattern of the user's own.
+    std::string text;
+    for (size_t i = 0; i < pattern.size(); ++i)
+    {
+        const auto c = static_cast<unsigned char>(pattern[i]);
+        if (c != '\\')
+        {
+            if (!isWordByte(c) && c < 0x80)
+                return std::nullopt;
+            text += pattern[i];
+            continue;
+        }
+        if (pattern.substr(i, 4) == "\\x00")
+        {
+            text += '\0';
+            i += 3;
+            continue;
+        }
+        if (i + 1 == pattern.size())
+            return std::nullopt;
+        const auto escaped = static_cast<unsigned char>(pattern[++i]);
+        if (isWordByte(escaped) || escaped >= 0x80 || escaped == '\0')
+            return std::nullopt;
+        text += pattern[i];
+    }
+    return text;
+}
+
 std::vector<FilterCondition> valueGroupConditions(const ValueGroups &groups, size_t column, size_t group)
 {
     // Equality filters interpret numbers and dates. Groups instead preserve
@@ -728,7 +779,7 @@ std::vector<FilterCondition> valueGroupConditions(const ValueGroups &groups, siz
     const auto condition = [&](const CellValue &value, bool equal)
     {
         return FilterCondition{column, equal ? FilterOp::Matches : FilterOp::NotMatches,
-                               "(?-i)\\A" + re2::RE2::QuoteMeta(formatCell(value)) + "\\z"};
+                               exactTextPattern(formatCell(value))};
     };
     if (group < groups.values.size())
         return {condition(groups.values[group], true)};

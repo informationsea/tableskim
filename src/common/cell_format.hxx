@@ -210,8 +210,13 @@ std::string histogramSummary(const Histogram &histogram);
 // value as text, "(other)" or "(empty)".
 std::string valueGroupText(const ValueGroups &groups, size_t group);
 std::string histogramGroupText(const Histogram &histogram, size_t group);
+// A Matches pattern that keeps exactly the cells whose text is `text`,
+// case-sensitively, and the text of such a pattern (nullopt for any other
+// pattern), so that analysis code can write it as an equality.
+std::string exactTextPattern(std::string_view text);
+std::optional<std::string> exactTextOfPattern(std::string_view pattern);
 // Conditions that keep the rows of a group: equal to its value, empty, or
-// for "(other)" neither empty nor equal to any other group.
+// for "(other)" neither empty nor equal to any other group (exactTextPattern()).
 std::vector<FilterCondition> valueGroupConditions(const ValueGroups &groups, size_t column, size_t group);
 std::vector<FilterCondition> histogramGroupConditions(const Histogram &histogram, size_t group_column, size_t group);
 // "Osaka: 12 rows (40.0% of the bin)", a group's part of a bin.

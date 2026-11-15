@@ -767,3 +767,21 @@ TEST_CASE("Additional narrowing participates in filter validation and column mar
     spec.filter->narrowing.clear();
     CHECK_FALSE(spec.filtered());
 }
+
+TEST_CASE("exactTextOfPattern reads back exactly the patterns of exactTextPattern")
+{
+    using namespace std::string_literals;
+    for (const std::string &text : {"Osaka"s, ""s, "a.b*c(d)[e]{f}|^$\\-+?"s, "two words, 50%"s, "nul\0byte"s,
+                                   "\xE5\xA4\xA7\xE9\x98\xAA"s, "x_1"s})
+    {
+        const std::string pattern = exactTextPattern(text);
+        CHECK(exactTextOfPattern(pattern) == text);
+        // The pattern keeps exactly that text.
+        CHECK(cellMatchesCondition(CellValue(text), {0, FilterOp::Matches, pattern}));
+        CHECK_FALSE(cellMatchesCondition(CellValue(text + "x"), {0, FilterOp::Matches, pattern}));
+    }
+    // Patterns of the user's own are left alone.
+    for (const std::string &pattern : {"^Osaka$"s, "(?-i)\\AOs.ka\\z"s, "(?-i)\\A\\d\\z"s, "(?-i)\\Aa\\"s,
+                                      "(?-i)\\Aa|b\\z"s, "Osaka"s})
+        CHECK_FALSE(exactTextOfPattern(pattern).has_value());
+}

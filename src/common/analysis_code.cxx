@@ -8,6 +8,7 @@
 #include <set>
 #include <stdexcept>
 
+#include "cell_format.hxx"
 #include "decompress.hxx"
 #include "file_util.hxx"
 #include "table.hxx"
@@ -439,6 +440,12 @@ namespace
                 return contains(condition.column, condition.value, condition.op == FilterOp::NotContains);
             case FilterOp::Matches:
             case FilterOp::NotMatches:
+                // A group's pattern is RE2's own syntax, which Python's re
+                // refuses; it is an equality anyway.
+                if (const auto text = exactTextOfPattern(condition.value))
+                    return compare(condition.column,
+                                   condition.op == FilterOp::Matches ? FilterOp::Equals : FilterOp::NotEquals,
+                                   filterValue(column_kind, *text), *text);
                 return matches(condition.column, condition.value, condition.op == FilterOp::NotMatches);
             case FilterOp::IsEmpty:
             case FilterOp::IsNotEmpty:
