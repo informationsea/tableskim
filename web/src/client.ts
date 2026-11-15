@@ -22,6 +22,8 @@ export interface EnginePort {
     postMessage(message: unknown): void;
     onmessage: ((event: MessageEvent<WorkerMessage>) => void) | null;
     onerror: ((event: ErrorEvent) => void) | null;
+    // A Worker's: a message it posted could not be deserialized.
+    onmessageerror?: ((event: MessageEvent) => void) | null;
 }
 
 export type EventListener = (events: Map<number, number>) => void;
@@ -35,6 +37,8 @@ export class TableSkimClient {
     private readonly listeners = new Set<EventListener>();
     private readonly errorListeners = new Set<(message: string) => void>();
     private markReady: () => void = () => {};
+    // Why the worker stopped: later requests fail at once, as nothing answers them.
+    private failure: string | null = null;
 
     /** @param engine the module's script, which becomes the worker, or a port to an engine */
     constructor(engine: string | URL | EnginePort) {
@@ -44,30 +48,21 @@ export class TableSkimClient {
             this.markReady = resolve;
         });
         this.worker.onmessage = (event: MessageEvent<WorkerMessage>) => this.receive(event.data);
-        this.worker.onerror = (event) => {
-            const message = event.message || 'the worker failed';
-            for (const { reject } of this.pending.values()) reject(new Error(message));
-            this.pending.clear();
-            for (const listener of this.errorListeners) listener(message);
-        };
+        this.worker.onerror = (event) => this.fail(event.message || 'the worker failed');
+        // A message that could not be deserialized (say, a file too large to
+        // copy): which request it answered is unknown, so every waiting one
+        // fails. The worker itself goes on.
+        this.worker.onmessageerror = () => this.rejectPending('a message from the engine could not be read');
     }
 
     /** Sends a request; resolves with its result, or rejects with its error. */
     call<M extends Method>(method: M, params: Methods[M]['params']): Promise<Methods[M]['result']> {
-        const id = this.nextId++;
-        return new Promise((resolve, reject) => {
-            this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
-            this.worker.postMessage({ id, method, params });
-        });
+        return this.send(method, params) as Promise<Methods[M]['result']>;
     }
 
     /** The bytes of a file the session wrote (an export's JobState.file). */
     readFile(path: string): Promise<ArrayBuffer> {
-        const id = this.nextId++;
-        return new Promise((resolve, reject) => {
-            this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
-            this.worker.postMessage({ id, method: 'readFile', params: { path } });
-        });
+        return this.send('readFile', { path }) as Promise<ArrayBuffer>;
     }
 
     /**
@@ -86,6 +81,29 @@ export class TableSkimClient {
     subscribeErrors(listener: (message: string) => void): () => void {
         this.errorListeners.add(listener);
         return () => this.errorListeners.delete(listener);
+    }
+
+    private send(method: string, params: unknown): Promise<unknown> {
+        if (this.failure !== null) return Promise.reject(new Error(this.failure));
+        const id = this.nextId++;
+        return new Promise((resolve, reject) => {
+            this.pending.set(id, { resolve, reject });
+            this.worker.postMessage({ id, method, params });
+        });
+    }
+
+    // The worker answers nothing more: what is waiting fails, and so does
+    // what is asked later.
+    private fail(message: string) {
+        if (this.failure !== null) return;
+        this.failure = message;
+        this.rejectPending(message);
+        for (const listener of this.errorListeners) listener(message);
+    }
+
+    private rejectPending(message: string) {
+        for (const { reject } of this.pending.values()) reject(new Error(message));
+        this.pending.clear();
     }
 
     private receive(message: WorkerMessage) {

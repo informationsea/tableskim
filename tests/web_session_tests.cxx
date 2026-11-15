@@ -1006,3 +1006,111 @@ TEST_CASE("WebSession writes analysis code for views, charts and a Group By")
     REQUIRE(refused["error"].string());
     CHECK(refused["error"].string()->find("not for SQL results") != std::string::npos);
 }
+
+TEST_CASE("WebSession leaves no file open after a failed open", "[regression]")
+{
+    // The page stops showing the old file as it asks, and the worker's glue
+    // unmounts the old file once the open is answered: the session must not
+    // keep a book whose file is gone.
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    client.result("open", "{\"path\":\"" + path("normal.csv") + "\"}");
+    const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"normal.csv\"}")["sheet"].number());
+    CHECK(client.call("open", "{\"path\":\"" + path("normal.csv") + "\",\"encoding\":\"EBCDIC\"}")["error"].string());
+    CHECK(client.call("info", "{\"sheet\":" + std::to_string(id) + "}")["error"].string());
+    CHECK(client.call("sheet", "{\"name\":\"normal.csv\"}")["error"].string());
+    CHECK(client.call("startConvert", "{\"format\":\"parquet\"}")["error"].string());
+    // And it opens the next file as usual.
+    client.result("open", "{\"path\":\"" + path("normal.csv") + "\"}");
+    CHECK(*client.readyInfo(static_cast<int>(*client.result("sheet", "{\"name\":\"normal.csv\"}")["sheet"].number()))["rows"]
+               .number() == 54);
+}
+
+TEST_CASE("WebSession cuts a copy to the sheet and refuses too many cells", "[regression]")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+
+    SECTION("a range past the sheet's end")
+    {
+        client.result("open", "{\"path\":\"" + path("normal.csv") + "\"}");
+        const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"normal.csv\"}")["sheet"].number());
+        client.readyInfo(id);
+        client.rows(id, 0, 53);
+        const JsonValue copied = client.result(
+            "copy", "{\"sheet\":" + std::to_string(id) + ",\"top\":50,\"left\":7,\"bottom\":1000000,\"right\":20}");
+        CHECK(*copied["copiedRows"].number() == 4);
+        CHECK(*copied["skippedRows"].number() == 0);
+        const std::string text = *copied["text"].string();
+        CHECK(std::count(text.begin(), text.end(), '\n') == 4);
+        CHECK(std::count(text.begin(), text.end(), '\t') == 4);
+        // Bounds no sheet has (rangeToTsv() would walk each row and column).
+        CHECK(*client.result("copy", "{\"sheet\":" + std::to_string(id) +
+                                         ",\"top\":0,\"left\":0,\"bottom\":1e15,\"right\":1e15}")["copiedRows"]
+                   .number() == 54);
+        CHECK(*client.result("copy", "{\"sheet\":" + std::to_string(id) +
+                                         ",\"top\":1e15,\"left\":1e15,\"bottom\":1e15,\"right\":1e15}")["copiedRows"]
+                   .number() == 0);
+    }
+
+    SECTION("more than 5,000,000 cells")
+    {
+        // 1,001 rows of 5,000 columns.
+        const auto file = std::filesystem::temp_directory_path() / "tableskim-test-web-copy-wide.csv";
+        {
+            std::string line;
+            for (size_t column = 0; column < 5000; ++column)
+                line += column == 0 ? "1" : ",1";
+            line += '\n';
+            std::ofstream out(file, std::ios::binary);
+            for (size_t row = 0; row < 1001; ++row)
+                out << line;
+        }
+        client.result("open", "{\"path\":\"" + jsonPath(file.generic_string()) + "\",\"header\":\"no\"}");
+        const int id = static_cast<int>(*client.result("sheet", "{\"name\":\"" + jsonPath(file.filename().generic_string()) +
+                                                                     "\"}")["sheet"].number());
+        REQUIRE(*client.readyInfo(id)["rows"].number() == 1001);
+        const JsonValue refused =
+            client.call("copy", "{\"sheet\":" + std::to_string(id) + ",\"top\":0,\"left\":0,\"bottom\":1000,\"right\":4999}");
+        REQUIRE(refused["error"].string());
+        CHECK(refused["error"].string()->find("Too many cells") != std::string::npos);
+        // Hidden columns are not copied, so they do not count.
+        std::string hidden = "[0";
+        for (size_t column = 1; column < 10; ++column)
+            hidden += "," + std::to_string(column);
+        hidden += "]";
+        const JsonValue counted = client.call("copy", "{\"sheet\":" + std::to_string(id) +
+                                                          ",\"top\":0,\"left\":0,\"bottom\":1000,\"right\":4999,\"hidden\":" +
+                                                          hidden + "}");
+        CHECK(counted["error"].isNull());
+        client.result("close");
+        std::filesystem::remove(file);
+    }
+}
+
+TEST_CASE("WebSession keeps a finished job when the next request is invalid", "[regression]")
+{
+    WebSession session([](int, unsigned) {});
+    Client client(session);
+    const int id = openSheet(client, "normal.csv", "normal.csv");
+    client.result("startExport", sheetParams(id, "\"format\":\"csv\""));
+    const JsonValue job = waitDone(client, "jobState", "{}");
+    REQUIRE(job["file"].string());
+    const std::string file = *job["file"].string();
+
+    CHECK(client.call("startExport", sheetParams(id, "\"format\":\"nonsense\""))["error"].string());
+    CHECK(client.call("startExport", sheetParams(id + 100, "\"format\":\"csv\""))["error"].string());
+    CHECK(client.call("startExport", sheetParams(id, "\"format\":\"csv\",\"hidden\":[-1]"))["error"].string());
+    CHECK(client.call("startGroupBy", sheetParams(id, "\"keys\":[99]"))["error"].string());
+    CHECK(client.call("startGroupBy", sheetParams(id, "\"keys\":[4],\"aggregates\":[\"nonsense\"]"))["error"].string());
+    CHECK(client.call("startGroupBy", sheetParams(id, "\"keys\":[4],\"hidden\":[\"x\"]"))["error"].string());
+
+    const JsonValue kept = client.result("jobState");
+    REQUIRE(kept["kind"].string());
+    CHECK(*kept["kind"].string() == "export");
+    REQUIRE(kept["file"].string());
+    CHECK(*kept["file"].string() == file);
+    CHECK(std::filesystem::exists(file));
+    CHECK(readFile(file).starts_with("ID,Name,"));
+    client.result("cancelJob");
+}
