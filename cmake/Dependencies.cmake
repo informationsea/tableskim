@@ -1,4 +1,3 @@
-SET(FLTK_VERSION 1.4.5)
 SET(DUCKDB_VERSION 1.5.6)
 
 include(FetchContent)
@@ -6,8 +5,11 @@ include(FetchContent)
 # Every dependency is SYSTEM, so that its headers are system headers and their
 # warnings stay out of TableSkim's own (tableskim-warnings).
 #
-# Git dependencies are cloned at their tag only (GIT_SHALLOW): the full history
-# of DuckDB alone is close to 1 GB, and CI clones every dependency on each run.
+# Git dependencies are pinned by the commit of their release tag (a tag can be
+# moved), with the tag in the comment beside it: update both together (the
+# commit is `git ls-remote <repository> <tag>`, the `<tag>^{}` line for an
+# annotated tag). CMake allows GIT_SHALLOW with branch and tag names only, so
+# the clones are full: DuckDB's history alone is close to 1 GB.
 # Archives are checked against their SHA-256 (URL_HASH); update the hash
 # together with the URL.
 
@@ -41,8 +43,7 @@ elseif(TABLESKIM_BUILD_GUI)
         fltk
         SYSTEM
         GIT_REPOSITORY https://github.com/fltk/fltk.git
-        GIT_TAG release-${FLTK_VERSION}
-        GIT_SHALLOW TRUE
+        GIT_TAG a9b1113516ffd15fc7602a6d425a317df30f4720 # release-1.4.5
     )
 
     set(FLTK_USE_SYSTEM_LIBJPEG OFF)
@@ -80,8 +81,7 @@ FetchContent_Declare(
     duckdb
     SYSTEM
     GIT_REPOSITORY https://github.com/duckdb/duckdb.git
-    GIT_TAG v${DUCKDB_VERSION}
-    GIT_SHALLOW TRUE
+    GIT_TAG 069cc9f9b5be802405797faecc284961b07c70ef # v1.5.6
 )
 
 set(BUILD_SHELL OFF)
@@ -92,7 +92,8 @@ set(EXTENSION_STATIC_BUILD ON)
 # read_json() for JSON / NDJSON files.
 set(BUILD_EXTENSIONS json)
 # DuckDB takes its version from `git describe --tags` and falls back to v0.0.1
-# when it fails, as it does in a shallow clone that has not fetched the tag.
+# when it fails, as it does in a clone at a commit hash that has not fetched
+# the tag. Raise DUCKDB_VERSION together with the commit of GIT_TAG above.
 set(OVERRIDE_GIT_DESCRIBE v${DUCKDB_VERSION})
 # DuckDB finds its platform name by running a program it builds, which a
 # WebAssembly build cannot run; name it as duckdb-wasm does (threads and
@@ -209,8 +210,7 @@ FetchContent_Declare(
     catch2
     SYSTEM
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.16.1
-    GIT_SHALLOW TRUE
+    GIT_TAG 08092139210881f01a34e60c5f2fd6afa0ea4024 # v3.16.1
 )
 
 FetchContent_MakeAvailable(catch2)
@@ -223,8 +223,7 @@ FetchContent_Declare(
     ftxui
     SYSTEM
     GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
-    GIT_TAG v7.0.3
-    GIT_SHALLOW TRUE
+    GIT_TAG f921fad208912747c17d129a8ef75ec7624b6eec # v7.0.3
 )
 
 FetchContent_MakeAvailable(ftxui)
@@ -239,8 +238,7 @@ FetchContent_Declare(
     openxlsx
     SYSTEM
     GIT_REPOSITORY https://github.com/troldal/OpenXLSX.git
-    GIT_TAG v0.5.1
-    GIT_SHALLOW TRUE
+    GIT_TAG 2eb596ac69d5ef8c1a1be1de8ee481b5ce39baea # v0.5.1
 )
 
 # OpenXLSX fetches miniz 3.0.2, whose cmake_minimum_required(VERSION 3.0) is
@@ -270,8 +268,7 @@ FetchContent_Declare(
   csv-parser
   SYSTEM
   GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser.git
-  GIT_TAG v5.7.1
-  GIT_SHALLOW TRUE
+  GIT_TAG 86f1cab4fcb50a936475b5f778e8ee8c5dfe2259 # v5.7.1
 )
 FetchContent_MakeAvailable(csv-parser)
 # Its sample programs are not needed.
@@ -285,8 +282,7 @@ FetchContent_Declare(
     CLI11
     SYSTEM
     GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-    GIT_TAG v2.7.2
-    GIT_SHALLOW TRUE
+    GIT_TAG cbd58a3696887b34c70949aef21a71735a0c2ad5 # v2.7.2
 )
 
 FetchContent_MakeAvailable(CLI11)
@@ -424,8 +420,7 @@ FetchContent_Declare(
     absl
     SYSTEM
     GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
-    GIT_TAG 20260817.0
-    GIT_SHALLOW TRUE
+    GIT_TAG 2065f4ded0558c6f89fee67c8e5228feb4eb960e # 20260817.0
     EXCLUDE_FROM_ALL
 )
 # GCC's UndefinedBehaviorSanitizer (the asan preset) makes Abseil's
@@ -444,8 +439,7 @@ FetchContent_Declare(
     re2
     SYSTEM
     GIT_REPOSITORY https://github.com/google/re2.git
-    GIT_TAG 2025-11-05
-    GIT_SHALLOW TRUE
+    GIT_TAG 927f5d53caf8111721e734cf24724686bb745f55 # 2025-11-05
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(re2)
@@ -455,8 +449,7 @@ FetchContent_Declare(
     spdlog
     SYSTEM
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.17.0
-    GIT_SHALLOW TRUE
+    GIT_TAG 79524ddd08a4ec981b7fea76afd08ee05f83755d # v1.17.0
 )
 
 FetchContent_MakeAvailable(spdlog)

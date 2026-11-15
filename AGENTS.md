@@ -90,10 +90,14 @@ ctest --preset debug -j 8            # test cases in parallel
 - Dependencies are always built as Release, even in Debug builds (except with
   MSVC, where runtimes cannot be mixed). Keep this in mind when editing
   `cmake/Dependencies.cmake`.
-- Git dependencies are cloned shallow at their tag (`GIT_SHALLOW`), and
-  archives carry a `URL_HASH`: update the hash with the URL. DuckDB gets its
-  version from `OVERRIDE_GIT_DESCRIBE`, so that it does not depend on the
-  shallow clone having fetched the tag.
+- Git dependencies are pinned by the commit their release tag points at,
+  with the tag in a comment on the `GIT_TAG` line: update both together
+  (`git ls-remote <repository> <tag>`, the peeled `<tag>^{}` line for an
+  annotated tag). They are not `GIT_SHALLOW`, which CMake allows for branch
+  and tag names only, so each clone has the full history. Archives carry a
+  `URL_HASH`: update the hash with the URL. DuckDB gets its version from
+  `OVERRIDE_GIT_DESCRIBE` (`DUCKDB_VERSION`, raised with its commit), so that
+  it does not depend on the clone having the tag.
 - Debug builds define `TABLESKIM_DEBUG=1`, which enables debug logging.
 - TableSkim's own targets compile with `-Wall -Wextra` (MSVC: `/W4`) by
   linking `tableskim-warnings`; link it to every new target of our own.
