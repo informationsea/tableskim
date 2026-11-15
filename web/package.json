@@ -1,7 +1,7 @@
 {
   "name": "tableskim-web",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.5",
   "description": "TableSkim in the browser: the WebAssembly core with a React frontend",
   "type": "module",
   "scripts": {

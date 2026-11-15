@@ -128,10 +128,9 @@ release is made:
   has `OVSX_PAT`, a token of an Open VSX account that owns the namespace
   `informationsea`.
 
-Without either secret it publishes nothing. It first checks that
-`CHANGELOG.md` has a heading of the tag's version, and fails otherwise
-(the GitHub release is already made then; publish by hand after fixing
-the changelog with `npx vsce publish --packagePath <vsix>`). The
+Without either secret it publishes nothing. `CHANGELOG.md` must have a
+heading of the tag's version: the release's `check-version` job fails
+otherwise, before anything is built. The
 Marketplace takes each version once, and the extension's version is the
 project's: an extension-only fix needs a new release of the project.
 The package is marked `"preview": true`, which the Marketplace shows.

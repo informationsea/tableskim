@@ -16,9 +16,11 @@ permissions:
   contents: read
 
 # A new push to a pull request cancels the run of its previous head; runs on
-# main are kept, as each one saves the ccache that later runs start from.
+# main are kept, as each one saves the ccache that later runs start from. The
+# commit is in the group for main, as GitHub cancels a pending run of the
+# same group even without cancel-in-progress.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -52,7 +54,7 @@ jobs:
         run: choco install ninja ccache -y --no-progress
       - name: Set up the MSVC environment
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja ccache
@@ -107,7 +109,7 @@ jobs:
         # Xvfb) tests run on Linux only.
         run: cmake --preset ${{ env.PRESET }} -DTABLESKIM_ENABLE_LTO=OFF ${{ runner.os == 'Linux' && '-DTABLESKIM_TUI_TESTS=ON -DTABLESKIM_GUI_TESTS=ON' || '' }}
       - name: Save dependency sources
-        if: runner.os == 'Windows' && github.event_name != 'pull_request' && steps.deps.outputs.cache-hit != 'true'
+        if: runner.os == 'Windows' && github.ref == 'refs/heads/main' && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -118,11 +120,12 @@ jobs:
         run: cmake --build --preset ${{ env.PRESET }}
       - name: Show ccache statistics
         run: ccache --show-stats
-      # Pull requests only read the ccache: a cache saved on a pull request's
-      # ref can be read by that pull request alone, so it would only take
-      # room from the caches main and the release workflow read.
+      # Only main saves the ccache: a cache saved on another ref (a pull
+      # request's, or a branch run by hand) can be read by that ref alone,
+      # so it would only take room from the caches main and the release
+      # workflow read.
       - name: Save ccache
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: .ccache
@@ -276,7 +279,7 @@ jobs:
         shell: bash
         run: ctest --preset release --parallel 4
       - name: Save ccache
-        if: github.event_name != 'pull_request' && matrix.save_cache
+        if: github.ref == 'refs/heads/main' && matrix.save_cache
         uses: actions/cache/save@v4
         with:
           path: .ccache
@@ -339,7 +342,7 @@ jobs:
       # Saved right after installing, before a build adds to its cache of
       # system libraries; only on main, like the other caches.
       - name: Save emsdk
-        if: github.event_name != 'pull_request' && steps.emsdk.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.emsdk.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/emsdk
@@ -375,7 +378,7 @@ jobs:
       - name: Show ccache statistics
         run: ccache --show-stats
       - name: Save ccache
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: .ccache
@@ -425,7 +428,13 @@ jobs:
       # downloaded once; saved even if the test fails, only on main.
       - name: Find the VS Code version
         id: vscode
-        run: echo "version=$(curl -fsS https://update.code.visualstudio.com/api/releases/stable | jq -r '.[0]')" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(curl -fsS https://update.code.visualstudio.com/api/releases/stable | jq -r '.[0]')
+          if [ -z "$version" ] || [ "$version" = null ]; then
+            echo "no stable VS Code version found" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Restore VS Code
         id: vscode-cache
         uses: actions/cache/restore@v4
@@ -439,7 +448,7 @@ jobs:
         run: xvfb-run -a npm run test:vscode
       - name: Save VS Code
         if: >-
-          !cancelled() && github.event_name != 'pull_request' &&
+          !cancelled() && github.ref == 'refs/heads/main' &&
           steps.vscode-cache.outputs.cache-hit != 'true' &&
           hashFiles(format('vscode/.vscode-test/vscode-linux-x64-{0}/code', steps.vscode.outputs.version)) != ''
         uses: actions/cache/save@v4
@@ -464,7 +473,7 @@ jobs:
         run: xvfb-run -a npm run test:vscode
       - name: Save the oldest VS Code
         if: >-
-          !cancelled() && github.event_name != 'pull_request' &&
+          !cancelled() && github.ref == 'refs/heads/main' &&
           steps.vscode-oldest-cache.outputs.cache-hit != 'true' &&
           hashFiles(format('vscode/.vscode-test/vscode-linux-x64-{0}/code', steps.vscode-oldest.outputs.version)) != ''
         uses: actions/cache/save@v4
@@ -515,7 +524,13 @@ jobs:
       # Cached as in the wasm job, for each system.
       - name: Find the VS Code version
         id: vscode
-        run: echo "version=$(curl -fsS https://update.code.visualstudio.com/api/releases/stable | jq -r '.[0]')" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(curl -fsS https://update.code.visualstudio.com/api/releases/stable | jq -r '.[0]')
+          if [ -z "$version" ] || [ "$version" = null ]; then
+            echo "no stable VS Code version found" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Restore VS Code
         id: vscode-cache
         uses: actions/cache/restore@v4
@@ -529,7 +544,7 @@ jobs:
         run: npm run test:vscode
       - name: Save VS Code
         if: >-
-          !cancelled() && github.event_name != 'pull_request' &&
+          !cancelled() && github.ref == 'refs/heads/main' &&
           steps.vscode-cache.outputs.cache-hit != 'true' && hashFiles('vscode/.vscode-test/vscode-*/**/product.json') != ''
         uses: actions/cache/save@v4
         with:
@@ -544,7 +559,7 @@ jobs:
   # build failed: then the previous one is still the newest.
   prune-caches:
     name: Prune old ccaches
-    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     needs: [build, rocky, wasm]
     runs-on: ubuntu-24.04
     permissions:

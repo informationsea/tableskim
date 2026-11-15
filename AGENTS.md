@@ -640,6 +640,10 @@ Match the existing code:
 - Keep the subject short (about 70 characters), without a trailing period.
 - If an agent wrote the commit, end the message with the trailers the tool
   provides for attribution (e.g. `Co-Authored-By:`), after a blank line.
+- A version bump changes `project(... VERSION ...)` in `CMakeLists.txt` and
+  the version of `web/package.json` (and its lock file): the release's
+  `check-version` job compares both with the tag, and requires
+  `vscode/CHANGELOG.md` to name the version.
 - Never commit `build/`, `.cache/`, `CMakeUserPresets.json`,
   `demo/.venv/`, `web/node_modules/`, `web/dist/` or what `vscode/` builds
   (`node_modules/`, `out/`, `media/`, `engine/`, `*.vsix`). Commit
