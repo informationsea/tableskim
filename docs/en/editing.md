@@ -10,6 +10,7 @@ and save the file again.
 | -------------------------------------------------- | ------- |
 | CSV, TSV, VCF and other text files (compressed too) | Yes     |
 | Excel (`.xlsx`, `.xlsm`)                           | Yes     |
+| OpenDocument (`.ods`)                              | No      |
 | Parquet, JSON, DuckDB, SQLite, SQL results         | No      |
 
 Only cell values change: rows and columns cannot be added or removed.

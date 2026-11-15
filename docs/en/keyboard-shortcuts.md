@@ -101,7 +101,7 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `w`        | Export the sheet as shown to CSV / TSV / Excel / Parquet                    |
 | `K`        | Write R / Python code for the view, histogram, density or Group By shown (`Tab`: language) |
 | `P` / `D`  | Convert to Parquet / DuckDB next to the file and open it (`Esc`: cancel)    |
-| `H`        | First row: switch between the guess and header / data (CSV / TSV / Excel) |
+| `H`        | First row: switch between the guess and header / data (CSV / TSV / Excel / ODS) |
 | `#`        | Skip lines starting with `##` (on by default for VCF)                       |
 | `E`        | Next text encoding: UTF-8, UTF-16LE, UTF-16BE, Shift_JIS (CP932)            |
 | `r`        | Revert (reload the file)                                                    |
@@ -143,8 +143,11 @@ Press `?` or `F1` in the terminal UI to show this list.
 | -------------------- | ----------------------------------------- |
 | `↑` / `↓`, `k` / `j` | Select a bar                              |
 | `←` / `→`, `h` / `l` | Previous / next column                    |
-| `Enter`              | Filter the sheet to the selected bar      |
+| `Enter`              | Filter the sheet to the selected bar (or part) |
+| `g` / `G`            | Stack the bars by the next / previous column, or by none |
+| `Tab` / `Shift+Tab`  | Select a part of the selected stacked bar |
 | `F`                  | Clear the filter                          |
+| `K`                  | Write R / Python code for the histogram   |
 | `Esc`, `B`, `q`      | Back to the sheet                         |
 
 ### 2D density
@@ -156,9 +159,14 @@ Press `?` or `F1` in the terminal UI to show this list.
 | `y` / `Y`            | Next / previous column on Y               |
 | `t`                  | Swap X and Y                              |
 | `L`                  | Logarithmic / linear colour scale         |
-| `Enter`              | Filter the sheet to the selected cell     |
+| `c` / `C`            | Colour by the next / previous column, or by none |
+| `Tab` / `Shift+Tab`  | Select a colour of the legend (coloured)  |
+| `Enter`              | Filter the sheet to the rows of the selected cell (and colour) |
 | `F`                  | Clear the filter                          |
+| `K`                  | Write R / Python code for the density plot |
 | `b`                  | Text on X: box plots / density            |
+| `↑` / `↓`, `k` / `j` | Box plots: select a category              |
+| `Enter`              | Box plots: filter the sheet to the selected category |
 | `Esc`, `M`, `q`      | Back to the sheet                         |
 
 ### Group By dialog
